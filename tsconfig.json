@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "target": "ESNext",
+    "resolveJsonModule": true,
+    "declaration": true,
+    "types": ["node"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strict": true,
+    "newLine": "lf",
+    "outDir": "./"
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}
