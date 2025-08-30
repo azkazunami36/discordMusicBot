@@ -1,23 +1,56 @@
 
 import Stream from "stream";
+import * as Discord from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
-import { ChildProcessByStdio, spawn } from "child_process";
+import { ChildProcessByStdio, ChildProcessWithoutNullStreams, spawn } from "child_process";
 
 export class FfmpegResourcePlayer {
     audioPath?: string;
     #playingPath?: string;
-    #spawn?: ChildProcessByStdio<null, Stream.Readable, null>;
+    #spawn?: ChildProcessByStdio<null, Stream.Readable, Stream.Readable>;
     #resource?: DiscordVoice.AudioResource;
     #player: DiscordVoice.AudioPlayer;
     #ffprobeStreamInfo?: ffmpeg.FfprobeStream;
+    #guildId?: string;
+    #volume = 0.5;
+    #seekmargen = 0;
     constructor() { this.#player = new DiscordVoice.AudioPlayer() };
+    async #audioPlay(seconds: number) {
+        if (!this.#playingPath) return;
+        if (this.#player.state.status === DiscordVoice.AudioPlayerStatus.Playing) this.#player.stop();
+        this.#resource = undefined;
+        if (this.#spawn) {
+            this.#spawn.kill();
+            this.#spawn = undefined;
+        }
+
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = (seconds % 60);
+        const ss = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toFixed(3).padStart(6, "0")}`;
+        this.#spawn = spawn("ffmpeg", [
+            "-ss", ss,
+            "-i", this.#playingPath,
+            "-map", "0:a:0",
+            "-c:a", "libopus",
+            "-b:a", "96k",
+            "-f", "ogg",
+            "pipe:1"
+        ], { stdio: ["ignore", "pipe", "pipe"] });
+        this.#resource = DiscordVoice.createAudioResource(this.#spawn.stdout, {
+            inputType: DiscordVoice.StreamType.OggOpus,
+            inlineVolume: true
+        });
+        this.#resource.volume?.setVolume(this.#volume);
+        this.#player.play(this.#resource);
+    }
     async play() {
         if (!this.audioPath) return;
-        // もしすでに再生中で、クライアント指定の音声パスが同じだったら無視
+        if (!this.#guildId) return;
         if (this.#player.state.status === DiscordVoice.AudioPlayerStatus.Playing && this.audioPath === this.#playingPath) return;
-        if (this.#ffprobeStreamInfo) this.#ffprobeStreamInfo = (await new Promise<ffmpeg.FfprobeStream | undefined>((resolve, reject) => {
+        if (!this.#ffprobeStreamInfo) this.#ffprobeStreamInfo = (await new Promise<ffmpeg.FfprobeStream | undefined>((resolve, reject) => {
             if (!this.audioPath || !fs.existsSync(this.audioPath)) return resolve(undefined);
             ffmpeg.ffprobe(this.audioPath, (err, data) => {
                 if (err) reject(err);
@@ -29,18 +62,7 @@ export class FfmpegResourcePlayer {
         this.#playingPath = this.audioPath;
         const audioStreamInfo = this.#ffprobeStreamInfo;
         audioStreamInfo.duration;
-        this.#spawn = spawn("ffmpeg", [
-            "-ss", "00:00:00",
-            "-i", this.#playingPath,
-            "-map", "0:a:0",
-            "-c:a", "libopus",
-            "pipe:1"
-        ], { stdio: ["ignore", "pipe", "ignore"] });
-        this.#resource = DiscordVoice.createAudioResource(this.#spawn.stdout, {
-            inputType: DiscordVoice.StreamType.Opus,
-            inlineVolume: true
-        });
-        this.#player.play(this.#resource);
+        await this.#audioPlay(0);
     };
     async stop() {
         this.#player.stop();
@@ -50,5 +72,18 @@ export class FfmpegResourcePlayer {
             this.#spawn = undefined;
         }
     }
+    async seek(seconds: string) {
+        
+    }
+    get playtime() {
+        return this.#resource?.playbackDuration;
+    }
     get player() { return this.#player; };
+    set volume(vol: number) {
+        this.#volume = vol;
+        if (this.#resource) this.#resource.volume?.setVolume(vol);
+    }
+    set guildId(guildId: string) {
+        this.#guildId = guildId;
+    }
 }

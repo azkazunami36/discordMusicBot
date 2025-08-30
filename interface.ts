@@ -7,10 +7,8 @@ import { FfmpegResourcePlayer } from "./ffmpegResourcePlayer.js";
 export interface ServersData {
     [guildId: string]: {
         discord: {
-            player: DiscordVoice.AudioPlayer;
-            resource?: DiscordVoice.AudioResource;
             calledChannel?: string;
-            ffmpegResource?: FfmpegResourcePlayer;
+            ffmpegResourcePlayer: FfmpegResourcePlayer;
         }
     } | undefined;
 }

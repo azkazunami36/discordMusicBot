@@ -25,12 +25,13 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!vchannelId) return await interaction.editReply("くぁwせdrftgyふじこlp。ボイチャに入ってないとどこに入ればいいかわかりません。できればボイチャ入っててください。");
         if (!inputData.serversDataClass.serversData[interaction.guildId]) inputData.serversDataClass.serverDataInit(interaction.guildId);
         const serverData = inputData.serversDataClass.serversData[interaction.guildId];
-        if (!serverData) return await interaction.editReply("謎のエラーです。管理者には「サーバーデータの処理に失敗」とお伝えください。");
-        if (serverData.discord.resource) return await interaction.editReply("すでに再生中です。`!music-help`で使い方をみることができます。");
+        if (serverData === undefined) return await interaction.editReply("謎のエラーです。管理者には「サーバーデータの処理に失敗」とお伝えください。");
+        if (serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing) return await interaction.editReply("すでに再生中です。`!music-help`で使い方をみることができます。");
         await interaction.editReply("VCの状態をチェック中...");
         DiscordVoice.getVoiceConnection(interaction.guildId)?.destroy();
         const connection = DiscordVoice.joinVoiceChannel({ channelId: vchannelId, guildId: interaction.guildId, adapterCreator: interaction.guild.voiceAdapterCreator });
-        connection.subscribe(serverData.discord.player);
+        await DiscordVoice.entersState(connection, DiscordVoice.VoiceConnectionStatus.Ready, 10000);
+        connection.subscribe(serverData.discord.ffmpegResourcePlayer.player);
         serverData.discord.calledChannel = interaction.channelId;
         let statusTemp: {
             status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",

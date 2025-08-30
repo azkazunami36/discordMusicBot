@@ -3,6 +3,7 @@ import * as DiscordVoice from "@discordjs/voice";
 import { envJSON } from "./envJSON.js";
 import { sourcePathManager } from "./sourcePathManager.js";
 import { ServersData } from "./interface.js";
+import { FfmpegResourcePlayer } from "./ffmpegResourcePlayer.js";
 
 export class PlayerSet {
     serversData: ServersData;
@@ -12,7 +13,7 @@ export class PlayerSet {
         this.playerStop = this.playerStop.bind(this);
     }
     /** 
-     * 再生を開始します。もしすでに再生中なら次の曲にいきます。再生不可の時は無音でスキップします。
+     * 再生を開始します。再生不可の時は無音でスキップします。
      */
     async playerSetAndPlay(guildId: string, statusCallback?: (status: "loading" | "downloading" | "formatchoosing" | "converting" | "done", body: { percent?: number; }) => void) {
         const statuscall = statusCallback || (st => { });
@@ -23,38 +24,15 @@ export class PlayerSet {
         const playlist = envJSON(guildId, "playlist");
         if (!playlist) return;
         const playlistJSON: string[] = JSON.parse(playlist);
-        // 2. 再生中だったら再生種類の状態によって曲を変更する。
-        if (serverData.discord.resource) {
-            const playType = Number(envJSON(guildId, "playType"));
-            if (playType !== undefined && playType > 1 && playType < 3) {
-                switch (playType) {
-                    case 1: {
-                        playlistJSON.shift();
-                        envJSON(guildId, "playlist", JSON.stringify(playlistJSON));
-                        break;
-                    }
-                    case 2: {
-                        const videoId = playlistJSON.shift();
-                        if (videoId) playlistJSON.push(videoId);
-                        envJSON(guildId, "playlist", JSON.stringify(playlistJSON));
-                        break;
-                    }
-                    case 3: {
-                        break;
-                    }
-                }
-            } else {
-                playlistJSON.shift();
-                envJSON(guildId, "playlist", JSON.stringify(playlistJSON));
-            }
-        }
-        if (playlistJSON[0] === undefined) return;
-        serverData.discord.resource = DiscordVoice.createAudioResource("./cache/" + await sourcePathManager.getAudioPath(playlistJSON[0], statuscall), {
-            inlineVolume: true
-        });
+        if (!serverData.discord.ffmpegResourcePlayer) return;
+        // 2. 再生中だったら一度停止。
+        if (serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing)
+            await serverData.discord.ffmpegResourcePlayer.stop();
+        serverData.discord.ffmpegResourcePlayer.audioPath = "./cache/" + await sourcePathManager.getAudioPath(playlistJSON[0], statuscall);
         const volume = envJSON(guildId, "volume");
-        serverData.discord.resource.volume?.setVolume((volume ? Number(volume) : 100) / 750);
-        serverData.discord.player.play(serverData.discord.resource);
+        serverData.discord.ffmpegResourcePlayer.volume = (volume ? Number(volume) : 100) / 750;
+        serverData.discord.ffmpegResourcePlayer.guildId = guildId;
+        await serverData.discord.ffmpegResourcePlayer.play();
     }
     /**
      * 再生を停止します。
@@ -64,10 +42,9 @@ export class PlayerSet {
         if (!serverData) return;
         const connection = DiscordVoice.getVoiceConnection(guildId);
         if (!connection) return;
-        serverData.discord.player.pause();
-        connection.destroy();
-        serverData.discord.resource = undefined;
         serverData.discord.calledChannel = undefined;
+        await serverData.discord.ffmpegResourcePlayer.stop();
+        connection.destroy();
     }
 
 }

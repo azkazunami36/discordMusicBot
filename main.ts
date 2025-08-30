@@ -50,6 +50,10 @@ const { playerSetAndPlay, playerStop } = playerSet;
 
 client.on(Discord.Events.InteractionCreate, async interaction => {
     if (!interaction.isCommand()) return;
+    if (interaction.guildId) {
+        const callchannelId = envJSON(interaction.guildId, "callchannelId");
+        if (callchannelId && callchannelId != interaction.channelId) return;
+    }
     const inputData: InteractionInputData = { serversDataClass, videoCache, playerSet };
     const data = interactionFuncs.find(d => d.command.name === interaction.commandName)
     if (data) {
@@ -70,6 +74,7 @@ client.on(Discord.Events.MessageCreate, async message => {
     const serverData = serversData[message.guildId];
     if (!serverData) return message.reply("ごめん！！エラーっす！www");
     const callchannelId = envJSON(message.guildId, "callchannelId");
+    if (callchannelId && callchannelId != message.channelId) return;
     const playlist = (() => {
         const playlist = envJSON(message.guildId, "playlist");
         if (playlist === undefined) return envJSON(message.guildId, "playlist", "[]");
@@ -117,21 +122,25 @@ client.on(Discord.Events.MessageCreate, async message => {
         ]
         const select = Math.floor(Math.random() * bt.length);
         const { name, videoId } = bt[select];
-        if (playlistJSON.length > 0) playlistJSON.pop();
+        const deletedVideoId = playlistJSON.shift();
         playlistJSON.unshift(videoId);
         envJSON(message.guildId, "playlist", JSON.stringify(playlistJSON));
-        if (serverData.discord.resource) await playerStop(message.guildId);
+        if (serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing) await playerStop(message.guildId);
         const connection = DiscordVoice.joinVoiceChannel({ channelId: message.member.voice.channelId, guildId: message.guildId, adapterCreator: message.guild.voiceAdapterCreator });
-        connection.subscribe(serverData.discord.player);
+        connection.subscribe(serverData.discord.ffmpegResourcePlayer.player);
         serverData.discord.calledChannel = message.channelId;
         const number = 1145141919;
+        const volume = envJSON(message.guildId, "volume");
         envJSON(message.guildId, "volume", String(number));
         await playerSetAndPlay(message.guildId);
-        serverData.discord.resource?.volume?.setVolume(number / 750);
-        message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。次回再生時は`/volume vol:100`を実行してください。");
+        await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。プレイリストや設定は変更していないため、次の曲からは音量は" + volume + "%に戻ります。");
+        envJSON(message.guildId, "volume", volume);
+        playlistJSON.shift();
+        if (deletedVideoId) playlistJSON.unshift(deletedVideoId);
+        envJSON(message.guildId, "playlist", JSON.stringify(playlistJSON));
         return;
     }
-    if (!message.content.startsWith("!music") || message.author.bot || callchannelId && callchannelId != message.channelId) return;
+    if (!message.content.startsWith("!music") || message.author.bot || callchannelId) return;
     if (message.content.startsWith("!music-callch")) {
         const channelId = message.content.slice(14, message.content.length);
         if (message.guild?.channels.cache.get(channelId)) {

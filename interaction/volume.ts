@@ -23,7 +23,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const serverData = inputData.serversDataClass.serversData[interaction.guildId];
         if (!serverData) return await interaction.editReply("謎のエラーです。管理者には「サーバーデータの処理に失敗」とお伝えください。");
         envJSON(interaction.guildId, "volume", String(number));
-        serverData.discord.resource?.volume?.setVolume(number / 750);
+        serverData.discord.ffmpegResourcePlayer.volume = number / 750;
         await interaction.editReply("音量を" + number + "%に変更しました。");
     }
 }
