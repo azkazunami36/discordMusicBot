@@ -66,7 +66,46 @@ client.on(Discord.Events.ClientReady, () => {
     console.log("OK " + client.user?.displayName);
     client.user?.setStatus("online");
 });
-
+client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
+    const channel = newState.guild.channels.cache.get(newState.channelId || oldState.channelId || "");
+    if (!channel || !channel.isVoiceBased()) return;
+    if (channel.members.size < 2) {
+        await playerSet.playerStop(newState.guild.id);
+        const serverData = serversData[newState.guild.id];
+        if (!serverData || !serverData.discord.calledChannel) return;
+        const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
+        if (channel && channel.isTextBased()) {
+            channel.send("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。");
+        }
+    }
+})
+const bt = [
+    {
+        name: "音割れポッター",
+        videoId: "OwN6FwkSWwY"
+    },
+    {
+        name: "威風堂々",
+        videoId: "-Tyy3zTbVWc"
+    },
+    {
+        name: "ソ連",
+        videoId: "rwAns-qsMPo"
+    },
+    {
+        name: "ココナッツモール池崎",
+        videoId: "kgJ3K1keWGU"
+    },
+    {
+        name: "BIG HSI",
+        videoId: "Ai4g34CTdA0"
+    },
+    {
+        name: "タドコロ電機",
+        videoId: "1kAZdsQrO4s"
+    },
+]
+let joubutuNumber = Math.floor(Math.random() * bt.length);
 client.on(Discord.Events.MessageCreate, async message => {
     // 1. bot呼び出しでないものをスキップする。
     if (!message.guildId || !message.member || !message.guild) return message.reply("ごめん！！エラーっす！www");
@@ -94,39 +133,13 @@ client.on(Discord.Events.MessageCreate, async message => {
     }[] = JSON.parse(originalFiles);
     if (message.content === "VCの皆、成仏せよ") {
         if (!message.member.voice.channelId) return;
-        const bt = [
-            {
-                name: "音割れポッター",
-                videoId: "OwN6FwkSWwY"
-            },
-            {
-                name: "威風堂々",
-                videoId: "-Tyy3zTbVWc"
-            },
-            {
-                name: "ソ連",
-                videoId: "rwAns-qsMPo"
-            },
-            {
-                name: "ココナッツモール池崎",
-                videoId: "kgJ3K1keWGU"
-            },
-            {
-                name: "BIG HSI",
-                videoId: "Ai4g34CTdA0"
-            },
-            {
-                name: "タドコロ電機",
-                videoId: "1kAZdsQrO4s"
-            },
-        ]
-        const select = Math.floor(Math.random() * bt.length);
-        const { name, videoId } = bt[select];
+        if ((joubutuNumber++) >= bt.length - 1) joubutuNumber = 0;
+        const { name, videoId } = bt[joubutuNumber];
         const deletedVideoId = playlistJSON.shift();
         playlistJSON.unshift(videoId);
         envJSON(message.guildId, "playlist", JSON.stringify(playlistJSON));
-        if (serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing) await playerStop(message.guildId);
         const connection = DiscordVoice.joinVoiceChannel({ channelId: message.member.voice.channelId, guildId: message.guildId, adapterCreator: message.guild.voiceAdapterCreator });
+        await DiscordVoice.entersState(connection, DiscordVoice.VoiceConnectionStatus.Ready, 10000);
         connection.subscribe(serverData.discord.ffmpegResourcePlayer.player);
         serverData.discord.calledChannel = message.channelId;
         const number = 1145141919;

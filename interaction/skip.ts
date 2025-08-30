@@ -17,7 +17,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         })();
         if (!playlist) return await interaction.editReply("謎のエラーです。管理者には「プレイリストの処理でエラーが発生した」とお伝えください。");
         const playlistJSON: string[] = JSON.parse(playlist);
-        if (playlistJSON.length == 0) return await interaction.editReply("プレイリストが空っぽです。`!music タイトルまたはURL`で曲を追加してください。");
+        if (playlistJSON.length == 0) return await interaction.editReply("プレイリストが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。");
 
         let statusTemp: {
             status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",

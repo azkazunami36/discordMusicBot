@@ -24,14 +24,14 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         })();
         if (!playlist) return await interaction.editReply("謎のエラーです。管理者には「プレイリストの処理でエラーが発生した」とお伝えください。");
         const playlistJSON: string[] = JSON.parse(playlist);
-        if (playlistJSON.length == 0) return await interaction.editReply("プレイリストが空っぽです。`!music タイトルまたはURL`で曲を追加してください。");
+        if (playlistJSON.length == 0) return await interaction.editReply("プレイリストが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。");
         if (playlistJSON[number - 1]) {
             const videoId = playlistJSON.splice(number - 1, 1)[0];
             envJSON(interaction.guildId, "playlist", JSON.stringify(playlistJSON));
             const cache = await inputData.videoCache.cacheGet(videoId);
             await interaction.editReply("曲「" + (cache ? cache.title : "タイトル取得エラー(VideoID: " + videoId + ")") + "」を削除しました。(VideoId: " + videoId + ")");
         } else {
-            await interaction.editReply("番号が無効です。`!music-status`を利用してどの番号にどの曲が入っているかを確認してください。");
+            await interaction.editReply("番号が無効です。`/status`を利用してどの番号にどの曲が入っているかを確認してください。");
         }
     }
 }
