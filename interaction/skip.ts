@@ -6,6 +6,7 @@ import { VariableExistCheck } from "../variableExistCheck.js";
 export const command = new SlashCommandBuilder()
     .setName("skip")
     .setDescription("現在の曲をスキップして次の曲を再生します。")
+export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {

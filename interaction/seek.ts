@@ -13,6 +13,7 @@ export const command = new SlashCommandBuilder()
         .setDescription("時間を指定します。「2:05」「２分５秒」「125」が利用できます。")
         .setRequired(true)
     )
+export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {

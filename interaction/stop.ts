@@ -6,6 +6,7 @@ import { VariableExistCheck } from "../variableExistCheck.js";
 export const command = new SlashCommandBuilder()
     .setName("stop")
     .setDescription("再生を停止します。")
+export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {
@@ -14,7 +15,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
         if (!await variableExistCheck.voiceChannelId()) return;
-        if (await variableExistCheck.playerIsPlaying(inputData.serversDataClass)) return;
+        if (await variableExistCheck.playerIsNotPlaying(inputData.serversDataClass)) return;
         await inputData.playerSet.playerStop(guildData.guildId);
         await interaction.editReply("曲を停止しました。");
     }

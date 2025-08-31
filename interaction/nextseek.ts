@@ -11,6 +11,7 @@ export const command = new SlashCommandBuilder()
         .setName("second")
         .setDescription("時間を指定してすすめます。秒で指定します。")
     )
+export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {

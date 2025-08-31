@@ -12,6 +12,7 @@ export const command = new SlashCommandBuilder()
         .setDescription("削除したい曲の番号を指定します。")
         .setRequired(true)
     )
+export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {

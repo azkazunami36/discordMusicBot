@@ -11,9 +11,10 @@ export const command = new SlashCommandBuilder()
     .setDescription("曲を追加します。")
     .addStringOption(option => option
         .setName("text")
-        .setDescription("URLまたはVideoIDまたは検索したいタイトルを入力してください。")
+        .setDescription("音楽を追加することができます。URLまたはVideoIDまたは検索したいタイトルを入力してください。複数曲追加することは現時点ではできません。")
         .setRequired(true)
     )
+export const commandExample = "/add text:[URLまたはVideoIDまたは検索したいタイトル]";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {

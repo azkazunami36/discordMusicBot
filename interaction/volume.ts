@@ -12,6 +12,7 @@ export const command = new SlashCommandBuilder()
         .setDescription("音量を設定します。")
         .setRequired(true)
     )
+export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {

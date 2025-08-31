@@ -11,6 +11,7 @@ export const command = new SlashCommandBuilder()
         .setName("page")
         .setDescription("ページを指定します。")
     )
+export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {
@@ -19,9 +20,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!guildData) return;
         const playlist = await variableExistCheck.playlist();
         if (!playlist) return;
-        const startPlaylist = playlist[0] || {type: "videoId", body: "body"};
-        const title = startPlaylist.type === "videoId" ? (await inputData.videoCache.cacheGet(startPlaylist.body) || { title: "タイトル取得エラー(VideoID: " + startPlaylist.body + ")" }).title : startPlaylist.body;
-        let replyText = "このサーバーでのプレイリストや設定です。\n- 現在再生中: " + (playlist[0] ? title : "なし") + "\n- プレイリスト\n```\n";
+        const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
+        if (!serverData) return;
+        const startPlaylist = serverData.discord.ffmpegResourcePlayer.playing;
+        let replyText = "このサーバーでのプレイリストや設定です。\n- 現在再生中: " + (startPlaylist ? startPlaylist.type === "videoId" ? (await inputData.videoCache.cacheGet(startPlaylist.body) || { title: "タイトル取得エラー(VideoID: " + startPlaylist.body + ")" }).title : startPlaylist.body : "なし") + "\n- プレイリスト\n```\n";
         for (let i = 0; i < playlist.length; i++) {
             const playlistData = playlist[i];
             const title = playlistData.type === "videoId" ? (await inputData.videoCache.cacheGet(playlistData.body) || { title: "タイトル取得エラー(VideoID: " + playlistData.body + ")" }).title : playlistData.body;

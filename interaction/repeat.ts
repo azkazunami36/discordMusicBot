@@ -14,6 +14,7 @@ export const command = new SlashCommandBuilder()
         .addChoices({ name: "１曲リピート", value: "only" })
         .setRequired(true)
     )
+export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {

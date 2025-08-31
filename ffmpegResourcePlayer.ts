@@ -5,6 +5,7 @@ import * as DiscordVoice from "@discordjs/voice";
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
 import { ChildProcessByStdio, ChildProcessWithoutNullStreams, spawn } from "child_process";
+import { Playlist } from "./envJSON.js";
 
 export class FfmpegResourcePlayer {
     audioPath?: string;
@@ -92,5 +93,16 @@ export class FfmpegResourcePlayer {
     }
     set guildId(guildId: string) {
         this.#guildId = guildId;
+    }
+    get playing() {
+        if (!this.#playingPath) return undefined;
+        const filename = this.#playingPath.split("cache/")[1];
+        if (!filename) return undefined;
+        const videoId = filename.split(".")[0];
+        if (!videoId) return undefined;
+        return {
+            type: "videoId",
+            body: videoId
+        } as Playlist;
     }
 }
