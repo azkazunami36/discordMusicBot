@@ -68,7 +68,7 @@ export class ServersDataClass {
                         if (status === "loading") await message.edit("次の曲「" + title + "」の音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
                         if (status === "downloading") await message.edit("次の曲「" + title + "」の音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
                         if (status === "converting") await message.edit("次の曲「" + title + "」の音声ファイルを再生可能な形式に変換中...少々お待ちください..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
-                        if (status === "formatchoosing") await message.edit("次の曲「" + title + "」のYouTubeサーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
+                        if (status === "formatchoosing") await message.edit("次の曲「" + title + "」の" + (body.type ? (body.type === "youtube" ? "YouTube" : "ニコニコ動画") : "") + "サーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
                     });
                     await message.edit("次の曲「" + title + "」を再生しています。");
                 }

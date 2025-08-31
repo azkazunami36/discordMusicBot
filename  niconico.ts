@@ -1,3 +1,5 @@
+// Created by ChatGPT.
+
 export interface NicoSnapshotItem {
     // 基本
     contentId: string;

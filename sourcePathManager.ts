@@ -16,10 +16,11 @@ export const sourcePathManager = new class SourcePathManager {
             percent?: number;
         }) => void) => void;
     } = {}
-    constructor() {}
+    constructor() { }
     /** VideoIDまたは特殊なIDから音声ファイルのパスを返します。 */
     async getAudioPath(playlistData: Playlist, statusCallback?: (status: "loading" | "downloading" | "converting" | "formatchoosing" | "done", body: {
         percent?: number;
+        type?: "niconico" | "youtube"
     }) => void) {
         const statuscall = statusCallback || (st => { });
         statuscall("loading", {
@@ -35,7 +36,8 @@ export const sourcePathManager = new class SourcePathManager {
             if (result) return "./youtubeCache/" + result;
             else {
                 statuscall("formatchoosing", {
-                    percent: 15
+                    percent: 15,
+                    type: "youtube"
                 });
                 if (this.#youtubeDownloading[videoId]) {
                     // 1. もしダウンロード中だったらこの処理では処理が終わるまでの待機を待つ。
@@ -79,7 +81,8 @@ export const sourcePathManager = new class SourcePathManager {
                     // 4. もし取得できたらダウンロードをして拡張子・コンテナを修正する。
                     if (audioformat) {
                         statuscall("downloading", {
-                            percent: 30
+                            percent: 30,
+                            type: "youtube"
                         });
                         await new Promise<void>((resolve, reject) => {
                             const cp = spawn("yt-dlp", [
@@ -97,7 +100,10 @@ export const sourcePathManager = new class SourcePathManager {
 
                             cp.stdout.on("data", chunk => {
                                 const progress = parseYtDlpProgressLine(String(chunk));
-                                statuscall("downloading", { percent: 40 + ((progress?._percent || 0) / 100) * 20 });
+                                statuscall("downloading", {
+                                    percent: 40 + ((progress?._percent || 0) / 100) * 20,
+                                    type: "youtube"
+                                });
                             });
 
                             cp.stderr.on("data", message => {
@@ -115,7 +121,8 @@ export const sourcePathManager = new class SourcePathManager {
                         const cacheFilename = files.find(file => file.startsWith(videoId + "-cache."));
                         if (cacheFilename) {
                             statuscall("converting", {
-                                percent: 70
+                                percent: 70,
+                                type: "youtube"
                             });
                             const info = await new Promise<ffmpeg.FfprobeData>(resolve => ffmpeg.ffprobe("./youtubeCache/" + cacheFilename, (err, data) => resolve(data)));
                             await new Promise<void>((resolve, reject) => {
@@ -132,13 +139,15 @@ export const sourcePathManager = new class SourcePathManager {
                     delete this.#youtubeDownloading[videoId];
                 }
                 statuscall("loading", {
-                    percent: 90
+                    percent: 90,
+                    type: "youtube"
                 });
                 // 3. 再度フォルダ内を検索して、見つけたら出力。ないとundefined。
                 const files = fs.readdirSync("./youtubeCache");
                 const result = files.find(file => file.startsWith(videoId + "."));
                 statuscall("done", {
-                    percent: 100
+                    percent: 100,
+                    type: "youtube"
                 });
                 return "./youtubeCache/" + result;
             }
@@ -154,7 +163,8 @@ export const sourcePathManager = new class SourcePathManager {
             if (result) return "./niconicoCache/" + result;
             else {
                 statuscall("formatchoosing", {
-                    percent: 15
+                    percent: 15,
+                    type: "niconico"
                 });
                 if (this.#niconicoDownloading[nicovideoId]) {
                     // 1. もしダウンロード中だったらこの処理では処理が終わるまでの待機を待つ。
@@ -198,7 +208,8 @@ export const sourcePathManager = new class SourcePathManager {
                     // 4. もし取得できたらダウンロードをして拡張子・コンテナを修正する。
                     if (audioformat) {
                         statuscall("downloading", {
-                            percent: 30
+                            percent: 30,
+                            type: "niconico"
                         });
                         await new Promise<void>((resolve, reject) => {
                             const cp = spawn("yt-dlp", [
@@ -216,7 +227,10 @@ export const sourcePathManager = new class SourcePathManager {
 
                             cp.stdout.on("data", chunk => {
                                 const progress = parseYtDlpProgressLine(String(chunk));
-                                statuscall("downloading", { percent: 40 + ((progress?._percent || 0) / 100) * 20 });
+                                statuscall("downloading", {
+                                    percent: 40 + ((progress?._percent || 0) / 100) * 20,
+                                    type: "niconico"
+                                });
                             });
 
                             cp.stderr.on("data", message => {
@@ -234,7 +248,8 @@ export const sourcePathManager = new class SourcePathManager {
                         const cacheFilename = files.find(file => file.startsWith(nicovideoId + "-cache."));
                         if (cacheFilename) {
                             statuscall("converting", {
-                                percent: 70
+                                percent: 70,
+                                type: "niconico"
                             });
                             const info = await new Promise<ffmpeg.FfprobeData>(resolve => ffmpeg.ffprobe("./niconicoCache/" + cacheFilename, (err, data) => resolve(data)));
                             await new Promise<void>((resolve, reject) => {
@@ -251,13 +266,15 @@ export const sourcePathManager = new class SourcePathManager {
                     delete this.#niconicoDownloading[nicovideoId];
                 }
                 statuscall("loading", {
-                    percent: 90
+                    percent: 90,
+                    type: "niconico"
                 });
                 // 3. 再度フォルダ内を検索して、見つけたら出力。ないとundefined。
                 const files = fs.readdirSync("./niconicoCache");
                 const result = files.find(file => file.startsWith(nicovideoId + "."));
                 statuscall("done", {
-                    percent: 100
+                    percent: 100,
+                    type: "niconico"
                 });
                 return "./niconicoCache/" + result;
             }

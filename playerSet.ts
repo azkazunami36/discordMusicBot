@@ -15,7 +15,7 @@ export class PlayerSet {
     /** 
      * 再生を開始します。再生不可の時は無音でスキップします。
      */
-    async playerSetAndPlay(guildId: string, statusCallback?: (status: "loading" | "downloading" | "formatchoosing" | "converting" | "done", body: { percent?: number; }) => void) {
+    async playerSetAndPlay(guildId: string, statusCallback?: (status: "loading" | "downloading" | "formatchoosing" | "converting" | "done", body: { percent?: number; type?: "youtube" | "niconico" }) => void) {
         const statuscall = statusCallback || (st => { });
         const serverData = this.serversData[guildId];
         if (!serverData) return;

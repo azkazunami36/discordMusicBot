@@ -30,7 +30,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         envData.playlistSave(playlist);
         const videoMetaCache = new VideoMetaCache();
         const meta = await videoMetaCache.cacheGet(playlist[0]);
-        const title = (meta ? meta.title : "タイトル取得エラー(ID: " + playlist[0].body + ")")
+        const title = (meta ? meta.title : "タイトル取得エラー(ID: " + playlist[0].body + ")");
         await interaction.editReply("次の曲「" + title + "」の再生準備中...0%");
         let statusTemp: {
             status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
@@ -46,7 +46,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             if (status === "loading") await interaction.editReply("次の曲「" + title + "」の音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
             if (status === "downloading") await interaction.editReply("次の曲「" + title + "」の音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
             if (status === "converting") await interaction.editReply("次の曲「" + title + "」の音声ファイルを再生可能な形式に変換中...少々お待ちください..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
-            if (status === "formatchoosing") await interaction.editReply("次の曲「" + title + "」のYouTubeサーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
+            if (status === "formatchoosing") await interaction.editReply("次の曲「" + title + "」の" + (body.type ? (body.type === "youtube" ? "YouTube" : "ニコニコ動画") : "") + "サーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
         });
         await interaction.editReply("次の曲「" + title + "」にスキップしました。");
     }

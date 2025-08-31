@@ -51,7 +51,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             if (status === "loading") await interaction.editReply("「" + title + "」の音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
             if (status === "downloading") await interaction.editReply("「" + title + "」の音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
             if (status === "converting") await interaction.editReply("「" + title + "」の音声ファイルを再生可能な形式に変換中...少々お待ちください..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
-            if (status === "formatchoosing") await interaction.editReply("「" + title + "」のYouTubeサーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
+            if (status === "formatchoosing") await interaction.editReply("「" + title + "」の" + (body.type ? (body.type === "youtube" ? "YouTube" : "ニコニコ動画") : "") + "サーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
         });
         await interaction.editReply("「" + title + "」の再生を開始しました。");
     }
