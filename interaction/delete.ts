@@ -1,7 +1,8 @@
 import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
-import { envJSON } from "../envJSON.js";
+import { EnvData } from "../envJSON.js";
+import { VariableExistCheck } from "../variableExistCheck.js";
 
 export const command = new SlashCommandBuilder()
     .setName("delete")
@@ -14,22 +15,20 @@ export const command = new SlashCommandBuilder()
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {
-        if (!interaction.guildId) return await interaction.editReply("サーバーでこのコマンドは実行してください。正しく処理ができません。");
+        const variableExistCheck = new VariableExistCheck(interaction);
+        const guildData = await variableExistCheck.guild();
+        if (!guildData) return;
+        const playlist = await variableExistCheck.playlist();
+        if (!playlist) return;
+        if (await variableExistCheck.playlistIsEmpty()) return;
         const number = interaction.options.getNumber("number");
         if (number === null) return await interaction.editReply("番号が入力されていません。番号を入力してから再度実行してください。");
-        const playlist = (() => {
-            const playlist = envJSON(interaction.guildId, "playlist");
-            if (playlist === undefined) return envJSON(interaction.guildId, "playlist", "[]");
-            return playlist;
-        })();
-        if (!playlist) return await interaction.editReply("謎のエラーです。管理者には「プレイリストの処理でエラーが発生した」とお伝えください。");
-        const playlistJSON: string[] = JSON.parse(playlist);
-        if (playlistJSON.length == 0) return await interaction.editReply("プレイリストが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。");
-        if (playlistJSON[number - 1]) {
-            const videoId = playlistJSON.splice(number - 1, 1)[0];
-            envJSON(interaction.guildId, "playlist", JSON.stringify(playlistJSON));
-            const cache = await inputData.videoCache.cacheGet(videoId);
-            await interaction.editReply("曲「" + (cache ? cache.title : "タイトル取得エラー(VideoID: " + videoId + ")") + "」を削除しました。(VideoId: " + videoId + ")");
+        if (playlist[number - 1]) {
+            const playlistData = playlist.splice(number - 1, 1)[0];
+            const envData = new EnvData(guildData.guildId);
+            envData.playlistSave(playlist);
+            const title = playlistData.type === "videoId" ? (await inputData.videoCache.cacheGet(playlistData.body) || { title: "タイトル取得エラー(VideoID: " + playlistData.body + ")" }).title : playlistData.body;
+            await interaction.editReply("曲「" + title + "」を削除しました。" + (playlistData.type === "videoId" ? ("(VideoId: " + playlistData.body + ")"): "(ID: " + playlistData.body + ")"));
         } else {
             await interaction.editReply("番号が無効です。`/status`を利用してどの番号にどの曲が入っているかを確認してください。");
         }

@@ -5,11 +5,11 @@ import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 
 export const command = new SlashCommandBuilder()
-    .setName("backseek")
-    .setDescription("再生位置を１０秒前にずらします。")
+    .setName("nextseek")
+    .setDescription("再生位置を１０秒後にすすめます。")
     .addNumberOption(option => option
         .setName("second")
-        .setDescription("時間を指定して巻き戻します。秒で指定します。")
+        .setDescription("時間を指定してすすめます。秒で指定します。")
     )
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
@@ -22,8 +22,8 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!serverData) return;
         if (await variableExistCheck.playerIsNotPlaying(inputData.serversDataClass)) return;
         const second = interaction.options.getNumber("second") || 10;
-        await serverData.discord.ffmpegResourcePlayer.seek(serverData.discord.ffmpegResourcePlayer.playtime - second);
-        interaction.editReply(second + "秒巻き戻しました。");
+        await serverData.discord.ffmpegResourcePlayer.seek(serverData.discord.ffmpegResourcePlayer.playtime + second);
+        interaction.editReply(second + "秒すすめました。");
     }
 }
 

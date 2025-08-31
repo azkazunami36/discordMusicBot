@@ -1,4 +1,4 @@
-import { envJSON } from "./envJSON.js";
+import { EnvData } from "./envJSON.js";
 import * as DiscordVoice from "@discordjs/voice";
 import { Client } from "discord.js";
 
@@ -22,25 +22,20 @@ export class ServersDataClass {
             if (this.playSet === undefined) return;
             const serverData = this.serversData[guildId];
             if (!serverData || !serverData.discord.calledChannel) return;
-            const playlist = envJSON(guildId, "playlist");
-            if (!playlist) return;
-            const playlistJSON: string[] = JSON.parse(playlist);
-            const playType = Number(envJSON(guildId, "playType"));
-            if ((playType && playType === 1 && playlistJSON.length > 1) || (playType && (playType === 2 || playType === 3) && playlistJSON.length > 0)) {
-                const playType = Number(envJSON(guildId, "playType"));
+            const envData = new EnvData(guildId);
+            const playlist = envData.playlistGet();
+            const playType = envData.playType;
+            if ((playType && playType === 1 && playlist.length > 1) || (playType && (playType === 2 || playType === 3) && playlist.length > 0)) {
                 switch (playType) {
                     case 1: {
-                        playlistJSON.shift();
-                        envJSON(guildId, "playlist", JSON.stringify(playlistJSON));
+                        playlist.shift();
+                        envData.playlistSave(playlist);
                         break;
                     }
                     case 2: {
-                        const videoId = playlistJSON.shift();
-                        if (videoId) playlistJSON.push(videoId);
-                        envJSON(guildId, "playlist", JSON.stringify(playlistJSON));
-                        break;
-                    }
-                    case 3: {
+                        const videoId = playlist.shift();
+                        if (videoId) playlist.push(videoId);
+                        envData.playlistSave(playlist);
                         break;
                     }
                 }

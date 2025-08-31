@@ -61,7 +61,6 @@ export class FfmpegResourcePlayer {
         if (this.#ffprobeStreamInfo === undefined) return;
         this.#playingPath = this.audioPath;
         const audioStreamInfo = this.#ffprobeStreamInfo;
-        audioStreamInfo.duration;
         await this.#audioPlay(0);
     };
     async stop() {
@@ -72,11 +71,19 @@ export class FfmpegResourcePlayer {
             this.#spawn = undefined;
         }
     }
-    async seek(seconds: string) {
-        
+    async seek(seconds: number) {
+        if (seconds >= this.duration) seconds = this.duration - 1;
+        if (seconds <= 0) seconds = 0;
+        this.#seekmargen = seconds;
+        this.#audioPlay(seconds);
     }
+    /** 現在の再生時間を出力します。msではなくsです。 */
     get playtime() {
-        return this.#resource?.playbackDuration;
+        return this.#resource?.playbackDuration !== undefined ? this.#seekmargen + (this.#resource.playbackDuration / 1000) : 0;
+    }
+    /** 再生中の曲の長さを出力します。 */
+    get duration() {
+        return Number(this.#ffprobeStreamInfo?.duration) || 0;
     }
     get player() { return this.#player; };
     set volume(vol: number) {

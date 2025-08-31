@@ -1,8 +1,7 @@
-import fs from "fs";
-
 import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
 import { InteractionInputData } from "../interface.js";
-import { envJSON } from "../envJSON.js";
+import { EnvData } from "../envJSON.js";
+import { VariableExistCheck } from "../variableExistCheck.js";
 
 export const command = new SlashCommandBuilder()
     .setName("repeat")
@@ -18,10 +17,12 @@ export const command = new SlashCommandBuilder()
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {
-        if (!interaction.guildId) return await interaction.editReply("サーバーでこのコマンドは実行してください。正しく処理ができません。");
+        const variableExistCheck = new VariableExistCheck(interaction);
+        const guildData = await variableExistCheck.guild();
+        if (!guildData) return;
         const mode = interaction.options.getString("mode");
         if (mode === null) return await interaction.editReply("リピートモードが選択されていません。選択してからもう一度やり直してください。");
-        let num = 0;
+        let num: 1 | 2 | 3;
         switch (mode) {
             case "off": {
                 await interaction.editReply("リピートをオフにしました。");
@@ -42,6 +43,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 return await interaction.editReply("正しい選択肢が入力されていません。入力してからもう一度やり直してください。");
             }
         }
-        envJSON(interaction.guildId, "playType", String(num));
+        const envData = new EnvData(guildData.guildId);
+        envData.playType = num;
     }
 }

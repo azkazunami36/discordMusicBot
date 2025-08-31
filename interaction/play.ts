@@ -1,8 +1,8 @@
-import { Interaction, SlashCommandBuilder, CacheType, GuildMember } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
 
 import { InteractionInputData } from "../interface.js";
-import { envJSON } from "../envJSON.js";
+import { VariableExistCheck } from "../variableExistCheck.js";
 
 export const command = new SlashCommandBuilder()
     .setName("play")
@@ -11,27 +11,20 @@ export const command = new SlashCommandBuilder()
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {
         // 1. 必要な変数があるかチェック
-        if (!interaction.guildId || !interaction.guild) return await interaction.editReply("サーバーでこのコマンドは実行してください。正しく処理ができません。");
-        if (!interaction.member) return await interaction.editReply("謎のエラーです。メンバーが取得できませんでした。");
-        const playlist = (() => {
-            const playlist = envJSON(interaction.guildId, "playlist");
-            if (playlist === undefined) return envJSON(interaction.guildId, "playlist", "[]");
-            return playlist;
-        })();
-        if (!playlist) return await interaction.editReply("謎のエラーです。管理者には「プレイリストの処理でエラーが発生した」とお伝えください。");
-        const playlistJSON: string[] = JSON.parse(playlist);
-        if (playlistJSON.length == 0) return await interaction.editReply("プレイリストが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。");
-        const vchannelId = (interaction.member as GuildMember).voice.channelId;
-        if (!vchannelId) return await interaction.editReply("くぁwせdrftgyふじこlp。ボイチャに入ってないとどこに入ればいいかわかりません。できればボイチャ入っててください。");
-        if (!inputData.serversDataClass.serversData[interaction.guildId]) inputData.serversDataClass.serverDataInit(interaction.guildId);
-        const serverData = inputData.serversDataClass.serversData[interaction.guildId];
-        if (serverData === undefined) return await interaction.editReply("謎のエラーです。管理者には「サーバーデータの処理に失敗」とお伝えください。");
-        if (serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing) return await interaction.editReply("すでに再生中です。`/help`で使い方をみることができます。");
+        const variableExistCheck = new VariableExistCheck(interaction);
+        if (await variableExistCheck.playlistIsEnpty()) return;
+        if (await variableExistCheck.playerIsPlaying(inputData.serversDataClass)) return;
+        const guildData = await variableExistCheck.guild();
+        if (!guildData) return;
+        const vchannelId = await variableExistCheck.voiceChannelId();
+        if (!vchannelId) return;
+        const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
+        if (!serverData) return;
         await interaction.editReply("VCの状態をチェック中...");
-        const oldConnection = DiscordVoice.getVoiceConnection(interaction.guildId);
+        const oldConnection = DiscordVoice.getVoiceConnection(guildData.guildId);
         oldConnection?.disconnect();
         oldConnection?.destroy();
-        const connection = DiscordVoice.joinVoiceChannel({ channelId: vchannelId, guildId: interaction.guildId, adapterCreator: interaction.guild.voiceAdapterCreator });
+        const connection = DiscordVoice.joinVoiceChannel({ channelId: vchannelId, guildId: guildData.guildId, adapterCreator: guildData.guild.voiceAdapterCreator });
         await DiscordVoice.entersState(connection, DiscordVoice.VoiceConnectionStatus.Ready, 10000);
         connection.subscribe(serverData.discord.ffmpegResourcePlayer.player);
         serverData.discord.calledChannel = interaction.channelId;
@@ -40,7 +33,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             body: { percent?: number; };
         }
         let statuscallTime: number = Date.now();
-        await inputData.playerSet.playerSetAndPlay(interaction.guildId, async (status, body) => {
+        await inputData.playerSet.playerSetAndPlay(guildData.guildId, async (status, body) => {
             const temp = { status, body }
             if (statusTemp && statusTemp === temp) return;
             if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
@@ -52,7 +45,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             if (status === "formatchoosing") await interaction.editReply("YouTubeサーバーに保管されたフォーマットの調査中...");
         });
         await interaction.editReply("再生を開始しました。");
-
     }
 }
 

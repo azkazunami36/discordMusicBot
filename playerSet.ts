@@ -1,6 +1,6 @@
 import * as DiscordVoice from "@discordjs/voice";
 
-import { envJSON } from "./envJSON.js";
+import { EnvData } from "./envJSON.js";
 import { sourcePathManager } from "./sourcePathManager.js";
 import { ServersData } from "./interface.js";
 import { FfmpegResourcePlayer } from "./ffmpegResourcePlayer.js";
@@ -21,15 +21,14 @@ export class PlayerSet {
         if (!serverData) return;
         const connection = DiscordVoice.getVoiceConnection(guildId);
         if (!connection) return;
-        const playlist = envJSON(guildId, "playlist");
-        if (!playlist) return;
-        const playlistJSON: string[] = JSON.parse(playlist);
+        const envData = new EnvData(guildId);
+        const playlist = envData.playlistGet();
         if (!serverData.discord.ffmpegResourcePlayer) return;
         // 2. 再生中だったら一度停止。
         if (serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing)
             await serverData.discord.ffmpegResourcePlayer.stop();
-        serverData.discord.ffmpegResourcePlayer.audioPath = "./cache/" + await sourcePathManager.getAudioPath(playlistJSON[0], statuscall);
-        const volume = envJSON(guildId, "volume");
+        serverData.discord.ffmpegResourcePlayer.audioPath = "./cache/" + await sourcePathManager.getAudioPath(playlist[0], statuscall);
+        const volume = envData.volume;
         serverData.discord.ffmpegResourcePlayer.volume = (volume ? Number(volume) : 100) / 750;
         serverData.discord.ffmpegResourcePlayer.guildId = guildId;
         await serverData.discord.ffmpegResourcePlayer.play();

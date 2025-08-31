@@ -4,7 +4,7 @@ import fs from "fs";
 import "dotenv/config";
 import { Writable } from "stream";
 
-import { envJSON } from "./envJSON.js";
+import { EnvData } from "./envJSON.js";
 import { videoCache } from "./videoMetaCache.js";
 import { PlayerSet } from "./playerSet.js";
 import { ServersDataClass } from "./serversData.js";
@@ -46,17 +46,26 @@ const serversData = serversDataClass.serversData;
 /** サーバーに記録されたプレイリストの内容をセットしたり、プレイヤーを設定したりするのを自動で行います。 */
 const playerSet = new PlayerSet(serversData);
 serversDataClass.playSet = playerSet;
-const { playerSetAndPlay, playerStop } = playerSet;
+const { playerSetAndPlay } = playerSet;
+
+const runedServerTime: { guildId: string; runedTime: number; }[] = []
 
 client.on(Discord.Events.InteractionCreate, async interaction => {
     if (!interaction.isCommand()) return;
-    if (interaction.guildId) {
-        const callchannelId = envJSON(interaction.guildId, "callchannelId");
-        if (callchannelId && callchannelId != interaction.channelId) return;
-    }
-    const inputData: InteractionInputData = { serversDataClass, videoCache, playerSet };
     const data = interactionFuncs.find(d => d.command.name === interaction.commandName)
     if (data) {
+        if (interaction.guildId) {
+            const envData = new EnvData(interaction.guildId);
+            const callchannelId = envData.callchannelId;
+            if (callchannelId && callchannelId != interaction.channelId) return;
+            if (!runedServerTime.find(data => data.guildId === interaction.guildId)) runedServerTime.push({ guildId: interaction.guildId, runedTime: 0 });
+            const runed = runedServerTime.find(data => data.guildId === interaction.guildId);
+            if (runed) {
+                if (Date.now() - runed.runedTime < 5000) return interaction.reply("コマンドは５秒に1回までです。もう少しお待ちください。");
+                runed.runedTime = Date.now();
+            }
+        }
+        const inputData: InteractionInputData = { serversDataClass, videoCache, playerSet };
         await interaction.reply("コマンド「" + data.command.name + "」の処理を開始しています...");
         await data.execute(interaction, inputData);
     }
@@ -112,55 +121,50 @@ client.on(Discord.Events.MessageCreate, async message => {
     if (!serversData[message.guildId]) serversDataClass.serverDataInit(message.guildId);
     const serverData = serversData[message.guildId];
     if (!serverData) return message.reply("ごめん！！エラーっす！www");
-    const callchannelId = envJSON(message.guildId, "callchannelId");
+    const envData = new EnvData(message.guildId);
+    const callchannelId = envData.callchannelId;
     if (callchannelId && callchannelId != message.channelId) return;
-    const playlist = (() => {
-        const playlist = envJSON(message.guildId, "playlist");
-        if (playlist === undefined) return envJSON(message.guildId, "playlist", "[]");
-        return playlist;
-    })();
-    if (!playlist) return message.reply("謎のエラーです。管理者には「プレイリストの処理でエラーが発生した」とお伝えください。");
-    const playlistJSON: string[] = JSON.parse(playlist);
-    const originalFiles = (() => {
-        const originalFiles = envJSON(message.guildId, "originalFiles");
-        if (originalFiles === undefined) return envJSON(message.guildId, "originalFiles", "[]");
-        return originalFiles;
-    })();
-    if (!originalFiles) return message.reply("謎のエラーです。管理者には「オリジナルファイルデータの取得でエラーが発生した」とお伝えください。");
-    const originalFilesJSON: {
-        callName: string;
-        fileName: string;
-    }[] = JSON.parse(originalFiles);
+    const playlist = envData.playlistGet();
+    const originalFiles = envData.originalFilesGet();
     if (message.content === "VCの皆、成仏せよ") {
         if (!message.member.voice.channelId) return;
+        if (!runedServerTime.find(data => data.guildId === message.guildId)) runedServerTime.push({ guildId: message.guildId, runedTime: 0 });
+        const runed = runedServerTime.find(data => data.guildId === message.guildId);
+        if (runed) {
+            if (Date.now() - runed.runedTime < 5000) return message.reply("コマンドは５秒に1回までです。もう少しお待ちください。");
+            runed.runedTime = Date.now();
+        }
         if ((joubutuNumber++) >= bt.length - 1) joubutuNumber = 0;
         const { name, videoId } = bt[joubutuNumber];
-        const deletedVideoId = playlistJSON.shift();
-        playlistJSON.unshift(videoId);
-        envJSON(message.guildId, "playlist", JSON.stringify(playlistJSON));
+        const deletedVideoId = playlist.shift();
+        playlist.unshift({
+            type: "videoId",
+            body: videoId
+        });
+        envData.playlistSave(playlist);
         const connection = DiscordVoice.joinVoiceChannel({ channelId: message.member.voice.channelId, guildId: message.guildId, adapterCreator: message.guild.voiceAdapterCreator });
         await DiscordVoice.entersState(connection, DiscordVoice.VoiceConnectionStatus.Ready, 10000);
         connection.subscribe(serverData.discord.ffmpegResourcePlayer.player);
         serverData.discord.calledChannel = message.channelId;
         const number = 1145141919;
-        const volume = envJSON(message.guildId, "volume");
-        envJSON(message.guildId, "volume", String(number));
+        const volume = envData.volume;
+        envData.volume = number;
         await playerSetAndPlay(message.guildId);
         await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。プレイリストや設定は変更していないため、次の曲からは音量は" + volume + "%に戻ります。");
-        envJSON(message.guildId, "volume", volume);
-        playlistJSON.shift();
-        if (deletedVideoId) playlistJSON.unshift(deletedVideoId);
-        envJSON(message.guildId, "playlist", JSON.stringify(playlistJSON));
+        envData.volume = volume;
+        playlist.shift();
+        if (deletedVideoId) playlist.unshift(deletedVideoId);
+        envData.playlistSave(playlist);
         return;
     }
     if (!message.content.startsWith("!music") || message.author.bot || callchannelId) return;
     if (message.content.startsWith("!music-callch")) {
         const channelId = message.content.slice(14, message.content.length);
         if (message.guild?.channels.cache.get(channelId)) {
-            envJSON(message.guildId, "callchannelId", channelId);
+            envData.callchannelId = channelId
             message.reply("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。");
         } else {
-            envJSON(message.guildId, "callchannelId", "");
+            envData.callchannelId = "";
             message.reply("どのチャンネルでもコマンドが利用できるように設定しました。");
         }
     }
@@ -168,7 +172,7 @@ client.on(Discord.Events.MessageCreate, async message => {
         const title = message.content.slice(15, message.content.length).split(/\s/g)[0];
         if (!title) return message.reply("曲名を指定してください。");
         if (title.length < 2) return message.reply("曲名は２文字以上にしてください。");
-        if (originalFilesJSON.find(file => file.callName == title)) return message.reply("すでにその曲名は存在しています。他の名前を使用するか、数字を後に足すなどを行なってください。");
+        if (envData.originalFilesGet().find(file => file.callName == title)) return message.reply("すでにその曲名は存在しています。他の名前を使用するか、数字を後に足すなどを行なってください。");
         const file = message.attachments.first();
         if (!file) return message.reply("ファイルが見つかりませんでした。ファイルを選んでください。");
         const res = await fetch(file.url);
@@ -178,7 +182,7 @@ client.on(Discord.Events.MessageCreate, async message => {
         // WHATWG ReadableStream → WHATWG WritableStream (Node層へブリッジ)
         await res.body.pipeTo(Writable.toWeb(stream));
 
-        envJSON(message.guildId, "originalFiles");
+        envData.originalFilesGet();
     }
 })
 
