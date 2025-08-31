@@ -133,7 +133,6 @@ export class VideoMetaCache {
         if (data) return data
         else {
             const result = await searchNicoVideo(contentId);
-            console.log(result, "result")
             if (result && result[0]) {
                 json.niconico.push(result[0]);
                 fs.writeFileSync("videoInfoCache.json", JSON.stringify(json));

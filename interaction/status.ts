@@ -24,13 +24,13 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!serverData) return;
         const startPlaylist = serverData.discord.ffmpegResourcePlayer.playing;
         const videoMetaCache = new VideoMetaCache();
-        const title = startPlaylist ? ((await videoMetaCache.cacheGet(startPlaylist))?.title || "タイトル取得エラー(ID: " + startPlaylist.body + ")") : "なし";
-        let replyText = "このサーバーでのプレイリストや設定です。\n- 現在再生中: " + title + "\n- プレイリスト\n```\n";
+        const title = startPlaylist ? ((await videoMetaCache.cacheGet(startPlaylist))?.title || "タイトル取得エラー") : "なし";
+        let replyText = "このサーバーでのプレイリストや設定です。\n- 現在再生中: " + title + "(ID: " + startPlaylist?.body + ")" + "\n- プレイリスト\n```\n";
         for (let i = 0; i < playlist.length; i++) {
             const playlistData = playlist[i];
             const videoMetaCache = new VideoMetaCache();
-            const title = playlistData ? ((await videoMetaCache.cacheGet(playlistData))?.title || "タイトル取得エラー(ID: " + playlistData.body + ")") : "なし";
-            replyText += (i + 1) + ". " + title + "\n";
+            const title = playlistData ? ((await videoMetaCache.cacheGet(playlistData))?.title || "タイトル取得エラー") : "なし";
+            replyText += (i + 1) + ". " + title + "(ID: " + playlistData.body + ")" + "\n";
         }
         if (playlist.length == 0) replyText += "プレイリストが空です。";
         const envData = new EnvData(guildData.guildId);

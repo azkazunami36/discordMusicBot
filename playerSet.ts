@@ -38,10 +38,10 @@ export class PlayerSet {
     async playerStop(guildId: string) {
         const serverData = this.serversData[guildId];
         if (!serverData) return;
-        const connection = DiscordVoice.getVoiceConnection(guildId);
-        if (!connection) return;
         serverData.discord.calledChannel = undefined;
         await serverData.discord.ffmpegResourcePlayer.stop();
+        const connection = DiscordVoice.getVoiceConnection(guildId);
+        if (!connection) return;
         connection.destroy();
     }
 

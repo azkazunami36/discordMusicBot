@@ -6,7 +6,14 @@ import { ChildProcessByStdio, spawn } from "child_process";
 import { Playlist } from "./envJSON.js";
 
 export class FfmpegResourcePlayer {
-    audioPath?: string;
+    #audioPath?: string;
+    set audioPath(audioPath: string | undefined) {
+        this.#audioPath = audioPath;
+        this.#ffprobeStreamInfo = undefined;
+    }
+    get audioPath() {
+        return this.#audioPath;
+    }
     #playingPath?: string;
     #spawn?: ChildProcessByStdio<null, Stream.Readable, Stream.Readable>;
     #resource?: DiscordVoice.AudioResource;
@@ -116,13 +123,13 @@ export class FfmpegResourcePlayer {
     }
     get playing() {
         if (!this.#playingPath) return undefined;
-        const filename = this.#playingPath.split("cache/")[1];
+        const filename = this.#playingPath.split("Cache/")[1];
         if (!filename) return undefined;
-        const videoId = filename.split(".")[0];
-        if (!videoId) return undefined;
+        const id = filename.split(".")[0];
+        if (!id) return undefined;
         return {
-            type: "videoId",
-            body: videoId
+            type: id.startsWith("sm") ? "nicovideoId" : "videoId",
+            body: id
         } as Playlist;
     }
 }

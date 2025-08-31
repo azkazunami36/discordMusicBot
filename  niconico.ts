@@ -61,11 +61,9 @@ export async function searchNicoVideo(
                 };
                 return [item];
             } else {
-                console.error("oEmbed HTTP error:", oRes.status, oRes.statusText);
             }
             // oEmbed が失敗した場合のみ、従来のスナップショット API へフォールバック
         } catch (e) {
-            console.error("oEmbed fetch error:", e);
         }
 
         // 追加のフォールバック: getthumbinfo XML API
@@ -82,7 +80,6 @@ export async function searchNicoVideo(
                 }
             });
             if (!xmlRes.ok) {
-                console.error("getthumbinfo HTTP error:", xmlRes.status, xmlRes.statusText);
                 // 失敗したらスナップショットAPIへフォールバック（下で処理）
             } else {
                 const xml = await xmlRes.text();
@@ -121,10 +118,144 @@ export async function searchNicoVideo(
                 return [item];
             }
         } catch (e) {
-            console.error("getthumbinfo fetch error:", e);
         }
     }
 
+    // --- キーワード検索はまず RSS を優先（Snapshot は 403/400 が多く不安定のため） ---
+    try {
+        const rssUrl = `https://www.nicovideo.jp/search/${encodeURIComponent(query)}?rss=2.0`;
+        const rssRes = await fetch(rssUrl, {
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) NodeFetch/1.0 Chrome/123.0.0.0 Safari/537.36",
+                "Accept": "application/rss+xml, application/xml, text/xml, */*",
+                "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+                "Referer": "https://www.nicovideo.jp/",
+                "Accept-Encoding": "gzip, deflate, br",
+            },
+        });
+        if (rssRes.ok) {
+            const xml = await rssRes.text();
+            const items: NicoSnapshotItem[] = [];
+            const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
+            let count = 0;
+            for (const m of itemMatches) {
+                const block = m[1];
+                const get = (tag: string) => {
+                    const mm = block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+                    return mm ? mm[1] : undefined;
+                };
+                const decode = (s?: string) =>
+                    s?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                const title = decode(get("title")) ?? "";
+                const link = get("link") || "";
+                const desc = decode(get("description"));
+                const thumb = (block.match(/<nicovideo:thumbnail_url>(.*?)<\/nicovideo:thumbnail_url>/)?.[1]);
+                const lenStr = (block.match(/<nicovideo:length>(.*?)<\/nicovideo:length>/)?.[1]);
+                const viewsStr = (block.match(/<nicovideo:viewCounter>(.*?)<\/nicovideo:viewCounter>/)?.[1]);
+                const comStr = (block.match(/<nicovideo:commentCounter>(.*?)<\/nicovideo:commentCounter>/)?.[1]);
+                const myStr = (block.match(/<nicovideo:mylistCounter>(.*?)<\/nicovideo:mylistCounter>/)?.[1]);
+                const start = (block.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]);
+                const idMatch = link.match(/watch\/((?:sm|nm|so)[1-9]\d*)/);
+                if (!idMatch) continue;
+                const contentId = idMatch[1];
+                let lengthSeconds: number | undefined;
+                if (lenStr) {
+                    const p = lenStr.split(":").map(Number);
+                    if (p.length === 2) lengthSeconds = p[0] * 60 + p[1];
+                    else if (p.length === 3) lengthSeconds = p[0] * 3600 + p[1] * 60 + p[2];
+                }
+                const item: NicoSnapshotItem = {
+                    contentId,
+                    title,
+                    description: desc,
+                    thumbnailUrl: thumb,
+                    viewCounter: viewsStr ? Number(viewsStr) : undefined,
+                    commentCounter: comStr ? Number(comStr) : undefined,
+                    mylistCounter: myStr ? Number(myStr) : undefined,
+                    lengthSeconds,
+                    startTime: start,
+                };
+                items.push(item);
+                if (++count >= 5) break;
+            }
+            if (items.length > 0) {
+                return items;
+            } else {
+            }
+        } else {
+        }
+    } catch (e) {
+    }
+
+    // --- TAG RSS: 「タグ検索」でRSSを試す（通常検索RSSが0件の環境向け） ---
+    try {
+        const tagRssUrl = `https://www.nicovideo.jp/tag/${encodeURIComponent(query)}?rss=2.0&sort=h&order=d`;
+        const tagRes = await fetch(tagRssUrl, {
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) NodeFetch/1.0 Chrome/123.0.0.0 Safari/537.36",
+                "Accept": "application/rss+xml, application/xml, text/xml, */*",
+                "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+                "Referer": "https://www.nicovideo.jp/",
+                "Accept-Encoding": "gzip, deflate, br",
+            },
+        });
+        if (tagRes.ok) {
+            const xml = await tagRes.text();
+            const items: NicoSnapshotItem[] = [];
+            const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
+            let count = 0;
+            for (const m of itemMatches) {
+                const block = m[1];
+                const get = (tag: string) => {
+                    const mm = block.match(new RegExp(`<${tag}>([\\s\\S]*?)<\/${tag}>`));
+                    return mm ? mm[1] : undefined;
+                };
+                const decode = (s?: string) =>
+                    s?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                const title = decode(get("title")) ?? "";
+                const link = get("link") || "";
+                const desc = decode(get("description"));
+                const thumb = (block.match(/<nicovideo:thumbnail_url>(.*?)<\/nicovideo:thumbnail_url>/)?.[1]);
+                const lenStr = (block.match(/<nicovideo:length>(.*?)<\/nicovideo:length>/)?.[1]);
+                const viewsStr = (block.match(/<nicovideo:viewCounter>(.*?)<\/nicovideo:viewCounter>/)?.[1]);
+                const comStr = (block.match(/<nicovideo:commentCounter>(.*?)<\/nicovideo:commentCounter>/)?.[1]);
+                const myStr = (block.match(/<nicovideo:mylistCounter>(.*?)<\/nicovideo:mylistCounter>/)?.[1]);
+                const start = (block.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]);
+                const idMatch = link.match(/watch\/((?:sm|nm|so)[1-9]\d*)/);
+                if (!idMatch) continue;
+                const contentId = idMatch[1];
+                let lengthSeconds: number | undefined;
+                if (lenStr) {
+                    const p = lenStr.split(":").map(Number);
+                    if (p.length === 2) lengthSeconds = p[0] * 60 + p[1];
+                    else if (p.length === 3) lengthSeconds = p[0] * 3600 + p[1] * 60 + p[2];
+                }
+                const item: NicoSnapshotItem = {
+                    contentId,
+                    title,
+                    description: desc,
+                    thumbnailUrl: thumb,
+                    viewCounter: viewsStr ? Number(viewsStr) : undefined,
+                    commentCounter: comStr ? Number(comStr) : undefined,
+                    mylistCounter: myStr ? Number(myStr) : undefined,
+                    lengthSeconds,
+                    startTime: start,
+                };
+                items.push(item);
+                if (++count >= 5) break;
+            }
+            if (items.length > 0) {
+                return items;
+            } else {
+            }
+        } else {
+        }
+    } catch (e) {
+    }
+
+    /*
     // まず試すエンドポイントとフォールバック（403 対策）
     const endpoints = [
         "https://api.search.nicovideo.jp/api/v2/snapshot/video/contents/search",
@@ -135,7 +266,8 @@ export async function searchNicoVideo(
     const headers = {
         "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) NodeFetch/1.0 Chrome/123.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
+        "Accept": "application/json, text/plain, *\/*
+",
         "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
         "Referer": "https://www.nicovideo.jp/",
         "Accept-Encoding": "gzip, deflate, br",
@@ -182,7 +314,206 @@ export async function searchNicoVideo(
             continue;
         }
     }
+    */
 
+    // --- Fallback: RSS検索（HTMLブロックの回避策）---
+    try {
+        const rssUrl = `https://www.nicovideo.jp/search/${encodeURIComponent(query)}?rss=2.0`;
+        const rssRes = await fetch(rssUrl, {
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) NodeFetch/1.0 Chrome/123.0.0.0 Safari/537.36",
+                "Accept": "application/rss+xml, application/xml, text/xml, */*",
+                "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+                "Referer": "https://www.nicovideo.jp/",
+                "Accept-Encoding": "gzip, deflate, br",
+            },
+        });
+        if (!rssRes.ok) {
+        } else {
+            const xml = await rssRes.text();
+            // RSS項目抽出
+            const items: NicoSnapshotItem[] = [];
+            // 単純な item 抽出（先頭数件）
+            const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
+            let count = 0;
+            for (const m of itemMatches) {
+                const block = m[1];
+                const get = (tag: string) => {
+                    const mm = block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+                    return mm ? mm[1] : undefined;
+                };
+                const decode = (s?: string) =>
+                    s?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                const title = decode(get("title")) ?? "";
+                const link = get("link") || "";
+                const desc = decode(get("description"));
+                const thumb = (block.match(/<nicovideo:thumbnail_url>(.*?)<\/nicovideo:thumbnail_url>/)?.[1]);
+                const lenStr = (block.match(/<nicovideo:length>(.*?)<\/nicovideo:length>/)?.[1]);
+                const viewsStr = (block.match(/<nicovideo:viewCounter>(.*?)<\/nicovideo:viewCounter>/)?.[1]);
+                const comStr = (block.match(/<nicovideo:commentCounter>(.*?)<\/nicovideo:commentCounter>/)?.[1]);
+                const myStr = (block.match(/<nicovideo:mylistCounter>(.*?)<\/nicovideo:mylistCounter>/)?.[1]);
+                const start = (block.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]);
+                const idMatch = link.match(/watch\/((?:sm|nm|so)[1-9]\d*)/);
+                if (!idMatch) continue;
+                const contentId = idMatch[1];
+                let lengthSeconds: number | undefined;
+                if (lenStr) {
+                    const p = lenStr.split(":").map(Number);
+                    if (p.length === 2) lengthSeconds = p[0] * 60 + p[1];
+                    else if (p.length === 3) lengthSeconds = p[0] * 3600 + p[1] * 60 + p[2];
+                }
+                const item: NicoSnapshotItem = {
+                    contentId,
+                    title,
+                    description: desc,
+                    thumbnailUrl: thumb,
+                    viewCounter: viewsStr ? Number(viewsStr) : undefined,
+                    commentCounter: comStr ? Number(comStr) : undefined,
+                    mylistCounter: myStr ? Number(myStr) : undefined,
+                    lengthSeconds,
+                    startTime: start,
+                };
+                items.push(item);
+                if (++count >= 5) break; // 最大5件
+            }
+            if (items.length > 0) {
+                return items;
+            } else {
+            }
+        }
+    } catch (e) {
+    }
+
+    // --- Fallback(2): HTML検索ページを直接パースして watch ID を抽出 ---
+    try {
+        const htmlUrl = `https://www.nicovideo.jp/search/${encodeURIComponent(query)}?page=1`;
+        const htmlRes = await fetch(htmlUrl, {
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) NodeFetch/1.0 Chrome/123.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+                "Referer": "https://www.nicovideo.jp/",
+                "Accept-Encoding": "gzip, deflate, br",
+            },
+        });
+        if (htmlRes.ok) {
+            const html = await htmlRes.text();
+            // 1) aタグの href から抽出
+            const idSet = new Set<string>();
+            const reHref = /href=["']\/?watch\/(?:\?reload=\d+&)?((?:sm|nm|so)[1-9]\d*)["']/g;
+            let m1: RegExpExecArray | null;
+            while ((m1 = reHref.exec(html)) && idSet.size < 12) idSet.add(m1[1]);
+
+            // 2) JSON埋め込み（contentId/watchId）から抽出
+            const reJson1 = /"contentId":"((?:sm|nm|so)[1-9]\d*)"/g;
+            let m2: RegExpExecArray | null;
+            while ((m2 = reJson1.exec(html)) && idSet.size < 12) idSet.add(m2[1]);
+
+            const reJson2 = /"watchId":"((?:sm|nm|so)[1-9]\d*)"/g;
+            let m3: RegExpExecArray | null;
+            while ((m3 = reJson2.exec(html)) && idSet.size < 12) idSet.add(m3[1]);
+
+            // 3) data-attribute（例: data-content-id）から抽出
+            const reData = /data-(?:content-id|gtm-content-id)=["']((?:sm|nm|so)[1-9]\d*)["']/g;
+            let m4: RegExpExecArray | null;
+            while ((m4 = reData.exec(html)) && idSet.size < 12) idSet.add(m4[1]);
+
+
+            // 見つかった ID からメタ取得（oEmbed→getthumbinfo の順）
+            const results: NicoSnapshotItem[] = [];
+            for (const id of idSet) {
+                // 1) oEmbed
+                try {
+                    const oembedUrl = `https://www.nicovideo.jp/oembed?url=${encodeURIComponent(`https://www.nicovideo.jp/watch/${id}`)}&format=json`;
+                    const oRes = await fetch(oembedUrl, {
+                        headers: {
+                            "User-Agent":
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) NodeFetch/1.0 Chrome/123.0.0.0 Safari/537.36",
+                            "Accept": "application/json, text/plain, */*",
+                            "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+                            "Referer": "https://www.nicovideo.jp/",
+                            "Accept-Encoding": "gzip, deflate, br"
+                        }
+                    });
+                    if (oRes.ok) {
+                        const ojson = await oRes.json() as any;
+                        results.push({
+                            contentId: id,
+                            title: typeof ojson.title === "string" ? ojson.title : "",
+                            description: typeof ojson.description === "string" ? ojson.description : undefined,
+                            thumbnailUrl: typeof ojson.thumbnail_url === "string" ? ojson.thumbnail_url : undefined,
+                            userNickname: typeof ojson.author_name === "string" ? ojson.author_name : undefined,
+                            channelName: typeof ojson.provider_name === "string" ? ojson.provider_name : undefined,
+                        });
+                        continue;
+                    } else {
+                    }
+                } catch (e) {
+                }
+
+                // 2) getthumbinfo
+                try {
+                    const xmlUrl = `https://ext.nicovideo.jp/api/getthumbinfo/${id}`;
+                    const xmlRes = await fetch(xmlUrl, {
+                        headers: {
+                            "User-Agent":
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) NodeFetch/1.0 Chrome/123.0.0.0 Safari/537.36",
+                            "Accept": "application/xml, text/xml, */*",
+                            "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+                            "Referer": "https://www.nicovideo.jp/",
+                            "Accept-Encoding": "gzip, deflate, br"
+                        }
+                    });
+                    if (xmlRes.ok) {
+                        const xml = await xmlRes.text();
+                        const getTag = (tag: string): string | undefined => {
+                            const m = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+                            return m ? m[1] : undefined;
+                        };
+                        const decode = (s?: string) =>
+                            s?.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                        const lengthStr = getTag("length");
+                        let lengthSeconds: number | undefined = undefined;
+                        if (lengthStr) {
+                            const parts = lengthStr.split(":").map(x => Number(x));
+                            if (parts.length === 2) {
+                                lengthSeconds = parts[0] * 60 + parts[1];
+                            } else if (parts.length === 3) {
+                                lengthSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+                            }
+                        }
+                        results.push({
+                            contentId: id,
+                            title: decode(getTag("title")) ?? "",
+                            description: decode(getTag("description")),
+                            thumbnailUrl: getTag("thumbnail_url"),
+                            viewCounter: Number(getTag("view_counter")) || undefined,
+                            commentCounter: Number(getTag("comment_num")) || undefined,
+                            mylistCounter: Number(getTag("mylist_counter")) || undefined,
+                            lengthSeconds,
+                            startTime: getTag("first_retrieve"),
+                            userId: getTag("user_id"),
+                            userNickname: decode(getTag("user_nickname")),
+                            channelId: getTag("ch_id") || getTag("channel_id"),
+                            channelName: decode(getTag("ch_name") || getTag("channel_name")),
+                            lastResBody: decode(getTag("last_res_body")),
+                        });
+                    } else {
+                    }
+                } catch (e) {
+                }
+            }
+
+            if (results.length > 0) {
+                return results;
+            } else {
+            }
+        } else {
+        }
+    } catch (e) {
+    }
     return undefined;
 }
 
