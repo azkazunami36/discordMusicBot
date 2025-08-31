@@ -12,7 +12,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        if (await variableExistCheck.playlistIsEnpty()) return;
+        if (await variableExistCheck.playlistIsEmpty()) return;
         let statusTemp: {
             status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
             body: { percent?: number; };

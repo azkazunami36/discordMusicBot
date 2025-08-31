@@ -12,7 +12,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
     if (interaction.isChatInputCommand()) {
         // 1. 必要な変数があるかチェック
         const variableExistCheck = new VariableExistCheck(interaction);
-        if (await variableExistCheck.playlistIsEnpty()) return;
+        if (await variableExistCheck.playlistIsEmpty()) return;
         if (await variableExistCheck.playerIsPlaying(inputData.serversDataClass)) return;
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
