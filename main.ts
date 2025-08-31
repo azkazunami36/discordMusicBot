@@ -159,9 +159,6 @@ client.on(Discord.Events.MessageCreate, async message => {
             body: videoId
         });
         envData.playlistSave(playlist);
-        const oldConnection = DiscordVoice.getVoiceConnection(message.guildId);
-        oldConnection?.disconnect();
-        oldConnection?.destroy();
         const connection = DiscordVoice.joinVoiceChannel({ channelId: message.member.voice.channelId, guildId: message.guildId, adapterCreator: message.guild.voiceAdapterCreator });
         await DiscordVoice.entersState(connection, DiscordVoice.VoiceConnectionStatus.Ready, 10000);
         connection.subscribe(serverData.discord.ffmpegResourcePlayer.player);
@@ -175,7 +172,6 @@ client.on(Discord.Events.MessageCreate, async message => {
         playlist.shift();
         if (deletedVideoId) playlist.unshift(deletedVideoId);
         envData.playlistSave(playlist);
-
 
         if (message.content.startsWith("!musiec-addfile")) {
             const title = message.content.slice(15, message.content.length).split(/\s/g)[0];
