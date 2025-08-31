@@ -85,4 +85,11 @@ export class EnvData {
     set playType(type: 1 | 2 | 3) {
         this.#envJSON("playType", String(type));
     }
+    get changeTellIs() {
+        if (Boolean(this.#envJSON("changeTellIs"))) return true;
+        return false;
+    }
+    set changeTellIs(type: boolean) {
+        this.#envJSON("changeTellIs", String(type));
+    }
 }

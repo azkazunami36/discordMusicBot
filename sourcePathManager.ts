@@ -19,7 +19,9 @@ export const sourcePathManager = new class SourcePathManager {
         percent?: number;
     }) => void) {
         const statuscall = statusCallback || (st => { });
-        statuscall("loading", {});
+        statuscall("loading", {
+            percent: 1
+        });
         if (playlistData.type === "videoId") {
             const videoId = playlistData.body
             // 1. フォルダ内を取得してVideoIDが一致するファイルが存在するかチェック。
@@ -28,7 +30,9 @@ export const sourcePathManager = new class SourcePathManager {
             // 2. 存在したらリターン、しなかったら取得。
             if (result) return result;
             else {
-                statuscall("formatchoosing", {});
+                statuscall("formatchoosing", {
+                    percent: 15
+                });
                 if (this.#downloading[videoId]) {
                     // 1. もしダウンロード中だったらこの処理では処理が終わるまでの待機を待つ。
                     await new Promise<void>(resolve => {
@@ -70,7 +74,9 @@ export const sourcePathManager = new class SourcePathManager {
                     const audioformat = pickBestFormat(formats);
                     // 4. もし取得できたらダウンロードをして拡張子・コンテナを修正する。
                     if (audioformat) {
-                        statuscall("downloading", {});
+                        statuscall("downloading", {
+                            percent: 30
+                        });
                         await new Promise<void>((resolve, reject) => {
                             const cp = spawn("yt-dlp", [
                                 "--progress", "--newline",
@@ -87,7 +93,7 @@ export const sourcePathManager = new class SourcePathManager {
 
                             cp.stdout.on("data", chunk => {
                                 const progress = parseYtDlpProgressLine(String(chunk));
-                                statuscall("downloading", { percent: progress?._percent });
+                                statuscall("downloading", { percent: 40 + ((progress?._percent || 0) / 100) * 20 });
                             });
 
                             cp.stderr.on("data", message => {
@@ -104,7 +110,9 @@ export const sourcePathManager = new class SourcePathManager {
                         const files = fs.readdirSync("./cache");
                         const cacheFilename = files.find(file => file.startsWith(videoId + "-cache."));
                         if (cacheFilename) {
-                            statuscall("converting", {});
+                            statuscall("converting", {
+                                percent: 70
+                            });
                             const info = await new Promise<ffmpeg.FfprobeData>(resolve => ffmpeg.ffprobe("./cache/" + cacheFilename, (err, data) => resolve(data)));
                             await new Promise<void>((resolve, reject) => {
                                 exec(`ffmpeg -i cache/${cacheFilename} -c copy cache/${videoId}.${info.streams[0].codec_name === "aac" ? "m4a" : "ogg"}`, (err, stdout, stderr) => {
@@ -119,11 +127,15 @@ export const sourcePathManager = new class SourcePathManager {
                     for (const func of listener) func();
                     delete this.#downloading[videoId];
                 }
-                statuscall("loading", {});
+                statuscall("loading", {
+                    percent: 90
+                });
                 // 3. 再度フォルダ内を検索して、見つけたら出力。ないとundefined。
                 const files = fs.readdirSync("./cache");
                 const result = files.find(file => file.startsWith(videoId + "."));
-                statuscall("done", {});
+                statuscall("done", {
+                    percent: 100
+                });
                 return result;
             }
         }

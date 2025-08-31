@@ -25,10 +25,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
             statusTemp = temp;
             statuscallTime = Date.now();
-            if (status === "loading") await interaction.editReply("音声ファイルを準備中...");
+            if (status === "loading") await interaction.editReply("音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
             if (status === "downloading") await interaction.editReply("音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
-            if (status === "converting") await interaction.editReply("音声ファイルを再生可能な形式に変換中...少々お待ちください...");
-            if (status === "formatchoosing") await interaction.editReply("YouTubeサーバーに保管されたフォーマットの調査中...");
+            if (status === "converting") await interaction.editReply("音声ファイルを再生可能な形式に変換中...少々お待ちください..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
+            if (status === "formatchoosing") await interaction.editReply("YouTubeサーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
         });
         await interaction.editReply("次の曲にスキップしました。");
     }

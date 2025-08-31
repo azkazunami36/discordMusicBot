@@ -17,6 +17,7 @@ export class FfmpegResourcePlayer {
     #guildId?: string;
     #volume = 0.5;
     #seekmargen = 0;
+    #playbackSpeed = 1;
     constructor() { this.#player = new DiscordVoice.AudioPlayer() };
     async #audioPlay(seconds: number) {
         if (!this.#playingPath) return;
@@ -71,6 +72,7 @@ export class FfmpegResourcePlayer {
             this.#spawn.kill();
             this.#spawn = undefined;
         }
+        this.#playingPath = undefined;
     }
     async seek(seconds: number) {
         if (seconds >= this.duration) seconds = this.duration - 1;
@@ -78,9 +80,14 @@ export class FfmpegResourcePlayer {
         this.#seekmargen = seconds;
         this.#audioPlay(seconds);
     }
+    async speedChange(mag: number) {
+        if (mag < 0.001) this.#playbackSpeed = 0.001;
+        else this.#playbackSpeed = mag;
+        this.#audioPlay(this.playtime);
+    }
     /** 現在の再生時間を出力します。msではなくsです。 */
     get playtime() {
-        return this.#resource?.playbackDuration !== undefined ? this.#seekmargen + (this.#resource.playbackDuration / 1000) : 0;
+        return this.#resource?.playbackDuration !== undefined ? this.#seekmargen + (this.#resource.playbackDuration / 1000 / this.#playbackSpeed) : 0;
     }
     /** 再生中の曲の長さを出力します。 */
     get duration() {

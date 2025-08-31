@@ -24,8 +24,8 @@ const client = new Discord.Client({
 
 const interactionFuncs = (() => {
     const arr: {
-        execute: (interaction: Discord.Interaction, inputData: InteractionInputData) => Promise<void>;
-        command: Discord.SlashCommandOptionsOnlyBuilder;
+        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData) => Promise<void>;
+        command?: Discord.SlashCommandOptionsOnlyBuilder;
     }[] = [];
     fs.readdirSync("interaction").forEach(async str => {
         if (str.endsWith(".ts") || str.endsWith(".d.ts")) return;
@@ -49,11 +49,11 @@ serversDataClass.playSet = playerSet;
 const { playerSetAndPlay } = playerSet;
 
 const runedServerTime: { guildId: string; runedTime: number; }[] = []
-
+const runlimit = 1000;
 client.on(Discord.Events.InteractionCreate, async interaction => {
     if (!interaction.isCommand()) return;
-    const data = interactionFuncs.find(d => d.command.name === interaction.commandName)
-    if (data) {
+    const data = interactionFuncs.find(d => d.command?.name === interaction.commandName)
+    if (data && data.command && data.execute) {
         if (interaction.guildId) {
             const envData = new EnvData(interaction.guildId);
             const callchannelId = envData.callchannelId;
@@ -61,7 +61,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             if (!runedServerTime.find(data => data.guildId === interaction.guildId)) runedServerTime.push({ guildId: interaction.guildId, runedTime: 0 });
             const runed = runedServerTime.find(data => data.guildId === interaction.guildId);
             if (runed) {
-                if (Date.now() - runed.runedTime < 5000) return interaction.reply("コマンドは５秒に1回までです。もう少しお待ちください。");
+                if (Date.now() - runed.runedTime < runlimit) return interaction.reply("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。");
                 runed.runedTime = Date.now();
             }
         }
@@ -79,13 +79,14 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
     const channel = newState.guild.channels.cache.get(newState.channelId || oldState.channelId || "");
     if (!channel || !channel.isVoiceBased()) return;
     if (channel.members.size < 2) {
-        await playerSet.playerStop(newState.guild.id);
         const serverData = serversData[newState.guild.id];
-        if (!serverData || !serverData.discord.calledChannel) return;
-        const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
-        if (channel && channel.isTextBased()) {
-            channel.send("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。");
+        if (serverData && serverData.discord.calledChannel) {
+            const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
+            if (channel && channel.isTextBased()) {
+                channel.send("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。");
+            }
         }
+        await playerSet.playerStop(newState.guild.id);
     }
 })
 const bt = [
@@ -131,7 +132,7 @@ client.on(Discord.Events.MessageCreate, async message => {
         if (!runedServerTime.find(data => data.guildId === message.guildId)) runedServerTime.push({ guildId: message.guildId, runedTime: 0 });
         const runed = runedServerTime.find(data => data.guildId === message.guildId);
         if (runed) {
-            if (Date.now() - runed.runedTime < 5000) return message.reply("コマンドは５秒に1回までです。もう少しお待ちください。");
+            if (Date.now() - runed.runedTime < runlimit) return message.reply("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。");
             runed.runedTime = Date.now();
         }
         if ((joubutuNumber++) >= bt.length - 1) joubutuNumber = 0;
@@ -157,18 +158,7 @@ client.on(Discord.Events.MessageCreate, async message => {
         envData.playlistSave(playlist);
         return;
     }
-    if (!message.content.startsWith("!music") || message.author.bot || callchannelId) return;
-    if (message.content.startsWith("!music-callch")) {
-        const channelId = message.content.slice(14, message.content.length);
-        if (message.guild?.channels.cache.get(channelId)) {
-            envData.callchannelId = channelId
-            message.reply("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。");
-        } else {
-            envData.callchannelId = "";
-            message.reply("どのチャンネルでもコマンドが利用できるように設定しました。");
-        }
-    }
-    if (message.content.startsWith("!music-addfile")) {
+    if (message.content.startsWith("!musiec-addfile")) {
         const title = message.content.slice(15, message.content.length).split(/\s/g)[0];
         if (!title) return message.reply("曲名を指定してください。");
         if (title.length < 2) return message.reply("曲名は２文字以上にしてください。");
