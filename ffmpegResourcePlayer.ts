@@ -17,7 +17,7 @@ export class FfmpegResourcePlayer {
     #playbackSpeed = 1;
     constructor() { this.#player = new DiscordVoice.AudioPlayer() };
     async #audioPlay(seconds: number) {
-        if (!this.#playingPath) return;
+        if (!this.#playingPath || !this.#ffprobeStreamInfo) return;
         if (this.#player.state.status === DiscordVoice.AudioPlayerStatus.Playing) this.#player.stop();
         this.#resource = undefined;
         if (this.#spawn) {
@@ -25,16 +25,63 @@ export class FfmpegResourcePlayer {
             this.#spawn = undefined;
         }
 
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = (seconds % 60);
-        const ss = `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toFixed(3).padStart(6, "0")}`;
+        // Build a safe timestamp like "HH:MM:SS.mmm" using integer milliseconds to avoid 59.999 -> 60.000 rounding jumps
+        function toTimestamp(totalSeconds: number): string {
+            if (!Number.isFinite(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
+            const totalMs = Math.round(totalSeconds * 1000); // integer milliseconds
+            const h = Math.floor(totalMs / 3_600_000);
+            const m = Math.floor((totalMs % 3_600_000) / 60_000);
+            const sec = Math.floor((totalMs % 60_000) / 1_000);
+            const ms = totalMs % 1_000;
+            const hh = h.toString().padStart(2, "0");
+            const mm = m.toString().padStart(2, "0");
+            const ss = sec.toString().padStart(2, "0");
+            const mmm = ms.toString().padStart(3, "0");
+            return `${hh}:${mm}:${ss}.${mmm}`;
+        }
+        // include small start_time offset if available to keep precise alignment when using input-after -ss
+        const startTime = Number(this.#ffprobeStreamInfo?.start_time) || 0;
+        const seekTs = toTimestamp(seconds + startTime);
+        /** Created by ChatGPT */
+        function buildAtempoChain(speed: number): string {
+            if (speed <= 0) throw new Error("speed must be positive");
+
+            const parts: string[] = [];
+
+            // 倍速が 1 の場合はそのまま
+            if (speed === 1) return "atempo=1";
+
+            let remaining = speed;
+
+            if (speed > 2) {
+                // 2で割れるだけ割っていく
+                while (remaining > 2) {
+                    parts.push("atempo=2.0");
+                    remaining /= 2;
+                }
+                // 最後に 0.5〜2 の範囲に収まった残りを追加
+                parts.push(`atempo=${remaining.toFixed(3).replace(/\.?0+$/, "")}`);
+            } else if (speed < 0.5) {
+                // 0.5で割れるだけ割っていく
+                while (remaining < 0.5) {
+                    parts.push("atempo=0.5");
+                    remaining /= 0.5;
+                }
+                parts.push(`atempo=${remaining.toFixed(3).replace(/\.?0+$/, "")}`);
+            } else {
+                // 0.5〜2 の範囲はそのまま
+                parts.push(`atempo=${remaining.toFixed(3).replace(/\.?0+$/, "")}`);
+            }
+
+            return parts.join(",");
+        }
         this.#spawn = spawn("ffmpeg", [
-            "-ss", ss,
+            "-ss", seekTs,
             "-i", this.#playingPath,
             "-map", "0:a:0",
             "-c:a", "libopus",
             "-b:a", "96k",
+            "-filter:a", `asetrate=${this.#ffprobeStreamInfo.sample_rate || 48000}*${this.#playbackSpeed},aresample=${this.#ffprobeStreamInfo.sample_rate || 48000}`,
             "-f", "ogg",
             "pipe:1"
         ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -77,13 +124,15 @@ export class FfmpegResourcePlayer {
         this.#audioPlay(seconds);
     }
     async speedChange(mag: number) {
-        if (mag < 0.001) this.#playbackSpeed = 0.001;
+        const playtime = this.playtime;
+        if (mag <= 0.1) this.#playbackSpeed = 0.1;
         else this.#playbackSpeed = mag;
-        this.#audioPlay(this.playtime);
+        this.#seekmargen = playtime;
+        this.#audioPlay(playtime);
     }
     /** 現在の再生時間を出力します。msではなくsです。 */
     get playtime() {
-        return this.#resource?.playbackDuration !== undefined ? this.#seekmargen + (this.#resource.playbackDuration / 1000 / this.#playbackSpeed) : 0;
+        return this.#resource?.playbackDuration !== undefined ? this.#seekmargen + (this.#resource.playbackDuration / 1000 * this.#playbackSpeed) : 0;
     }
     /** 再生中の曲の長さを出力します。 */
     get duration() {
