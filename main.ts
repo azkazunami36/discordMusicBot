@@ -63,7 +63,10 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         if (interaction.guildId) {
             const envData = new EnvData(interaction.guildId);
             const callchannelId = envData.callchannelId;
-            if (callchannelId && callchannelId != interaction.channelId) return;
+            if (callchannelId && callchannelId != interaction.channelId) return await interaction.reply({
+                content: "ここで曲を追加することはできません。特定のチャンネルでやり直してください。",
+                flags: "Ephemeral"
+            })
             if (!runedServerTime.find(data => data.guildId === interaction.guildId)) runedServerTime.push({ guildId: interaction.guildId, runedTime: 0 });
             const runed = runedServerTime.find(data => data.guildId === interaction.guildId);
             if (runed) {
@@ -174,7 +177,7 @@ client.on(Discord.Events.MessageCreate, async message => {
         if (deletedVideoId) playlist.unshift(deletedVideoId);
         envData.playlistSave(playlist);
 
-        
+
         if (message.content.startsWith("!musiec-addfile")) {
             const title = message.content.slice(15, message.content.length).split(/\s/g)[0];
             if (!title) return message.reply("曲名を指定してください。");

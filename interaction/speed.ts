@@ -10,6 +10,7 @@ export const command = new SlashCommandBuilder()
     .addNumberOption(option => option
         .setName("num")
         .setDescription("1倍速や2倍速、0.5倍速など、さまざまな倍速にすることができます。")
+        .setRequired(true)
     )
 export const commandExample = "";
 

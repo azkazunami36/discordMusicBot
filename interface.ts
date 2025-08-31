@@ -9,6 +9,12 @@ export interface ServersData {
             calledChannel?: string;
             ffmpegResourcePlayer: FfmpegResourcePlayer;
         }
+        users?: {
+            [userId: string]: {
+                /** 曲を聴き始めた時間です。再生時間を算出するのに役立ちます。 */
+                startTime?: number;
+            };
+        }
     } | undefined;
 }
 

@@ -16,7 +16,13 @@ export class FfmpegResourcePlayer {
     #seekmargen = 0;
     #playbackSpeed = 1;
     constructor() { this.#player = new DiscordVoice.AudioPlayer() };
-    async #audioPlay(seconds: number) {
+    /**
+     * ffmpegを利用して音声を再生します。ここはちょっとしたブラックボックスに見えるかもしれません。
+     * 
+     * 途中から再生する時は絶対にseekmarginを適切な場所に設定してからこの関数を呼びましょう。最初から再生する場合は絶対にseekmarginを0にしてください。
+     * 
+     */
+    async #audioPlay() {
         if (!this.#playingPath || !this.#ffprobeStreamInfo) return;
         if (this.#player.state.status === DiscordVoice.AudioPlayerStatus.Playing) this.#player.stop();
         this.#resource = undefined;
@@ -25,7 +31,6 @@ export class FfmpegResourcePlayer {
             this.#spawn = undefined;
         }
 
-        // Build a safe timestamp like "HH:MM:SS.mmm" using integer milliseconds to avoid 59.999 -> 60.000 rounding jumps
         function toTimestamp(totalSeconds: number): string {
             if (!Number.isFinite(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
             const totalMs = Math.round(totalSeconds * 1000); // integer milliseconds
@@ -39,42 +44,7 @@ export class FfmpegResourcePlayer {
             const mmm = ms.toString().padStart(3, "0");
             return `${hh}:${mm}:${ss}.${mmm}`;
         }
-        // include small start_time offset if available to keep precise alignment when using input-after -ss
-        const startTime = Number(this.#ffprobeStreamInfo?.start_time) || 0;
-        const seekTs = toTimestamp(seconds + startTime);
-        /** Created by ChatGPT */
-        function buildAtempoChain(speed: number): string {
-            if (speed <= 0) throw new Error("speed must be positive");
-
-            const parts: string[] = [];
-
-            // 倍速が 1 の場合はそのまま
-            if (speed === 1) return "atempo=1";
-
-            let remaining = speed;
-
-            if (speed > 2) {
-                // 2で割れるだけ割っていく
-                while (remaining > 2) {
-                    parts.push("atempo=2.0");
-                    remaining /= 2;
-                }
-                // 最後に 0.5〜2 の範囲に収まった残りを追加
-                parts.push(`atempo=${remaining.toFixed(3).replace(/\.?0+$/, "")}`);
-            } else if (speed < 0.5) {
-                // 0.5で割れるだけ割っていく
-                while (remaining < 0.5) {
-                    parts.push("atempo=0.5");
-                    remaining /= 0.5;
-                }
-                parts.push(`atempo=${remaining.toFixed(3).replace(/\.?0+$/, "")}`);
-            } else {
-                // 0.5〜2 の範囲はそのまま
-                parts.push(`atempo=${remaining.toFixed(3).replace(/\.?0+$/, "")}`);
-            }
-
-            return parts.join(",");
-        }
+        const seekTs = toTimestamp(this.#seekmargen + (Number(this.#ffprobeStreamInfo?.start_time) || 0));
         this.#spawn = spawn("ffmpeg", [
             "-ss", seekTs,
             "-i", this.#playingPath,
@@ -106,7 +76,8 @@ export class FfmpegResourcePlayer {
         if (this.#ffprobeStreamInfo === undefined) return;
         this.#playingPath = this.audioPath;
         const audioStreamInfo = this.#ffprobeStreamInfo;
-        await this.#audioPlay(0);
+        this.#seekmargen = 0;
+        await this.#audioPlay();
     };
     async stop() {
         this.#player.stop();
@@ -121,14 +92,14 @@ export class FfmpegResourcePlayer {
         if (seconds >= this.duration) seconds = this.duration - 1;
         if (seconds <= 0) seconds = 0;
         this.#seekmargen = seconds;
-        this.#audioPlay(seconds);
+        this.#audioPlay();
     }
     async speedChange(mag: number) {
         const playtime = this.playtime;
         if (mag <= 0.1) this.#playbackSpeed = 0.1;
         else this.#playbackSpeed = mag;
         this.#seekmargen = playtime;
-        this.#audioPlay(playtime);
+        this.#audioPlay();
     }
     /** 現在の再生時間を出力します。msではなくsです。 */
     get playtime() {
