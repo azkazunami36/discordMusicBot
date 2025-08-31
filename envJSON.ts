@@ -1,7 +1,9 @@
 import fs from "fs";
+import yts from "yt-search";
+import { NicoSnapshotItem, searchNicoVideo } from "./ niconico.js";
 
 export interface Playlist {
-    type: "videoId" | "originalFileId";
+    type: "videoId" | "originalFileId" | "nicovideoId";
     body: string;
 }
 export interface OriginalFiles {
@@ -32,7 +34,7 @@ export class EnvData {
         try {
             const playlist = JSON.parse(String(playlistJSONStr)) as Playlist[];
             playlist.forEach(playlistData => {
-                if (!playlistData.type || playlistData.type !== "originalFileId" && playlistData.type !== "videoId") throw "";
+                if (!playlistData.type || playlistData.type !== "originalFileId" && playlistData.type !== "videoId" && playlistData.type !== "nicovideoId") throw "";
                 if (!playlistData.body || typeof playlistData.body !== "string") throw "";
             })
             return playlist;
@@ -91,5 +93,56 @@ export class EnvData {
     }
     set changeTellIs(type: boolean) {
         this.#envJSON("changeTellIs", String(type));
+    }
+}
+
+interface VideoInfoCache {
+    youtube?: (yts.VideoMetadataResult | undefined)[];
+    niconico?: (NicoSnapshotItem | undefined)[];
+}
+
+/** VideoIDに記録されている情報をキャッシュし、読み込めるようにするものです。 */
+export class VideoMetaCache {
+    constructor() {
+        if (!fs.existsSync("videoInfoCache.json")) fs.writeFileSync("videoInfoCache.json", "{}");
+    }
+    async youtubeInfoGet(videoId: string) {
+        const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
+        if (!json.youtube) json.youtube = [];
+        const data = json.youtube.find(data => data && data.videoId === videoId);
+        if (data) return data;
+        else {
+            try {
+                const result = await yts({
+                    videoId,
+                    hl: "ja",
+                    gl: "JP"
+                });
+                json.youtube.push(result);
+                fs.writeFileSync("videoInfoCache.json", JSON.stringify(json));
+                return result;
+            } catch (e) {
+                return undefined;
+            }
+        }
+    }
+    async niconicoInfoGet(contentId: string) {
+        const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
+        if (!json.niconico) json.niconico = [];
+        const data = json.niconico.find(data => data && data.contentId === contentId);
+        if (data) return data
+        else {
+            const result = await searchNicoVideo(contentId);
+            console.log(result, "result")
+            if (result && result[0]) {
+                json.niconico.push(result[0]);
+                fs.writeFileSync("videoInfoCache.json", JSON.stringify(json));
+                return result[0];
+            }
+        }
+    }
+    async cacheGet(data: Playlist) {
+        if (data.type === "videoId") return await this.youtubeInfoGet(data.body);
+        if (data.type === "nicovideoId") return await this.niconicoInfoGet(data.body);
     }
 }

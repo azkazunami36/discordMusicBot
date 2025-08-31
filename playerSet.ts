@@ -27,7 +27,7 @@ export class PlayerSet {
         // 2. 再生中だったら一度停止。
         if (serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing)
             await serverData.discord.ffmpegResourcePlayer.stop();
-        serverData.discord.ffmpegResourcePlayer.audioPath = "./cache/" + await sourcePathManager.getAudioPath(playlist[0], statuscall);
+        serverData.discord.ffmpegResourcePlayer.audioPath = await sourcePathManager.getAudioPath(playlist[0], statuscall);
         const volume = envData.volume;
         serverData.discord.ffmpegResourcePlayer.volume = (volume ? Number(volume) : 100) / 750;
         await serverData.discord.ffmpegResourcePlayer.play();

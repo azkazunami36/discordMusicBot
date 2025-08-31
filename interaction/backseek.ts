@@ -1,5 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, GuildMember } from "discord.js";
-import * as DiscordVoice from "@discordjs/voice";
+import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";

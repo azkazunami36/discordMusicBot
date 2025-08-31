@@ -3,8 +3,9 @@ import ytdl from "ytdl-core";
 import yts from "yt-search";
 
 import { InteractionInputData } from "../interface.js";
-import { EnvData } from "../envJSON.js";
+import { EnvData, Playlist, VideoMetaCache } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
+import { parseNicoVideo, searchNicoVideo } from "../ niconico.js";
 
 export const command = new SlashCommandBuilder()
     .setName("add")
@@ -13,6 +14,11 @@ export const command = new SlashCommandBuilder()
         .setName("text")
         .setDescription("音楽を追加することができます。URLまたはVideoIDまたは検索したいタイトルを入力してください。複数曲追加することは現時点ではできません。")
         .setRequired(true)
+    )
+    .addStringOption(option => option
+        .setName("service")
+        .setDescription("ダウンロードするサービスを優先して選びます。URLだった場合は自動で選択されます。")
+        .addChoices({ name: "YouTube", value: "youtube" }, { name: "niconico", value: "niconico" })
     )
 export const commandExample = "/add text:[URLまたはVideoIDまたは検索したいタイトル]";
 
@@ -24,30 +30,48 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!guildData) return;
         if (data === null) return await interaction.editReply("追加したい曲が指定されませんでした。入力してから追加を行なってください。");
         if (data === "") return await interaction.editReply("内容が空です。入力してから追加をしてください。");
-        let videoId = data;
+        const result = await (async function analysisStr(string: string, priority?: "youtube" | "niconico"): Promise<Playlist | undefined> {
+            await interaction.editReply("文字列を分析中...");
+            if (ytdl.validateURL(string)) return {
+                type: "videoId",
+                body: ytdl.getURLVideoID(string)
+            };
+            const nicovideoId = parseNicoVideo(string);
+            if (nicovideoId) return {
+                type: "nicovideoId",
+                body: nicovideoId
+            };
+            await interaction.editReply("検索中...");
+
+            async function search(string: string, type: "youtube" | "niconico"): Promise<Playlist | undefined> {
+                if (type === "youtube") {
+                    const result = await yts(string);
+                    return result.videos[0] ? {
+                        type: "videoId",
+                        body: result.videos[0].videoId
+                    } : undefined;
+                }
+                if (type === "niconico") {
+                    const result = await searchNicoVideo(string);
+                    return (result && result[0]) ? {
+                        type: "nicovideoId",
+                        body: result[0].contentId
+                    } : undefined;
+                }
+            }
+            const one = priority ? (priority === "niconico" ? "niconico" : "youtube") : "youtube";
+            const two = priority ? (priority === "niconico" ? "youtube" : "niconico") : "niconico";
+            return await search(string, one) || await search(string, two);
+        })(data);
+        if (!result) return await interaction.editReply("「" + data + "」は有効な内容として認識することができず、追加ができませんでした。再度追加するか、botの作成者に相談してください。");
         const playlist = await variableExistCheck.playlist();
         if (!playlist) return;
-        await interaction.editReply("文字列を分析中...");
-        // URLはVideoIDに変換
-        if (ytdl.validateURL(videoId)) videoId = ytdl.getURLVideoID(videoId);
-        // まだVideoIDではなかった場合
-        if (!ytdl.validateID(videoId)) {
-            await interaction.editReply("検索中...");
-            // 検索
-            const result = await yts(videoId);
-            // 追加
-            videoId = result.videos[0].videoId;
-            // まだVideoIDではなかった場合
-            if (!ytdl.validateID(videoId)) return await interaction.editReply("「" + data + "」は有効な内容として認識することができず、追加ができませんでした。再度追加するか、botの作成者に相談してください。");
-        }
         // 追加
-        playlist.push({
-            type: "videoId",
-            body: videoId
-        });
+        playlist.push(result);
         const envData = new EnvData(guildData.guildId);
         envData.playlistSave(playlist);
-        const cache = await inputData.videoCache.cacheGet(videoId);
-        await interaction.editReply("「" + (cache ? cache.title : "タイトル取得エラー(VideoID: " + videoId + ")") + "」を追加しました。")
+        const videoMetaCache = new VideoMetaCache();
+        const meta = await videoMetaCache.cacheGet(result);
+        await interaction.editReply("「" + (meta ? meta.title : "タイトル取得エラー(ID: " + result.body + ")") + "」を追加しました。");
     }
 }

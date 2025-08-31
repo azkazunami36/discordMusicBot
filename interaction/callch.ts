@@ -1,5 +1,3 @@
-import fs from "fs";
-
 import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
 import { InteractionInputData } from "../interface.js";
 import { EnvData } from "../envJSON.js";

@@ -1,6 +1,8 @@
 .env
 node_modules
-cache
+youtubeCache
+niconicoCache
+videoInfoCache.json
 cache.jsonl
 env.json
 *.d.ts

@@ -5,7 +5,6 @@ import "dotenv/config";
 import { Writable } from "stream";
 
 import { EnvData } from "./envJSON.js";
-import { videoCache } from "./videoMetaCache.js";
 import { PlayerSet } from "./playerSet.js";
 import { ServersDataClass } from "./serversData.js";
 import { InteractionInputData } from "./interface.js";
@@ -75,7 +74,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             }
         }
         // 4. 必要なデータを整え、コマンドを実行します。
-        const inputData: InteractionInputData = { serversDataClass, videoCache, playerSet };
+        const inputData: InteractionInputData = { serversDataClass, playerSet };
         await interaction.reply("コマンド「" + data.command.name + "」の処理を開始しています...");
         await data.execute(interaction, inputData);
     }

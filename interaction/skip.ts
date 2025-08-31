@@ -7,6 +7,10 @@ import { EnvData } from "../envJSON.js";
 export const command = new SlashCommandBuilder()
     .setName("skip")
     .setDescription("現在の曲をスキップして次の曲を再生します。")
+    .addNumberOption(option => option
+        .setName("skipnum")
+        .setDescription("指定した番号だけプレイリストを進めます。プレイリストより多い数でも機能はしますが、負荷がかかるのでおやめください。")
+    )
 export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
@@ -22,8 +26,12 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         let statuscallTime: number = Date.now();
         const envData = new EnvData(guildData.guildId);
         const playlist = envData.playlistGet();
-        const startPlaylistData = playlist.shift();
-        if (startPlaylistData) playlist.push(startPlaylistData);
+        const skipNum = interaction.options.getNumber("skipnum") || 1;
+        if (skipNum > playlist.length + 10) return await interaction.editReply("指定したスキップ数が大きすぎます。枕がでかすぎる！ンアーッ！");
+        for (let i = 0; i < skipNum; i++) {
+            const startPlaylistData = playlist.shift();
+            if (startPlaylistData) playlist.push(startPlaylistData);
+        }
         envData.playlistSave(playlist);
         await inputData.playerSet.playerSetAndPlay(guildData.guildId, async (status, body) => {
             const temp = { status, body }

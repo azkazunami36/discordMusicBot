@@ -1,11 +1,10 @@
-import { EnvData } from "./envJSON.js";
+import { EnvData, VideoMetaCache } from "./envJSON.js";
 import * as DiscordVoice from "@discordjs/voice";
 import { Client } from "discord.js";
 
 import { ServersData } from "./interface.js";
 import { PlayerSet } from "./playerSet.js";
 import { FfmpegResourcePlayer } from "./ffmpegResourcePlayer.js";
-import { videoCache } from "./videoMetaCache.js";
 
 export class ServersDataClass {
     /** サーバーごとに記録する必要のある一時データです。 */
@@ -44,7 +43,9 @@ export class ServersDataClass {
                     const channel = this.client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
                     if (channel && channel.isTextBased()) {
                         const playlistData = playlist[0];
-                        const title = playlistData.type === "videoId" ? (await videoCache.cacheGet(playlistData.body) || { title: "タイトル取得エラー(VideoID: " + playlistData.body + ")" }).title : playlistData.body;
+                        const videoMetaCache = new VideoMetaCache();
+                        const meta = await videoMetaCache.cacheGet(playlistData);
+                        const title = (meta ? meta.title : "タイトル取得エラー(ID: " + playlistData.body + ")")
                         const message = await channel.send("次の曲「" + title + "」の再生準備中...0%");
                         let statusTemp: {
                             status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",

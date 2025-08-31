@@ -1,7 +1,7 @@
 import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
-import { EnvData } from "../envJSON.js";
+import { EnvData, VideoMetaCache } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 
 export const command = new SlashCommandBuilder()
@@ -28,8 +28,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             const playlistData = playlist.splice(number - 1, 1)[0];
             const envData = new EnvData(guildData.guildId);
             envData.playlistSave(playlist);
-            const title = playlistData.type === "videoId" ? (await inputData.videoCache.cacheGet(playlistData.body) || { title: "タイトル取得エラー(VideoID: " + playlistData.body + ")" }).title : playlistData.body;
-            await interaction.editReply("曲「" + title + "」を削除しました。" + (playlistData.type === "videoId" ? ("(VideoId: " + playlistData.body + ")"): "(ID: " + playlistData.body + ")"));
+            const videoMetaCache = new VideoMetaCache();
+            const meta = await videoMetaCache.cacheGet(playlistData);
+            const title = (meta ? meta.title : "タイトル取得エラー(ID: " + playlistData.body + ")");
+            await interaction.editReply("曲「" + title + "」を削除しました。(ID: " + playlistData.body + ")");
         } else {
             await interaction.editReply("番号が無効です。`/status`を利用してどの番号にどの曲が入っているかを確認してください。");
         }

@@ -1,7 +1,7 @@
 import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
-import { EnvData } from "../envJSON.js";
+import { EnvData, VideoMetaCache } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 
 export const command = new SlashCommandBuilder()
@@ -23,10 +23,13 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
         if (!serverData) return;
         const startPlaylist = serverData.discord.ffmpegResourcePlayer.playing;
-        let replyText = "このサーバーでのプレイリストや設定です。\n- 現在再生中: " + (startPlaylist ? startPlaylist.type === "videoId" ? (await inputData.videoCache.cacheGet(startPlaylist.body) || { title: "タイトル取得エラー(VideoID: " + startPlaylist.body + ")" }).title : startPlaylist.body : "なし") + "\n- プレイリスト\n```\n";
+        const videoMetaCache = new VideoMetaCache();
+        const title = startPlaylist ? ((await videoMetaCache.cacheGet(startPlaylist))?.title || "タイトル取得エラー(ID: " + startPlaylist.body + ")") : "なし";
+        let replyText = "このサーバーでのプレイリストや設定です。\n- 現在再生中: " + title + "\n- プレイリスト\n```\n";
         for (let i = 0; i < playlist.length; i++) {
             const playlistData = playlist[i];
-            const title = playlistData.type === "videoId" ? (await inputData.videoCache.cacheGet(playlistData.body) || { title: "タイトル取得エラー(VideoID: " + playlistData.body + ")" }).title : playlistData.body;
+            const videoMetaCache = new VideoMetaCache();
+            const title = playlistData ? ((await videoMetaCache.cacheGet(playlistData))?.title || "タイトル取得エラー(ID: " + playlistData.body + ")") : "なし";
             replyText += (i + 1) + ". " + title + "\n";
         }
         if (playlist.length == 0) replyText += "プレイリストが空です。";
