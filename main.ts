@@ -8,6 +8,7 @@ import { EnvData } from "./envJSON.js";
 import { PlayerSet } from "./playerSet.js";
 import { ServersDataClass } from "./serversData.js";
 import { InteractionInputData } from "./interface.js";
+import { sourcePathManager } from "./sourcePathManager.js";
 
 const client = new Discord.Client({
     intents: [
@@ -143,7 +144,6 @@ client.on(Discord.Events.MessageCreate, async message => {
         const envData = new EnvData(message.guildId);
         const callchannelId = envData.callchannelId;
         if (callchannelId && callchannelId != message.channelId) return;
-        const playlist = envData.playlistGet();
         if (!message.member.voice.channelId) return;
         if (!runedServerTime.find(data => data.guildId === message.guildId)) runedServerTime.push({ guildId: message.guildId, runedTime: 0 });
         const runed = runedServerTime.find(data => data.guildId === message.guildId);
@@ -153,25 +153,18 @@ client.on(Discord.Events.MessageCreate, async message => {
         }
         if ((joubutuNumber++) >= bt.length - 1) joubutuNumber = 0;
         const { name, videoId } = bt[joubutuNumber];
-        const deletedVideoId = playlist.shift();
-        playlist.unshift({
-            type: "videoId",
-            body: videoId
-        });
-        envData.playlistSave(playlist);
         const connection = DiscordVoice.joinVoiceChannel({ channelId: message.member.voice.channelId, guildId: message.guildId, adapterCreator: message.guild.voiceAdapterCreator });
         await DiscordVoice.entersState(connection, DiscordVoice.VoiceConnectionStatus.Ready, 10000);
         connection.subscribe(serverData.discord.ffmpegResourcePlayer.player);
-        serverData.discord.calledChannel = message.channelId;
-        const number = 1145141919;
-        const volume = envData.volume;
-        envData.volume = number;
-        await playerSetAndPlay(message.guildId);
-        await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。プレイリストや設定は変更していないため、次の曲からは音量は" + volume + "%に戻ります。");
-        envData.volume = volume;
-        playlist.shift();
-        if (deletedVideoId) playlist.unshift(deletedVideoId);
-        envData.playlistSave(playlist);
+        if (serverData.discord.calledChannel === undefined) serverData.discord.calledChannel = message.channelId;
+        if (!serverData.discord.ffmpegResourcePlayer) return;
+        // 2. 再生中だったら一度停止。
+        if (serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing)
+            await serverData.discord.ffmpegResourcePlayer.stop();
+        serverData.discord.ffmpegResourcePlayer.audioPath = await sourcePathManager.getAudioPath({ type: "videoId", body: videoId });
+        serverData.discord.ffmpegResourcePlayer.volume = 1145141919 / 750;
+        await serverData.discord.ffmpegResourcePlayer.play();
+        await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。プレイリストや設定は変更していないため、次の曲からは音量は" + envData.volume + "%に戻ります。");
 
         if (message.content.startsWith("!musiec-addfile")) {
             const title = message.content.slice(15, message.content.length).split(/\s/g)[0];
