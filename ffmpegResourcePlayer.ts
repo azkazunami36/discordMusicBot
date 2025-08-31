@@ -1,10 +1,8 @@
-
 import Stream from "stream";
-import * as Discord from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
-import { ChildProcessByStdio, ChildProcessWithoutNullStreams, spawn } from "child_process";
+import { ChildProcessByStdio, spawn } from "child_process";
 import { Playlist } from "./envJSON.js";
 
 export class FfmpegResourcePlayer {
@@ -14,7 +12,6 @@ export class FfmpegResourcePlayer {
     #resource?: DiscordVoice.AudioResource;
     #player: DiscordVoice.AudioPlayer;
     #ffprobeStreamInfo?: ffmpeg.FfprobeStream;
-    #guildId?: string;
     #volume = 0.5;
     #seekmargen = 0;
     #playbackSpeed = 1;
@@ -50,7 +47,6 @@ export class FfmpegResourcePlayer {
     }
     async play() {
         if (!this.audioPath) return;
-        if (!this.#guildId) return;
         if (this.#player.state.status === DiscordVoice.AudioPlayerStatus.Playing && this.audioPath === this.#playingPath) return;
         if (!this.#ffprobeStreamInfo) this.#ffprobeStreamInfo = (await new Promise<ffmpeg.FfprobeStream | undefined>((resolve, reject) => {
             if (!this.audioPath || !fs.existsSync(this.audioPath)) return resolve(undefined);
@@ -97,9 +93,6 @@ export class FfmpegResourcePlayer {
     set volume(vol: number) {
         this.#volume = vol;
         if (this.#resource) this.#resource.volume?.setVolume(vol);
-    }
-    set guildId(guildId: string) {
-        this.#guildId = guildId;
     }
     get playing() {
         if (!this.#playingPath) return undefined;

@@ -30,7 +30,6 @@ export class PlayerSet {
         serverData.discord.ffmpegResourcePlayer.audioPath = "./cache/" + await sourcePathManager.getAudioPath(playlist[0], statuscall);
         const volume = envData.volume;
         serverData.discord.ffmpegResourcePlayer.volume = (volume ? Number(volume) : 100) / 750;
-        serverData.discord.ffmpegResourcePlayer.guildId = guildId;
         await serverData.discord.ffmpegResourcePlayer.play();
     }
     /**

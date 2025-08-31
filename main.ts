@@ -22,6 +22,16 @@ const client = new Discord.Client({
     ]
 });
 
+/** Discordサーバーに関するデータを一時的に記録しているデータを扱うクラスです。 */
+const serversDataClass = new ServersDataClass(client);
+/** サーバーごとに記録する必要のある一時データです。 */
+const serversData = serversDataClass.serversData;
+/** サーバーに記録されたプレイリストの内容をセットしたり、プレイヤーを設定したりするのを自動で行います。 */
+const playerSet = new PlayerSet(serversData);
+serversDataClass.playSet = playerSet;
+const { playerSetAndPlay } = playerSet;
+
+/** インタラクションコマンドのデータです。 */
 const interactionFuncs = (() => {
     const arr: {
         execute?: (interaction: Discord.Interaction, inputData: InteractionInputData) => Promise<void>;
@@ -39,21 +49,17 @@ const interactionFuncs = (() => {
     return arr;
 })();
 
-/** Discordサーバーに関するデータを一時的に記録しているデータを扱うクラスです。 */
-const serversDataClass = new ServersDataClass(client);
-/** サーバーごとに記録する必要のある一時データです。 */
-const serversData = serversDataClass.serversData;
-/** サーバーに記録されたプレイリストの内容をセットしたり、プレイヤーを設定したりするのを自動で行います。 */
-const playerSet = new PlayerSet(serversData);
-serversDataClass.playSet = playerSet;
-const { playerSetAndPlay } = playerSet;
-
-const runedServerTime: { guildId: string; runedTime: number; }[] = []
+/** コマンドの実行が早すぎる場合に阻止するために使うための変数です。 */
+const runedServerTime: { guildId: string; runedTime: number; }[] = [];
+/** コマンドの最短実行間隔です。 */
 const runlimit = 1000;
 client.on(Discord.Events.InteractionCreate, async interaction => {
     if (!interaction.isCommand()) return;
-    const data = interactionFuncs.find(d => d.command?.name === interaction.commandName)
+    /** 1. コマンドを検索します。ヒットしたコマンドがここに記録されます。 */
+    const data = interactionFuncs.find(d => d.command?.name === interaction.commandName);
+    // 2. コマンドが正しく検索され、そのコマンドが正しく取得できていた場合実行します。
     if (data && data.command && data.execute) {
+        // 3. サーバー内で実行されている場合、専用チャンネルであるかどうかやそのサーバーで間隔内でチャットが行われているかどうかの検査をします。
         if (interaction.guildId) {
             const envData = new EnvData(interaction.guildId);
             const callchannelId = envData.callchannelId;
@@ -65,30 +71,39 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
                 runed.runedTime = Date.now();
             }
         }
+        // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, videoCache, playerSet };
         await interaction.reply("コマンド「" + data.command.name + "」の処理を開始しています...");
         await data.execute(interaction, inputData);
     }
 });
-
 client.on(Discord.Events.ClientReady, () => {
     console.log("OK " + client.user?.displayName);
     client.user?.setStatus("online");
 });
+// VCの状態が変化したら実行します。
 client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
     const channel = newState.guild.channels.cache.get(newState.channelId || oldState.channelId || "");
     if (!channel || !channel.isVoiceBased()) return;
-    if (channel.members.size < 2) {
+    // 1. VCにいる人数がBotを含め1人以下になったら退出します。
+    if (channel.members.size <= 1) {
         const serverData = serversData[newState.guild.id];
+        // 退出チャットが表示できそうなら表示します。
         if (serverData && serverData.discord.calledChannel) {
             const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
             if (channel && channel.isTextBased()) {
                 channel.send("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。");
             }
         }
+        // 実際に退出します。
         await playerSet.playerStop(newState.guild.id);
     }
-})
+});
+
+client.login(process.env.DISCORD_TOKEN);
+
+// ここから下は至って重要なコードではありません。
+
 const bt = [
     {
         name: "音割れポッター",
@@ -119,15 +134,14 @@ let joubutuNumber = Math.floor(Math.random() * bt.length);
 client.on(Discord.Events.MessageCreate, async message => {
     // 1. bot呼び出しでないものをスキップする。
     if (!message.guildId || !message.member || !message.guild) return message.reply("ごめん！！エラーっす！www");
-    if (!serversData[message.guildId]) serversDataClass.serverDataInit(message.guildId);
-    const serverData = serversData[message.guildId];
-    if (!serverData) return message.reply("ごめん！！エラーっす！www");
-    const envData = new EnvData(message.guildId);
-    const callchannelId = envData.callchannelId;
-    if (callchannelId && callchannelId != message.channelId) return;
-    const playlist = envData.playlistGet();
-    const originalFiles = envData.originalFilesGet();
     if (message.content === "VCの皆、成仏せよ") {
+        if (!serversData[message.guildId]) serversDataClass.serverDataInit(message.guildId);
+        const serverData = serversData[message.guildId];
+        if (!serverData) return message.reply("ごめん！！エラーっす！www");
+        const envData = new EnvData(message.guildId);
+        const callchannelId = envData.callchannelId;
+        if (callchannelId && callchannelId != message.channelId) return;
+        const playlist = envData.playlistGet();
         if (!message.member.voice.channelId) return;
         if (!runedServerTime.find(data => data.guildId === message.guildId)) runedServerTime.push({ guildId: message.guildId, runedTime: 0 });
         const runed = runedServerTime.find(data => data.guildId === message.guildId);
@@ -143,6 +157,9 @@ client.on(Discord.Events.MessageCreate, async message => {
             body: videoId
         });
         envData.playlistSave(playlist);
+        const oldConnection = DiscordVoice.getVoiceConnection(message.guildId);
+        oldConnection?.disconnect();
+        oldConnection?.destroy();
         const connection = DiscordVoice.joinVoiceChannel({ channelId: message.member.voice.channelId, guildId: message.guildId, adapterCreator: message.guild.voiceAdapterCreator });
         await DiscordVoice.entersState(connection, DiscordVoice.VoiceConnectionStatus.Ready, 10000);
         connection.subscribe(serverData.discord.ffmpegResourcePlayer.player);
@@ -156,24 +173,23 @@ client.on(Discord.Events.MessageCreate, async message => {
         playlist.shift();
         if (deletedVideoId) playlist.unshift(deletedVideoId);
         envData.playlistSave(playlist);
-        return;
-    }
-    if (message.content.startsWith("!musiec-addfile")) {
-        const title = message.content.slice(15, message.content.length).split(/\s/g)[0];
-        if (!title) return message.reply("曲名を指定してください。");
-        if (title.length < 2) return message.reply("曲名は２文字以上にしてください。");
-        if (envData.originalFilesGet().find(file => file.callName == title)) return message.reply("すでにその曲名は存在しています。他の名前を使用するか、数字を後に足すなどを行なってください。");
-        const file = message.attachments.first();
-        if (!file) return message.reply("ファイルが見つかりませんでした。ファイルを選んでください。");
-        const res = await fetch(file.url);
-        if (!res.ok || !res.body) return message.reply("内部エラーが発生しました。エラーは`" + res.status + "/" + res.statusText + "`です。もう一度試してください。何度も失敗する場合はあんこかずなみ36");
-        const cacheFileName = "./cache/" + title
-        const stream = fs.createWriteStream(cacheFileName);
-        // WHATWG ReadableStream → WHATWG WritableStream (Node層へブリッジ)
-        await res.body.pipeTo(Writable.toWeb(stream));
 
-        envData.originalFilesGet();
+        
+        if (message.content.startsWith("!musiec-addfile")) {
+            const title = message.content.slice(15, message.content.length).split(/\s/g)[0];
+            if (!title) return message.reply("曲名を指定してください。");
+            if (title.length < 2) return message.reply("曲名は２文字以上にしてください。");
+            if (envData.originalFilesGet().find(file => file.callName == title)) return message.reply("すでにその曲名は存在しています。他の名前を使用するか、数字を後に足すなどを行なってください。");
+            const file = message.attachments.first();
+            if (!file) return message.reply("ファイルが見つかりませんでした。ファイルを選んでください。");
+            const res = await fetch(file.url);
+            if (!res.ok || !res.body) return message.reply("内部エラーが発生しました。エラーは`" + res.status + "/" + res.statusText + "`です。もう一度試してください。何度も失敗する場合はあんこかずなみ36");
+            const cacheFileName = "./cache/" + title
+            const stream = fs.createWriteStream(cacheFileName);
+            // WHATWG ReadableStream → WHATWG WritableStream (Node層へブリッジ)
+            await res.body.pipeTo(Writable.toWeb(stream));
+
+            envData.originalFilesGet();
+        }
     }
 })
-
-client.login(process.env.DISCORD_TOKEN);

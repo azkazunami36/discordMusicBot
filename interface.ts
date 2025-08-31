@@ -1,4 +1,3 @@
-import * as DiscordVoice from "@discordjs/voice";
 import { videoCache } from "./videoMetaCache.js";
 import { ServersDataClass } from "./serversData.js";
 import { PlayerSet } from "./playerSet.js";

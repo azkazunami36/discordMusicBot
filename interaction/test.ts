@@ -1,6 +1,7 @@
 import { Interaction, SlashCommandBuilder, CacheType } from 'discord.js';
 
 import { InteractionInputData } from "../interface.js";
+import { VariableExistCheck } from '../variableExistCheck.js';
 
 export const command = new SlashCommandBuilder()
     .setName("test")
@@ -9,7 +10,6 @@ export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {
-        if (interaction.commandName !== "test") return;
-        await interaction.editReply('Pong!');
+        interaction.editReply("実行完了");
     }
 }

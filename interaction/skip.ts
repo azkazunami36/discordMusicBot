@@ -2,6 +2,7 @@ import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
+import { EnvData } from "../envJSON.js";
 
 export const command = new SlashCommandBuilder()
     .setName("skip")
@@ -19,6 +20,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             body: { percent?: number; };
         }
         let statuscallTime: number = Date.now();
+        const envData = new EnvData(guildData.guildId);
+        const playlist = envData.playlistGet();
+        const startPlaylistData = playlist.shift();
+        if (startPlaylistData) playlist.push(startPlaylistData);
+        envData.playlistSave(playlist);
         await inputData.playerSet.playerSetAndPlay(guildData.guildId, async (status, body) => {
             const temp = { status, body }
             if (statusTemp && statusTemp === temp) return;

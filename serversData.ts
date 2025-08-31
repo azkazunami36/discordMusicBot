@@ -22,7 +22,7 @@ export class ServersDataClass {
         this.serversData[guildId]?.discord.ffmpegResourcePlayer.player.on(DiscordVoice.AudioPlayerStatus.Idle, async (oldState, newState) => {
             if (this.playSet === undefined) return;
             const serverData = this.serversData[guildId];
-            if (!serverData || !serverData.discord.calledChannel) return;
+            if (!serverData || !serverData.discord.calledChannel || !serverData.discord.ffmpegResourcePlayer.playing) return;
             const envData = new EnvData(guildId);
             const playlist = envData.playlistGet();
             const playType = envData.playType;
