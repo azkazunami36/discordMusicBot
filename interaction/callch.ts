@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
 import { InteractionInputData } from "../interface.js";
 import { EnvData } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
@@ -22,12 +22,24 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (channel) {
             if (guildData.guild.channels.cache.get(channel.id)) {
                 envData.callchannelId = channel.id;
-                interaction.editReply("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。");
+                interaction.editReply({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setDescription("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。")
+                            .setColor("Purple")
+                    ]
+                });
                 return;
             }
         }
         envData.callchannelId = "";
-        interaction.editReply("どのチャンネルでもコマンドが利用できるように設定しました。");
+        interaction.editReply({
+            embeds: [
+                new EmbedBuilder()
+                    .setDescription("どのチャンネルでもコマンドが利用できるように設定しました。")
+                    .setColor("Purple")
+            ]
+        });
 
     }
 }

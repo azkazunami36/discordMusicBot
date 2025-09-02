@@ -7,11 +7,6 @@ export function numberToTimeString(totalSeconds: number): string {
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
 
-  if (h > 0) {
-    return `${h}時間${m}分${s}秒`;
-  } else if (m > 0) {
-    return `${m}分${s}秒`;
-  } else {
-    return `${s}秒`;
-  }
+  const outStr = `${h ? h + "時間" : ""}${m ? m + "分" : ""}${s ? s + "秒" : ""}`;
+  return outStr !== "" ? outStr : "0秒";
 }

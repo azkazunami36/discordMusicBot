@@ -64,19 +64,32 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             const envData = new EnvData(interaction.guildId);
             const callchannelId = envData.callchannelId;
             if (callchannelId && callchannelId != interaction.channelId) return await interaction.reply({
-                content: "ここで曲を追加することはできません。特定のチャンネルでやり直してください。",
+                embeds: [
+                    new Discord.EmbedBuilder()
+                        .setDescription("ここで曲を追加することはできません。特定のチャンネルでやり直してください。")
+                ],
                 flags: "Ephemeral"
-            })
+            });
             if (!runedServerTime.find(data => data.guildId === interaction.guildId)) runedServerTime.push({ guildId: interaction.guildId, runedTime: 0 });
             const runed = runedServerTime.find(data => data.guildId === interaction.guildId);
             if (runed) {
-                if (Date.now() - runed.runedTime < runlimit) return interaction.reply("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。");
+                if (Date.now() - runed.runedTime < runlimit) return interaction.reply({
+                    embeds: [
+                        new Discord.EmbedBuilder()
+                            .setDescription("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。")
+                    ]
+                });
                 runed.runedTime = Date.now();
             }
         }
         // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, playerSet };
-        await interaction.reply("コマンド「" + data.command.name + "」の処理を開始しています...");
+        await interaction.reply({
+            embeds: [
+                new Discord.EmbedBuilder()
+                    .setDescription("コマンド「" + data.command.name + "」の処理を開始しています...")
+            ]
+        });
         await data.execute(interaction, inputData);
     }
 });
@@ -95,7 +108,12 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
         if (serverData && serverData.discord.calledChannel) {
             const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
             if (channel && channel.isTextBased()) {
-                channel.send("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。");
+                channel.send({
+                    embeds: [
+                        new Discord.EmbedBuilder()
+                            .setDescription("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。")
+                    ]
+                });
             }
         }
         // 実際に退出します。
@@ -135,6 +153,34 @@ const bt = [
 ]
 let joubutuNumber = Math.floor(Math.random() * bt.length);
 client.on(Discord.Events.MessageCreate, async message => {
+    if (message.guildId === "926965020724691005" && message.content === "音楽botのコマンドを再定義する") {// JSON へ変換（REST 配信用）
+        function toJSONBody(builders: Discord.SlashCommandOptionsOnlyBuilder[]): Discord.RESTPostAPIApplicationCommandsJSONBody[] {
+            return builders.map((b) => (b as any).toJSON ? (b as any).toJSON() : (b as unknown as Discord.RESTPostAPIApplicationCommandsJSONBody));
+        }
+        const botmessage = await message.reply("処理を開始します...");
+        const token = process.env.DISCORD_TOKEN;
+        const clientId = "1028285721955553362";
+
+        if (!token || !clientId) return await botmessage.edit("トークンまたはクライアントIDが無効だったよ。");
+        const commands = interactionFuncs.map(func => func.command).filter((cmd): cmd is Discord.SlashCommandOptionsOnlyBuilder => cmd !== undefined);
+        const body = toJSONBody(commands);
+        const rest = new Discord.REST({ version: "10" }).setToken(token);
+
+        botmessage.edit("グローバルコマンドをセットしています...");
+        await rest.put(Discord.Routes.applicationCommands(clientId), { body: body });
+
+        // Botが参加している全サーバーのID一覧
+        const guildIds = client.guilds.cache.map(guild => guild.id);
+        for (let i = 0; i < guildIds.length; i++) {
+            const guildId = guildIds[i];
+            botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」に登録しています...時間がかかります。");
+            await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: body });
+            botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」から削除しています...");
+            await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: [] });
+        }
+        botmessage.edit("グローバルコマンドを登録しました。");
+        return;
+    }
     // 1. bot呼び出しでないものをスキップする。
     if (!message.guildId || !message.member || !message.guild) return message.reply("ごめん！！エラーっす！www");
     if (message.content === "VCの皆、成仏せよ") {

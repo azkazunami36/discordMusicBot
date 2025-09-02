@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
 import { InteractionInputData } from "../interface.js";
 import { EnvData } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
@@ -22,10 +22,22 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const envData = new EnvData(guildData.guildId);
         if (type) {
             envData.changeTellIs = true;
-            interaction.editReply("常に曲の切り替えを伝えるように変更しました。");
+            interaction.editReply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setDescription("常に曲の切り替えを伝えるように変更しました。")
+                        .setColor("Purple")
+                ]
+            });
         } else {
             envData.changeTellIs = false;
-            interaction.editReply("曲の変更は常に通知なしで行われるように変更しました。")
+            interaction.editReply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setDescription("曲の変更は常に通知なしで行われるように変更しました。")
+                        .setColor("Purple")
+                ]
+            })
         }
 
     }

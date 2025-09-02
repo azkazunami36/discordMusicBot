@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType } from 'discord.js';
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from 'discord.js';
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from '../variableExistCheck.js';
@@ -10,6 +10,12 @@ export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {
-        interaction.editReply("実行完了");
+        interaction.editReply({
+            content: "実行完了",
+            embeds: [
+                new EmbedBuilder()
+                    .setTitle("タイトル")
+            ]
+        });
     }
 }

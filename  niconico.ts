@@ -1,4 +1,45 @@
+
 // Created by ChatGPT.
+
+// --- helper: try to upgrade Nico thumbnail quality ---
+async function resolveBetterNicoThumb(url?: string): Promise<string | undefined> {
+    if (!url || typeof url !== 'string') return url;
+    try {
+        // Already looks like high-res? (has .L or .M at the end or explicit extension)
+        if (/\.(?:L|M)(?:$|\?)/.test(url)) return url;
+
+        // nicovideo CDN: https://nicovideo.cdn.nimg.jp/thumbnails/<id>/<id>.<rand>
+        // Rule: append .L first (960x540 or 1280x720 when available), fallback .M (320x180)
+        if (/^https?:\/\/nicovideo\.cdn\.nimg\.jp\/thumbnails\//.test(url)) {
+            const tryL = url + '.L';
+            try {
+                const head = await fetch(tryL, { method: 'HEAD' });
+                if (head.ok) return tryL;
+            } catch {}
+            const tryM = url + '.M';
+            try {
+                const head2 = await fetch(tryM, { method: 'HEAD' });
+                if (head2.ok) return tryM;
+            } catch {}
+            return url; // fallback original
+        }
+
+        // legacy smile: http(s)://tn-*.smilevideo.jp/smile?i=<num>
+        if (/^https?:\/\/tn-[^/]+\.smilevideo\.jp\/smile\?i=\d+/.test(url)) {
+            const tryL = url + '.L';
+            try {
+                const head = await fetch(tryL, { method: 'HEAD' });
+                if (head.ok) return tryL;
+            } catch {}
+            return url;
+        }
+
+        // Other hosts: return as-is
+        return url;
+    } catch {
+        return url;
+    }
+}
 
 export interface NicoSnapshotItem {
     // 基本
@@ -54,7 +95,7 @@ export async function searchNicoVideo(
                     contentId: query,
                     title: typeof ojson.title === "string" ? ojson.title : "",
                     description: typeof ojson.description === "string" ? ojson.description : undefined,
-                    thumbnailUrl: typeof ojson.thumbnail_url === "string" ? ojson.thumbnail_url : undefined,
+                    thumbnailUrl: await resolveBetterNicoThumb(typeof ojson.thumbnail_url === "string" ? ojson.thumbnail_url : undefined),
                     // 取得できないカウンター類は未定義のまま
                     // 取得できる場合に備えて予備の拾い上げ
                     userNickname: typeof ojson.author_name === "string" ? ojson.author_name : undefined,
@@ -105,7 +146,7 @@ export async function searchNicoVideo(
                     contentId: query,
                     title: decode(getTag("title")) ?? "",
                     description: decode(getTag("description")),
-                    thumbnailUrl: getTag("thumbnail_url"),
+                    thumbnailUrl: await resolveBetterNicoThumb(getTag("thumbnail_url")),
                     viewCounter: Number(getTag("view_counter")) || undefined,
                     commentCounter: Number(getTag("comment_num")) || undefined,
                     mylistCounter: Number(getTag("mylist_counter")) || undefined,
@@ -144,7 +185,7 @@ export async function searchNicoVideo(
             for (const m of itemMatches) {
                 const block = m[1];
                 const get = (tag: string) => {
-                    const mm = block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+                    const mm = block.match(new RegExp(`<${tag}>([\\s\\S]*?)<\/${tag}>`));
                     return mm ? mm[1] : undefined;
                 };
                 const decode = (s?: string) =>
@@ -152,7 +193,7 @@ export async function searchNicoVideo(
                 const title = decode(get("title")) ?? "";
                 const link = get("link") || "";
                 const desc = decode(get("description"));
-                const thumb = (block.match(/<nicovideo:thumbnail_url>(.*?)<\/nicovideo:thumbnail_url>/)?.[1]);
+                const thumb = await resolveBetterNicoThumb(block.match(/<nicovideo:thumbnail_url>(.*?)<\/nicovideo:thumbnail_url>/)?.[1]);
                 const lenStr = (block.match(/<nicovideo:length>(.*?)<\/nicovideo:length>/)?.[1]);
                 const viewsStr = (block.match(/<nicovideo:viewCounter>(.*?)<\/nicovideo:viewCounter>/)?.[1]);
                 const comStr = (block.match(/<nicovideo:commentCounter>(.*?)<\/nicovideo:commentCounter>/)?.[1]);
@@ -219,7 +260,7 @@ export async function searchNicoVideo(
                 const title = decode(get("title")) ?? "";
                 const link = get("link") || "";
                 const desc = decode(get("description"));
-                const thumb = (block.match(/<nicovideo:thumbnail_url>(.*?)<\/nicovideo:thumbnail_url>/)?.[1]);
+                const thumb = await resolveBetterNicoThumb(block.match(/<nicovideo:thumbnail_url>(.*?)<\/nicovideo:thumbnail_url>/)?.[1]);
                 const lenStr = (block.match(/<nicovideo:length>(.*?)<\/nicovideo:length>/)?.[1]);
                 const viewsStr = (block.match(/<nicovideo:viewCounter>(.*?)<\/nicovideo:viewCounter>/)?.[1]);
                 const comStr = (block.match(/<nicovideo:commentCounter>(.*?)<\/nicovideo:commentCounter>/)?.[1]);
@@ -445,7 +486,7 @@ export async function searchNicoVideo(
                             contentId: id,
                             title: typeof ojson.title === "string" ? ojson.title : "",
                             description: typeof ojson.description === "string" ? ojson.description : undefined,
-                            thumbnailUrl: typeof ojson.thumbnail_url === "string" ? ojson.thumbnail_url : undefined,
+                            thumbnailUrl: await resolveBetterNicoThumb(typeof ojson.thumbnail_url === "string" ? ojson.thumbnail_url : undefined),
                             userNickname: typeof ojson.author_name === "string" ? ojson.author_name : undefined,
                             channelName: typeof ojson.provider_name === "string" ? ojson.provider_name : undefined,
                         });
@@ -490,7 +531,7 @@ export async function searchNicoVideo(
                             contentId: id,
                             title: decode(getTag("title")) ?? "",
                             description: decode(getTag("description")),
-                            thumbnailUrl: getTag("thumbnail_url"),
+                            thumbnailUrl: await resolveBetterNicoThumb(getTag("thumbnail_url")),
                             viewCounter: Number(getTag("view_counter")) || undefined,
                             commentCounter: Number(getTag("comment_num")) || undefined,
                             mylistCounter: Number(getTag("mylist_counter")) || undefined,

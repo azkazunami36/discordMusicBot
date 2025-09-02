@@ -1,6 +1,6 @@
 import { EnvData, VideoMetaCache } from "./envJSON.js";
 import * as DiscordVoice from "@discordjs/voice";
-import { Client } from "discord.js";
+import { Client, EmbedBuilder } from "discord.js";
 
 import { ServersData } from "./interface.js";
 import { PlayerSet } from "./playerSet.js";
@@ -41,7 +41,7 @@ export class ServersDataClass {
             if (playlist.length < 1) {
                 const channel = this.client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
                 if (channel && channel.isTextBased()) {
-                    await channel.send("次の曲がなかったため切断しました。また`!music タイトルまたはURL`を行ってください。");
+                    await channel.send("次の曲がなかったため切断しました。また`/add text:[タイトルまたはURL`を行ってください。]");
                 }
                 await this.playSet.playerStop(guildId);
                 return;
@@ -52,29 +52,63 @@ export class ServersDataClass {
                     const playlistData = playlist[0];
                     const videoMetaCache = new VideoMetaCache();
                     const meta = await videoMetaCache.cacheGet(playlistData);
-                    const title = (meta ? meta.title : "タイトル取得エラー(ID: " + playlistData.body + ")")
-                    const message = await channel.send("次の曲「" + title + "」の再生準備中...0%");
+                    const title = "次の曲「" + (meta?.body ? meta.body.title : "タイトル取得エラー(ID: " + playlistData.body + ")") + "」";
                     let statusTemp: {
                         status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
                         body: { percent?: number; };
                     }
                     let statuscallTime: number = Date.now();
+                    const message = await channel.send({
+                        embeds: [
+                            new EmbedBuilder()
+                                .setDescription(title + "の再生準備中...0%")
+                                .setColor("Purple")
+                        ]
+                    });
                     await this.playSet.playerSetAndPlay(guildId, async (status, body) => {
                         const temp = { status, body }
                         if (statusTemp && statusTemp === temp) return;
                         if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
                         statusTemp = temp;
                         statuscallTime = Date.now();
-                        if (status === "loading") await message.edit("次の曲「" + title + "」の音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
-                        if (status === "downloading") await message.edit("次の曲「" + title + "」の音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
-                        if (status === "converting") await message.edit("次の曲「" + title + "」の音声ファイルを再生可能な形式に変換中...少々お待ちください..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
-                        if (status === "formatchoosing") await message.edit("次の曲「" + title + "」の" + (body.type ? (body.type === "youtube" ? "YouTube" : "ニコニコ動画") : "") + "サーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""));
+                        if (status === "loading") await message.edit({
+                            embeds: [
+                                new EmbedBuilder()
+                                    .setDescription(title + "の音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : ""))
+                                    .setColor("Purple")
+                            ]
+                        });
+                        if (status === "downloading") await message.edit({
+                            embeds: [
+                                new EmbedBuilder()
+                                    .setDescription(title + "の音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : ""))
+                                    .setColor("Purple")
+                            ]
+                        });
+                        if (status === "converting") await message.edit({
+                            embeds: [
+                                new EmbedBuilder()
+                                    .setDescription(title + "の音声ファイルを再生可能な形式に変換中...少々お待ちください..." + (body.percent ? Math.floor(body.percent) + "%" : ""))
+                                    .setColor("Purple")
+                            ]
+                        });
+                        if (status === "formatchoosing") await message.edit({
+                            embeds: [
+                                new EmbedBuilder()
+                                    .setDescription(title + "の" + (body.type ? (body.type === "youtube" ? "YouTube" : "ニコニコ動画") : "") + "サーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""))
+                                    .setColor("Purple")
+                            ]
+                        });
                     });
-                    await message.edit("次の曲「" + title + "」を再生しています。");
+                    await message.edit({
+                        embeds: [
+                            new EmbedBuilder()
+                                .setDescription(title + "にスキップしました。")
+                                .setColor("Purple")
+                        ]
+                    });
                 }
             }
         });
     }
 }
-
-

@@ -29,6 +29,7 @@ export class PlayerSet {
             await serverData.discord.ffmpegResourcePlayer.stop();
         serverData.discord.ffmpegResourcePlayer.audioPath = await sourcePathManager.getAudioPath(playlist[0], statuscall);
         const volume = envData.volume;
+        serverData.discord.ffmpegResourcePlayer.speedChange(envData.playSpeed);
         serverData.discord.ffmpegResourcePlayer.volume = (volume ? Number(volume) : 100) / 750;
         await serverData.discord.ffmpegResourcePlayer.play();
     }

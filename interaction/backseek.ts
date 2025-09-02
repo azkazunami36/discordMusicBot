@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
@@ -23,7 +23,13 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsNotPlaying(inputData.serversDataClass)) return;
         const second = interaction.options.getNumber("second") || 10;
         await serverData.discord.ffmpegResourcePlayer.seek(serverData.discord.ffmpegResourcePlayer.playtime - second);
-        interaction.editReply(second + "秒巻き戻しました。");
+        interaction.editReply({
+            embeds: [
+                new EmbedBuilder()
+                    .setDescription(second + "秒巻き戻しました。")
+                    .setColor("Purple")
+            ]
+        });
     }
 }
 

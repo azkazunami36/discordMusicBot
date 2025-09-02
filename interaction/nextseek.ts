@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, GuildMember } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, GuildMember, EmbedBuilder } from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
 
 import { InteractionInputData } from "../interface.js";
@@ -24,7 +24,13 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsNotPlaying(inputData.serversDataClass)) return;
         const second = interaction.options.getNumber("second") || 10;
         await serverData.discord.ffmpegResourcePlayer.seek(serverData.discord.ffmpegResourcePlayer.playtime + second);
-        interaction.editReply(second + "秒すすめました。");
+        interaction.editReply({
+            embeds: [
+                new EmbedBuilder()
+                    .setDescription(second + "秒すすめました。")
+                    .setColor("Purple")
+            ]
+        });
     }
 }
 
