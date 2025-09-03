@@ -9,6 +9,7 @@ import { PlayerSet } from "./playerSet.js";
 import { ServersDataClass } from "./serversData.js";
 import { InteractionInputData } from "./interface.js";
 import { sourcePathManager } from "./sourcePathManager.js";
+import { WebPlayerAPI } from "./webAPI.js";
 
 const client = new Discord.Client({
     intents: [
@@ -29,7 +30,7 @@ const serversData = serversDataClass.serversData;
 /** サーバーに記録されたプレイリストの内容をセットしたり、プレイヤーを設定したりするのを自動で行います。 */
 const playerSet = new PlayerSet(serversData);
 serversDataClass.playSet = playerSet;
-const { playerSetAndPlay } = playerSet;
+const webPlayerAPI = new WebPlayerAPI(serversDataClass, client);
 
 /** インタラクションコマンドのデータです。 */
 const interactionFuncs = (() => {
