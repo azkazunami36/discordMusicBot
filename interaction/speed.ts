@@ -25,7 +25,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!num || num <= 0) return await interaction.editReply("数字が指定されておらず、そして正しい指定ではありません。正しい数字を入力してください。");
         const envdata = new EnvData(guildData.guildId);
         envdata.playSpeed = num;
-        await serverData.discord.ffmpegResourcePlayer.speedChange(num);
+        await inputData.player.speedSet(guildData.guildId, num);
         await interaction.editReply(num + "倍速にしました。");
     }
 }

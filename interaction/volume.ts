@@ -26,7 +26,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!number || number < 0) return await interaction.editReply("番号が無効です。0以上の数字を入力してください。半角数字を使ってください。");
         const envData = new EnvData(guildData.guildId);
         envData.volume = number;
-        serverData.discord.ffmpegResourcePlayer.volume = number / 750;
+        inputData.player.volumeSet(guildData.guildId, number);
         await interaction.editReply("音量を" + number + "%に変更しました。");
     }
 }

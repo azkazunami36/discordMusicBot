@@ -44,7 +44,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 const meta = await videoMetaCache.cacheGet(playlistData);
                 if (meta?.body) if (meta.type === "videoId") {
                     fields.push({
-                        name: (i + 1) + ". " + meta.body.title,
+                        name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + meta.body.title,
                         value: "動画時間: `" + numberToTimeString(meta.body.duration.seconds) + "` 動画サービス: `YouTube`",
                         inline: false
                     });
@@ -117,7 +117,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             page: interaction.options.getNumber("page") || 1,
             client: interaction.client,
             playlist,
-            playing: { playingPlaylist: serverData.discord.ffmpegResourcePlayer.playing, playingTime: serverData.discord.ffmpegResourcePlayer.playtime }
+            playing: { playingPlaylist: inputData.player.playingGet(guildData.guildId), playingTime: inputData.player.playtimeGet(guildData.guildId) }
         });
         await interaction.editReply({
             content: "音楽botのステータスです。",

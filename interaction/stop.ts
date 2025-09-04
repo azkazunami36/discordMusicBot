@@ -2,6 +2,7 @@ import { Interaction, SlashCommandBuilder, CacheType, GuildMember } from "discor
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
+import { EnvData } from "../envJSON.js";
 
 export const command = new SlashCommandBuilder()
     .setName("stop")
@@ -14,9 +15,13 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
+        const envData = new EnvData(guildData.guildId);
+        const playlist = envData.playlistGet();
         if (!await variableExistCheck.voiceChannelId()) return;
-        if (await variableExistCheck.playerIsNotPlaying(inputData.serversDataClass)) return;
-        await inputData.playerSet.playerStop(guildData.guildId);
+        if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
+        if (envData.playType === 1) playlist.shift();
+        envData.playlistSave(playlist);
+        inputData.player.stop(guildData.guildId);
         await interaction.editReply("曲を停止しました。");
     }
 }

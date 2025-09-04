@@ -4,12 +4,12 @@ import fs from "fs";
 import "dotenv/config";
 import { Writable } from "stream";
 
-import { EnvData } from "./envJSON.js";
-import { PlayerSet } from "./playerSet.js";
+import { EnvData, VideoMetaCache } from "./envJSON.js";
 import { ServersDataClass } from "./serversData.js";
 import { InteractionInputData } from "./interface.js";
 import { sourcePathManager } from "./sourcePathManager.js";
 import { WebPlayerAPI } from "./webAPI.js";
+import { Player } from "./player.js";
 
 const client = new Discord.Client({
     intents: [
@@ -27,10 +27,68 @@ const client = new Discord.Client({
 const serversDataClass = new ServersDataClass(client);
 /** サーバーごとに記録する必要のある一時データです。 */
 const serversData = serversDataClass.serversData;
-/** サーバーに記録されたプレイリストの内容をセットしたり、プレイヤーを設定したりするのを自動で行います。 */
-const playerSet = new PlayerSet(serversData);
-serversDataClass.playSet = playerSet;
 const webPlayerAPI = new WebPlayerAPI(serversDataClass, client);
+/** 全てのVCの動作を追いかけるクラスです。 */
+const player = new Player();
+
+player.on("playAutoEnd", async (guildId) => {
+    const serverData = serversData[guildId];
+    if (!serverData || !serverData.discord.calledChannel) return;
+    const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
+    const envData = new EnvData(guildId);
+    const playlist = envData.playlistGet();
+    const playType = envData.playType;
+    switch (playType) {
+        case 1: {
+            playlist.shift();
+            envData.playlistSave(playlist);
+            break;
+        }
+        case 2: {
+            const videoId = playlist.shift();
+            if (videoId) playlist.push(videoId);
+            envData.playlistSave(playlist);
+            break;
+        }
+    }
+    if (playlist.length < 1) {
+        if (channel && channel.isTextBased()) {
+            await channel.send("次の曲がなかったため切断しました。また`/add text:[タイトルまたはURL`を行ってください。]");
+        }
+        player.stop(guildId);
+        return;
+    }
+    if (envData.changeTellIs) {
+        const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
+        if (channel && channel.isTextBased()) {
+            const playlistData = playlist[0];
+            const videoMetaCache = new VideoMetaCache();
+            const meta = await videoMetaCache.cacheGet(playlistData);
+            const title = "次の曲「" + (meta?.body ? meta.body.title : "タイトル取得エラー(ID: " + playlistData.body + ")") + "」";
+            const message = await channel.send({
+                embeds: [
+                    new Discord.EmbedBuilder()
+                        .setDescription(title + "の再生準備中...0%")
+                        .setColor("Purple")
+                ]
+            });
+            await player.forcedPlay({
+                guildId: guildId,
+                source: playlist[0],
+                playtime: 0,
+                speed: envData.playSpeed,
+                volume: envData.volume
+            })
+            await message.edit({
+                embeds: [
+                    new Discord.EmbedBuilder()
+                        .setDescription(title + "にスキップしました。")
+                        .setColor("Purple")
+                ]
+            });
+        }
+    }
+})
 
 /** インタラクションコマンドのデータです。 */
 const interactionFuncs = (() => {
@@ -84,7 +142,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             }
         }
         // 4. 必要なデータを整え、コマンドを実行します。
-        const inputData: InteractionInputData = { serversDataClass, playerSet };
+        const inputData: InteractionInputData = { serversDataClass, player };
         await interaction.reply({
             embeds: [
                 new Discord.EmbedBuilder()
@@ -101,7 +159,7 @@ client.on(Discord.Events.ClientReady, () => {
 // VCの状態が変化したら実行します。
 client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
     const channel = newState.guild.channels.cache.get(newState.channelId || oldState.channelId || "");
-    if (!channel || !channel.isVoiceBased()) return;
+    if (!channel || !channel.isVoiceBased() || !player.playingGet(channel.guildId)) return;
     // 1. VCにいる人数がBotを含め1人以下になったら退出します。
     if (channel.members.size <= 1) {
         const serverData = serversData[newState.guild.id];
@@ -118,7 +176,7 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
             }
         }
         // 実際に退出します。
-        await playerSet.playerStop(newState.guild.id);
+        player.stop(channel.guildId);
     }
 });
 
@@ -185,49 +243,6 @@ client.on(Discord.Events.MessageCreate, async message => {
     // 1. bot呼び出しでないものをスキップする。
     if (!message.guildId || !message.member || !message.guild) return message.reply("ごめん！！エラーっす！www");
     if (message.content === "VCの皆、成仏せよ") {
-        if (!serversData[message.guildId]) serversDataClass.serverDataInit(message.guildId);
-        const serverData = serversData[message.guildId];
-        if (!serverData) return message.reply("ごめん！！エラーっす！www");
-        const envData = new EnvData(message.guildId);
-        const callchannelId = envData.callchannelId;
-        if (callchannelId && callchannelId != message.channelId) return;
-        if (!message.member.voice.channelId) return;
-        if (!runedServerTime.find(data => data.guildId === message.guildId)) runedServerTime.push({ guildId: message.guildId, runedTime: 0 });
-        const runed = runedServerTime.find(data => data.guildId === message.guildId);
-        if (runed) {
-            if (Date.now() - runed.runedTime < runlimit) return message.reply("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。");
-            runed.runedTime = Date.now();
-        }
-        if ((joubutuNumber++) >= bt.length - 1) joubutuNumber = 0;
-        const { name, videoId } = bt[joubutuNumber];
-        const connection = DiscordVoice.joinVoiceChannel({ channelId: message.member.voice.channelId, guildId: message.guildId, adapterCreator: message.guild.voiceAdapterCreator });
-        await DiscordVoice.entersState(connection, DiscordVoice.VoiceConnectionStatus.Ready, 10000);
-        connection.subscribe(serverData.discord.ffmpegResourcePlayer.player);
-        if (serverData.discord.calledChannel === undefined) serverData.discord.calledChannel = message.channelId;
-        if (!serverData.discord.ffmpegResourcePlayer) return;
-        // 2. 再生中だったら一度停止。
-        if (serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing)
-            await serverData.discord.ffmpegResourcePlayer.stop();
-        serverData.discord.ffmpegResourcePlayer.audioPath = await sourcePathManager.getAudioPath({ type: "videoId", body: videoId });
-        serverData.discord.ffmpegResourcePlayer.volume = 1145141919 / 750;
-        await serverData.discord.ffmpegResourcePlayer.play();
-        await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。プレイリストや設定は変更していないため、次の曲からは音量は" + envData.volume + "%に戻ります。");
-
-        if (message.content.startsWith("!musiec-addfile")) {
-            const title = message.content.slice(15, message.content.length).split(/\s/g)[0];
-            if (!title) return message.reply("曲名を指定してください。");
-            if (title.length < 2) return message.reply("曲名は２文字以上にしてください。");
-            if (envData.originalFilesGet().find(file => file.callName == title)) return message.reply("すでにその曲名は存在しています。他の名前を使用するか、数字を後に足すなどを行なってください。");
-            const file = message.attachments.first();
-            if (!file) return message.reply("ファイルが見つかりませんでした。ファイルを選んでください。");
-            const res = await fetch(file.url);
-            if (!res.ok || !res.body) return message.reply("内部エラーが発生しました。エラーは`" + res.status + "/" + res.statusText + "`です。もう一度試してください。何度も失敗する場合はあんこかずなみ36");
-            const cacheFileName = "./cache/" + title
-            const stream = fs.createWriteStream(cacheFileName);
-            // WHATWG ReadableStream → WHATWG WritableStream (Node層へブリッジ)
-            await res.body.pipeTo(Writable.toWeb(stream));
-
-            envData.originalFilesGet();
-        }
+        return message.reply("ただいまVCの皆を成仏させることができません。botのアップデートにご協力ください。");
     }
 })

@@ -5,7 +5,7 @@ import { parseYtDlpProgressLine } from "./parseYtDlpProgressLine.js";
 import { Playlist } from "./envJSON.js";
 
 /** メディアデータを管理するクラスです。 */
-export const sourcePathManager = new class SourcePathManager {
+export class SourcePathManager {
     #youtubeDownloading: {
         [videoId: string]: (func: () => void, statusCallback: (status: "loading" | "downloading" | "converting" | "done", body: {
             percent?: number;
@@ -281,3 +281,5 @@ export const sourcePathManager = new class SourcePathManager {
         }
     }
 };
+
+export const sourcePathManager = new SourcePathManager();

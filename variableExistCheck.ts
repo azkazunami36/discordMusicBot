@@ -2,6 +2,7 @@ import * as Discord from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
 import { EnvData } from "./envJSON.js";
 import { ServersDataClass } from "./serversData.js";
+import { Player } from "./player.js";
 
 /**
  * 変数の存在をチェックし、存在しない変数があるとundefinedを返すだけでなく自動でeditReplyをします。replyを予め行なってください。
@@ -59,20 +60,18 @@ export class VariableExistCheck {
         }
         return serverData;
     }
-    async playerIsPlaying(serversDataClass: ServersDataClass) {
-        const serverData = await this.serverData(serversDataClass);
-        if (!serverData) return undefined;
-        const is = serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing;
-        if (is) {
+    async playerIsPlaying(player: Player) {
+        const guildData = await this.guild();
+        if (!guildData) return;
+        if (player.playingGet(guildData.guildId)) {
             try { await this.interaction.editReply("すでに再生中です。`/help`で使い方をみることができます。"); } catch (e) { };
             return true;
         } else return false;
     }
-    async playerIsNotPlaying(serversDataClass: ServersDataClass) {
-        const serverData = await this.serverData(serversDataClass);
-        if (!serverData) return undefined;
-        const is = serverData.discord.ffmpegResourcePlayer.player.state.status === DiscordVoice.AudioPlayerStatus.Playing;
-        if (!is) {
+    async playerIsNotPlaying(player: Player) {
+        const guildData = await this.guild();
+        if (!guildData) return;
+        if (!player.playingGet(guildData.guildId)) {
             try { await this.interaction.editReply("再生されていないためその操作はできません。`/help`で使い方をみることができます。"); } catch (e) { };
             return true;
         } else return false;

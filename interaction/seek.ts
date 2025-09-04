@@ -4,6 +4,7 @@ import { InteractionInputData } from "../interface.js";
 import { parseStrToNum } from "../parseTimeStrToNum.js";
 import { numberToTimeString } from "../numberToTimeString.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
+import { EnvData } from "../envJSON.js";
 
 export const command = new SlashCommandBuilder()
     .setName("seek")
@@ -23,12 +24,13 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!guildData) return;
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
         if (!serverData) return;
-        if (await variableExistCheck.playerIsNotPlaying(inputData.serversDataClass)) return;
+        if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
+        const envData = new EnvData(guildData.guildId);
         const time = interaction.options.getString("time");
         if (time === null) return await interaction.editReply("時間が指定されていません。時間を指定してからもう一度やり直してください。");
         const second = parseStrToNum(time);
         if (second === undefined) return await interaction.editReply("「" + time + "」を正しく分析できません。もう一度入力し直してください。");
-        await serverData.discord.ffmpegResourcePlayer.seek(second);
+        await inputData.player.playtimeSet(guildData.guildId, second);
         await interaction.editReply("時間を" + numberToTimeString(second) + "にしました。");
     }
 }

@@ -22,6 +22,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const envData = new EnvData(guildData.guildId);
         const playlist = envData.playlistGet();
         const skipNum = interaction.options.getNumber("skipnum") || 2;
+        if (envData.playType === 1) playlist.shift();
         if (skipNum > playlist.length + 10) return await interaction.editReply("指定したスキップ数が大きすぎます。枕がでかすぎる！ンアーッ！");
         for (let i = 0; i < skipNum - 1; i++) {
             const startPlaylistData = playlist.shift();
@@ -34,50 +35,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         await interaction.editReply({
             embeds: [
                 new EmbedBuilder()
-                    .setDescription(title + "の再生準備中...0%")
+                    .setDescription(title + "の再生準備中...")
                 .setColor("Purple")
             ]
         });
-        let statusTemp: {
-            status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
-            body: { percent?: number; };
-        }
-        let statuscallTime: number = Date.now();
-        await inputData.playerSet.playerSetAndPlay(guildData.guildId, async (status, body) => {
-            const temp = { status, body }
-            if (statusTemp && statusTemp === temp) return;
-            if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
-            statusTemp = temp;
-            statuscallTime = Date.now();
-            if (status === "loading") await interaction.editReply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setDescription(title + "の音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : ""))
-                .setColor("Purple")
-                ]
-            });
-            if (status === "downloading") await interaction.editReply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setDescription(title + "の音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : ""))
-                .setColor("Purple")
-                ]
-            });
-            if (status === "converting") await interaction.editReply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setDescription(title + "の音声ファイルを再生可能な形式に変換中...少々お待ちください..." + (body.percent ? Math.floor(body.percent) + "%" : ""))
-                .setColor("Purple")
-                ]
-            });
-            if (status === "formatchoosing") await interaction.editReply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setDescription( title + "の" + (body.type ? (body.type === "youtube" ? "YouTube" : "ニコニコ動画") : "") + "サーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : ""))
-                .setColor("Purple")
-                ]
-            });
-        });
+        await inputData.player.sourceSet(guildData.guildId, playlist[0]);
         await interaction.editReply({
             embeds: [
                 new EmbedBuilder()

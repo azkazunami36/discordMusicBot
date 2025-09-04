@@ -1,12 +1,10 @@
 import { ServersDataClass } from "./serversData.js";
-import { PlayerSet } from "./playerSet.js";
-import { FfmpegResourcePlayer } from "./ffmpegResourcePlayer.js";
+import { Player } from "./player.js";
 
 export interface ServersData {
     [guildId: string]: {
         discord: {
             calledChannel?: string;
-            ffmpegResourcePlayer: FfmpegResourcePlayer;
         }
         users?: {
             [userId: string]: {
@@ -19,5 +17,5 @@ export interface ServersData {
 
 export interface InteractionInputData {
     serversDataClass: ServersDataClass;
-    playerSet: PlayerSet;
+    player: Player;
 }

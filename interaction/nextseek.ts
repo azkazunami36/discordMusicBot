@@ -21,9 +21,9 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!guildData) return;
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
         if (!serverData) return;
-        if (await variableExistCheck.playerIsNotPlaying(inputData.serversDataClass)) return;
+        if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const second = interaction.options.getNumber("second") || 10;
-        await serverData.discord.ffmpegResourcePlayer.seek(serverData.discord.ffmpegResourcePlayer.playtime + second);
+        await inputData.player.playtimeSet(guildData.guildId, inputData.player.playtimeGet(guildData.guildId) + second);
         interaction.editReply({
             embeds: [
                 new EmbedBuilder()
