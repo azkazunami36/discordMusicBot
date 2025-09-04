@@ -1,13 +1,10 @@
 import * as Discord from "discord.js";
-import * as DiscordVoice from "@discordjs/voice";
 import fs from "fs";
 import "dotenv/config";
-import { Writable } from "stream";
 
 import { EnvData, VideoMetaCache } from "./envJSON.js";
 import { ServersDataClass } from "./serversData.js";
 import { InteractionInputData } from "./interface.js";
-import { sourcePathManager } from "./sourcePathManager.js";
 import { WebPlayerAPI } from "./webAPI.js";
 import { Player } from "./player.js";
 
@@ -243,6 +240,30 @@ client.on(Discord.Events.MessageCreate, async message => {
     // 1. bot呼び出しでないものをスキップする。
     if (!message.guildId || !message.member || !message.guild) return message.reply("ごめん！！エラーっす！www");
     if (message.content === "VCの皆、成仏せよ") {
-        return message.reply("ただいまVCの皆を成仏させることができません。botのアップデートにご協力ください。");
+        if (!serversData[message.guildId]) serversDataClass.serverDataInit(message.guildId);
+        const serverData = serversData[message.guildId];
+        if (!serverData) return message.reply("ごめん！！エラーっす！www");
+        const envData = new EnvData(message.guildId);
+        const callchannelId = envData.callchannelId;
+        if (callchannelId !== message.channelId) return;
+        if (!message.member.voice.channelId) return;
+        if (!runedServerTime.find(data => data.guildId === message.guildId)) runedServerTime.push({ guildId: message.guildId, runedTime: 0 });
+        const runed = runedServerTime.find(data => data.guildId === message.guildId);
+        if (runed) {
+            if (Date.now() - runed.runedTime < runlimit) return message.reply("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。");
+            runed.runedTime = Date.now();
+        }
+        if ((joubutuNumber++) >= bt.length - 1) joubutuNumber = 0;
+        const { name, videoId } = bt[joubutuNumber];
+        await player.forcedPlay({
+            guildId: message.guildId,
+            channelId: message.member.voice.channelId,
+            adapterCreator: message.guild.voiceAdapterCreator,
+            source: {type: "videoId", body: videoId},
+            playtime: 0,
+            speed: envData.playSpeed,
+            volume: 1145141919
+        });
+        await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。プレイリストや設定は変更していないため、次の曲からは音量は" + envData.volume + "%に戻ります。");
     }
 })

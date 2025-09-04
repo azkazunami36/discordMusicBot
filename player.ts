@@ -96,7 +96,7 @@ export class Player extends EventEmitter {
             if (this.status[guildId]) {
                 this.status[guildId].playing = undefined;
                 /** もしプロセス内部で回避のできないPlayerによるIdleイベントであった場合を加味して、1秒返信を遅らせます。 */
-                this.status[guildId].endCallbackTimeout = setTimeout(() => { this.emit("playAutoEnd", guildId); }, 1000);
+                this.status[guildId].endCallbackTimeout = setTimeout(() => { this.emit("playAutoEnd", guildId); }, 500);
                 this.status[guildId].timeout = setTimeout(() => {
                     if (this.status[guildId]) {
                         this.status[guildId].subscription?.unsubscribe();
