@@ -227,7 +227,7 @@ export class Player extends EventEmitter {
             "-ar", "48000",
             "-ac", "2",
             "-c:a", "libopus",
-            "-b:a", "96k",
+            "-b:a", "92k",
             "-filter:a", `asetrate=${meta.ffprobe.sample_rate || 48000}*${this.status[guildId].speed},aresample=${meta.ffprobe.sample_rate || 48000}`,
             "-f", "ogg",
             "pipe:1"

@@ -9,3 +9,5 @@ env.json
 *.js
 package-lock.json
 .DS_Store
+!types/**/*.d.ts
+!webAudioAPI/worklet/**/*.js
