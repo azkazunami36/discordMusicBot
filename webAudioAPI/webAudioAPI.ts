@@ -2,8 +2,9 @@ import pkg from "electron";
 const { app, BrowserWindow, ipcMain } = pkg;
 import { randomUUID } from "crypto";
 import { Download, Upload } from "./interface.js";
-import { EventEmitter, Readable } from "stream";
-import fs, { stat } from "fs";
+import { Readable } from "stream";
+import { EventEmitter } from "events";
+import fs from "fs";
 
 /** WebAudioPlayerを使いやすくしたAPIです。 */
 export class WAPAPI {
@@ -104,7 +105,7 @@ export class WebAudioPlayer extends EventEmitter {
         app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
         await app.whenReady();
         this.window = new BrowserWindow({
-            show: false,
+            show: true,
             width: 300,
             height: 300,
             webPreferences: {
@@ -127,8 +128,6 @@ export class WebAudioPlayer extends EventEmitter {
             };
             ipcMain.on("preload-ready", onPreloadReady);
         });
-
-        this.window.removeMenu();
 
         await this.window.loadFile(process.cwd() + "/webAudioAPI/index.html");
 
