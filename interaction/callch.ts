@@ -2,6 +2,7 @@ import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "disco
 import { InteractionInputData } from "../interface.js";
 import { EnvData } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
+import { messageEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("callch")
@@ -22,24 +23,12 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (channel) {
             if (guildData.guild.channels.cache.get(channel.id)) {
                 envData.callchannelId = channel.id;
-                interaction.editReply({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setDescription("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。")
-                            .setColor("Purple")
-                    ]
-                });
+                interaction.editReply({ embeds: [messageEmbedGet("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。")] });
                 return;
             }
         }
         envData.callchannelId = "";
-        interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription("どのチャンネルでもコマンドが利用できるように設定しました。")
-                    .setColor("Purple")
-            ]
-        });
+        interaction.editReply({ embeds: [messageEmbedGet("どのチャンネルでもコマンドが利用できるように設定しました。")] });
 
     }
 }

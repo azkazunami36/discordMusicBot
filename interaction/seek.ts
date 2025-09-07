@@ -5,6 +5,7 @@ import { parseStrToNum } from "../parseTimeStrToNum.js";
 import { numberToTimeString } from "../numberToTimeString.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 import { EnvData } from "../envJSON.js";
+import { messageEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("seek")
@@ -27,11 +28,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const envData = new EnvData(guildData.guildId);
         const time = interaction.options.getString("time");
-        if (time === null) return await interaction.editReply("時間が指定されていません。時間を指定してからもう一度やり直してください。");
+        if (time === null) return await interaction.editReply({ embeds: [messageEmbedGet("時間が指定されていません。時間を指定してからもう一度やり直してください。")] });
         const second = parseStrToNum(time);
-        if (second === undefined) return await interaction.editReply("「" + time + "」を正しく分析できません。もう一度入力し直してください。");
+        if (second === undefined) return await interaction.editReply({ embeds: [messageEmbedGet("「" + time + "」を正しく分析できません。もう一度入力し直してください。")] });
         await inputData.player.playtimeSet(guildData.guildId, second);
-        await interaction.editReply("時間を" + numberToTimeString(second) + "にしました。");
+        await interaction.editReply({ embeds: [messageEmbedGet("時間を" + numberToTimeString(second) + "にしました。")] });
     }
 }
 

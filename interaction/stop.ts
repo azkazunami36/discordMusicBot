@@ -3,6 +3,7 @@ import { Interaction, SlashCommandBuilder, CacheType, GuildMember } from "discor
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 import { EnvData } from "../envJSON.js";
+import { messageEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("stop")
@@ -22,6 +23,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (envData.playType === 1) playlist.shift();
         envData.playlistSave(playlist);
         inputData.player.stop(guildData.guildId);
-        await interaction.editReply("曲を停止しました。");
+        await interaction.editReply({ embeds: [messageEmbedGet("曲を停止しました。")] });
     }
 }

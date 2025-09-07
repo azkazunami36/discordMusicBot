@@ -2,6 +2,7 @@ import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "disco
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
+import { messageEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("backseek")
@@ -23,13 +24,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const second = interaction.options.getNumber("second") || 10;
         await inputData.player.playtimeSet(guildData.guildId, inputData.player.playtimeGet(guildData.guildId) - second);
-        interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription(second + "秒巻き戻しました。")
-                    .setColor("Purple")
-            ]
-        });
+        interaction.editReply({ embeds: [messageEmbedGet(second + "秒巻き戻しました。")] });
     }
 }
 

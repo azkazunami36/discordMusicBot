@@ -3,6 +3,7 @@ import * as DiscordVoice from "@discordjs/voice";
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
+import { messageEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("nextseek")
@@ -24,13 +25,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const second = interaction.options.getNumber("second") || 10;
         await inputData.player.playtimeSet(guildData.guildId, inputData.player.playtimeGet(guildData.guildId) + second);
-        interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription(second + "秒すすめました。")
-                    .setColor("Purple")
-            ]
-        });
+        interaction.editReply({ embeds: [messageEmbedGet(second + "秒すすめました。")] });
     }
 }
 

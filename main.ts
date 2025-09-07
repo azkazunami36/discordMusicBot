@@ -7,9 +7,7 @@ import { ServersDataClass } from "./serversData.js";
 import { InteractionInputData } from "./interface.js";
 import { WebPlayerAPI } from "./webAPI.js";
 import { Player } from "./player.js";
-import { WebAudioPlayer } from "./webAudioAPI/webAudioAPI.js";
-
-const webAudioPlayer = new WebAudioPlayer();
+import { messageEmbedGet, videoInfoEmbedGet } from "./embed.js";
 
 const client = new Discord.Client({
     intents: [
@@ -53,7 +51,7 @@ player.on("playAutoEnd", async (guildId) => {
     }
     if (playlist.length < 1) {
         if (channel && channel.isTextBased()) {
-            await channel.send("次の曲がなかったため切断しました。また`/add text:[タイトルまたはURL`を行ってください。]");
+            await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また`/add text:[タイトルまたはURL`を行ってください。]")] });
         }
         player.stop(guildId);
         return;
@@ -62,16 +60,8 @@ player.on("playAutoEnd", async (guildId) => {
         const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
         if (channel && channel.isTextBased()) {
             const playlistData = playlist[0];
-            const videoMetaCache = new VideoMetaCache();
-            const meta = await videoMetaCache.cacheGet(playlistData);
-            const title = "次の曲「" + (meta?.body ? meta.body.title : "タイトル取得エラー(ID: " + playlistData.body + ")") + "」";
-            const message = await channel.send({
-                embeds: [
-                    new Discord.EmbedBuilder()
-                        .setDescription(title + "の再生準備中...0%")
-                        .setColor("Purple")
-                ]
-            });
+            const metaEmbed = await videoInfoEmbedGet(playlistData, "次の曲の再生準備中...0%");
+            const message = await channel.send({ embeds: [metaEmbed] });
             await player.forcedPlay({
                 guildId: guildId,
                 source: playlist[0],
@@ -79,13 +69,8 @@ player.on("playAutoEnd", async (guildId) => {
                 speed: envData.playSpeed,
                 volume: envData.volume
             })
-            await message.edit({
-                embeds: [
-                    new Discord.EmbedBuilder()
-                        .setDescription(title + "にスキップしました。")
-                        .setColor("Purple")
-                ]
-            });
+            metaEmbed.setDescription("次の曲の再生を開始しました。");
+            await message.edit({ embeds: [metaEmbed] });
         }
     }
 })
@@ -123,20 +108,14 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             const envData = new EnvData(interaction.guildId);
             const callchannelId = envData.callchannelId;
             if (callchannelId && callchannelId != interaction.channelId) return await interaction.reply({
-                embeds: [
-                    new Discord.EmbedBuilder()
-                        .setDescription("ここで曲を追加することはできません。特定のチャンネルでやり直してください。")
-                ],
+                embeds: [messageEmbedGet("ここで曲を追加することはできません。特定のチャンネルでやり直してください。")],
                 flags: "Ephemeral"
             });
             if (!runedServerTime.find(data => data.guildId === interaction.guildId)) runedServerTime.push({ guildId: interaction.guildId, runedTime: 0 });
             const runed = runedServerTime.find(data => data.guildId === interaction.guildId);
             if (runed) {
                 if (Date.now() - runed.runedTime < runlimit) return interaction.reply({
-                    embeds: [
-                        new Discord.EmbedBuilder()
-                            .setDescription("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。")
-                    ]
+                    embeds: [messageEmbedGet("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。")]
                 });
                 runed.runedTime = Date.now();
             }
@@ -144,10 +123,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, player };
         await interaction.reply({
-            embeds: [
-                new Discord.EmbedBuilder()
-                    .setDescription("コマンド「" + data.command.name + "」の処理を開始しています...")
-            ]
+            embeds: [messageEmbedGet("コマンド「" + data.command.name + "」の処理を開始しています...")]
         });
         await data.execute(interaction, inputData);
     }
@@ -167,12 +143,7 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
         if (serverData && serverData.discord.calledChannel) {
             const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
             if (channel && channel.isTextBased()) {
-                channel.send({
-                    embeds: [
-                        new Discord.EmbedBuilder()
-                            .setDescription("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。")
-                    ]
-                });
+                channel.send({ embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。")] });
             }
         }
         // 実際に退出します。
@@ -262,7 +233,7 @@ client.on(Discord.Events.MessageCreate, async message => {
             guildId: message.guildId,
             channelId: message.member.voice.channelId,
             adapterCreator: message.guild.voiceAdapterCreator,
-            source: {type: "videoId", body: videoId},
+            source: { type: "videoId", body: videoId },
             playtime: 0,
             speed: envData.playSpeed,
             volume: 1145141919

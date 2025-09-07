@@ -4,6 +4,7 @@ import * as DiscordVoice from "@discordjs/voice";
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 import { EnvData, VideoMetaCache } from "../envJSON.js";
+import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("play")
@@ -24,24 +25,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!serverData) return;
         const playlist = await variableExistCheck.playlist();
         if (!playlist) return;
-        await interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription("VCの状態をチェック中...0%")
-                    .setColor("Purple")
-            ]
-        });
+        await interaction.editReply({ embeds: [messageEmbedGet("VCの状態をチェック中...0%")] });
         serverData.discord.calledChannel = interaction.channelId;
-        const videoMetaCache = new VideoMetaCache();
-        const meta = await videoMetaCache.cacheGet(playlist[0]);
-        const title = (meta?.body ? meta.body.title : "タイトル取得エラー(ID: " + playlist[0].body + ")")
-        await interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription("「" + title + "」の再生準備中...0%")
-                    .setColor("Purple")
-            ]
-        });
+        const metaEmbed = await videoInfoEmbedGet(playlist[0], "再生準備中...0%");
+        await interaction.editReply({ embeds: [metaEmbed] });
         const envData = new EnvData(guildData.guildId);
         await inputData.player.forcedPlay({
             guildId: guildData.guildId,
@@ -52,13 +39,8 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             speed: envData.playSpeed,
             volume: envData.volume
         })
-        await interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription("「" + title + "」の再生を開始しました。")
-                    .setColor("Purple")
-            ]
-        });
+        metaEmbed.setDescription("再生を開始しました。")
+        await interaction.editReply({ embeds: [metaEmbed] });
     }
 }
 

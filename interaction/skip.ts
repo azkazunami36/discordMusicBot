@@ -3,6 +3,7 @@ import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "disco
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 import { EnvData, VideoMetaCache } from "../envJSON.js";
+import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("skip")
@@ -23,30 +24,17 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const playlist = envData.playlistGet();
         const skipNum = interaction.options.getNumber("skipnum") || 2;
         if (envData.playType === 1) playlist.shift();
-        if (skipNum > playlist.length + 10) return await interaction.editReply("指定したスキップ数が大きすぎます。枕がでかすぎる！ンアーッ！");
+        if (skipNum > playlist.length + 10) return await interaction.editReply({ embeds: [messageEmbedGet("指定したスキップ数が大きすぎます。枕がでかすぎる！ンアーッ！")] });
         for (let i = 0; i < skipNum - 1; i++) {
             const startPlaylistData = playlist.shift();
             if (startPlaylistData) playlist.push(startPlaylistData);
         }
         envData.playlistSave(playlist);
-        const videoMetaCache = new VideoMetaCache();
-        const meta = await videoMetaCache.cacheGet(playlist[0]);
-        const title = "次の曲「" + (meta?.body ? meta.body.title : "タイトル取得エラー(ID: " + playlist[0].body + ")") + "」";
-        await interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription(title + "の再生準備中...")
-                .setColor("Purple")
-            ]
-        });
+        const metaEmbed = await videoInfoEmbedGet(playlist[0], "次の曲の再生準備中...0%");
+        await interaction.editReply({ embeds: [metaEmbed] });
         await inputData.player.sourceSet(guildData.guildId, playlist[0]);
-        await interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription(title + "にスキップしました。")
-                .setColor("Purple")
-            ]
-        });
+        metaEmbed.setDescription("次の曲にスキップしました。");
+        await interaction.editReply({ embeds: [metaEmbed] });
     }
 }
 
