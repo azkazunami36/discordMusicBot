@@ -109,11 +109,10 @@ export class WebAudioPlayer extends EventEmitter {
             width: 300,
             height: 300,
             webPreferences: {
-                contextIsolation: true,
-                sandbox: true,
-                nodeIntegration: false,
+                contextIsolation: false,
+                nodeIntegration: true,
                 backgroundThrottling: false,
-                preload: process.cwd() + "/webAudioAPI/.preload-dist/preload.js"
+                preload: process.cwd() + "/webAudioAPI/.preload-dist/preload.cjs"
             },
         });
 
@@ -161,7 +160,7 @@ export class WebAudioPlayer extends EventEmitter {
         if (!this.window) return;
         const createResult = await this.send({ type: "streamCreate", playerId: playerId });
         if (!createResult?.status) return;
-        const stream = new Readable({ read: () => { }, highWaterMark: 1024 * 1024 });
+        const stream = new Readable({ read: () => { }, highWaterMark: 32 * 1024 * 1024 });
         let ended = false;
         let cleaned = false;
 

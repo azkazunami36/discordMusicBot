@@ -22,7 +22,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!serverData) return;
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const second = interaction.options.getNumber("second") || 10;
-        await inputData.player.playtimeSet(guildData.guildId, inputData.player.playtimeGet(guildData.guildId) - second);
+        await inputData.player.playtimeSet(guildData.guildId, (await inputData.player.playtimeGet(guildData.guildId) || 0) - second);
         interaction.editReply({
             embeds: [
                 new EmbedBuilder()

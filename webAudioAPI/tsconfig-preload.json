@@ -7,5 +7,5 @@
     "noEmit": false,
     "types": ["electron"]
   },
-  "include": ["./preload.ts"]
+  "include": ["./preload.cts"]
 }

@@ -14,6 +14,6 @@
     "newLine": "lf",
     "outDir": "./"
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "webAudioAPI/preload.cts"],
   "exclude": ["node_modules"]
 }

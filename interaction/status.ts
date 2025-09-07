@@ -117,7 +117,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             page: interaction.options.getNumber("page") || 1,
             client: interaction.client,
             playlist,
-            playing: { playingPlaylist: inputData.player.playingGet(guildData.guildId), playingTime: inputData.player.playtimeGet(guildData.guildId) }
+            playing: { playingPlaylist: inputData.player.playingGet(guildData.guildId), playingTime: (await inputData.player.playtimeGet(guildData.guildId) || 0) }
         });
         await interaction.editReply({
             content: "音楽botのステータスです。",

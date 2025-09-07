@@ -1,11 +1,10 @@
 import { DiscordGatewayAdapterCreator, getVoiceConnection, joinVoiceChannel, VoiceConnectionStatus, AudioPlayer, AudioPlayerStatus, createAudioResource, StreamType, entersState, PlayerSubscription, AudioResource, AudioPlayerState } from "@discordjs/voice";
 import { Playlist } from "./envJSON.js";
 import { SourcePathManager } from "./sourcePathManager.js";
-import { ChildProcessByStdio, spawn } from "child_process";
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
-import Stream from "stream";
 import { EventEmitter } from "events";
+import { AudioSource, WAPAPI, WebAudioPlayer } from "./webAudioAPI/webAudioAPI.js";
 
 
 interface PlayerEvent {
@@ -49,15 +48,9 @@ export class Player extends EventEmitter {
             /** 再生が終了したとコールバックするまでの猶予です。 */
             endCallbackTimeout?: NodeJS.Timeout;
             playing?: Playlist;
-            volume?: number;
-            /** 再生速度です。 */
-            speed?: number;
-            /** FFmpegに依存しています。 */
-            spawn?: ChildProcessByStdio<null, Stream.Readable, Stream.Readable>;
-            /** 再生の際に使用します。FFmpegに依存しています。 */
+            wap?: WAPAPI;
             resource?: AudioResource;
-            /** 再生開始位置です。現在の再生位置を取得するために使用します。FFmpegに依存しています。 */
-            playtimeMargin?: number;
+            mainAudio?: AudioSource;
         } | undefined;
     } = {};
     /** 
@@ -66,8 +59,13 @@ export class Player extends EventEmitter {
      * プレイヤー内でクラスを管理します。
      */
     sourcePathManager: SourcePathManager;
+    /** 
+     * 実際に音声を再生するために使用するものです。
+     */
+    webAudioPlayer: WebAudioPlayer;
     constructor() {
         super();
+        this.webAudioPlayer = new WebAudioPlayer();
         this.sourcePathManager = new SourcePathManager();
     }
     /** ファイルパスやメタデータを取得します。undefinedだとファイルが存在しないか正しい内容でないか、壊れたファイルです。 */
@@ -216,105 +214,42 @@ export class Player extends EventEmitter {
         const guildId = data.guildId;
         if (!this.status[guildId]) return;
         this.status[guildId].playing = data.source;
-        // 7. FFmpeg再生ストリームを作成。
-        this.status[guildId].playtimeMargin = (data.playtime > 0) ? (data.playtime < Number(meta.ffprobe.duration)) ? data.playtime : Number(meta.ffprobe.duration) : 0;
-        this.status[guildId].speed = (data.speed > 0.1) ? (data.speed < 20) ? data.speed : 20 : 0.1;
-        if (this.status[guildId].player.state.status === AudioPlayerStatus.Playing) this.status[guildId].player.stop();
-        if (this.status[guildId].spawn) this.status[guildId].spawn.kill();
-        this.status[guildId].spawn = spawn("ffmpeg", [
-            "-ss", toTimestamp(this.status[guildId].playtimeMargin || 0),
-            "-i", meta.filePath,
-            "-ar", "48000",
-            "-ac", "2",
-            "-c:a", "libopus",
-            "-b:a", "92k",
-            "-filter:a", `asetrate=${meta.ffprobe.sample_rate || 48000}*${this.status[guildId].speed},aresample=${meta.ffprobe.sample_rate || 48000}`,
-            "-f", "ogg",
-            "pipe:1"
-        ], { stdio: ["ignore", "pipe", "pipe"] });
-        // 8. 再生するためのリソースを作成。
-        this.status[guildId].volume = Math.pow(10, (((data.volume > 0) ? data.volume : 0) - 100) / 20) * 100;
-        this.status[guildId].resource = createAudioResource(this.status[guildId].spawn.stdout, {
-            inputType: StreamType.OggOpus,
-            inlineVolume: true
-        });
-        this.status[guildId].resource.volume?.setVolume((this.status[guildId].volume || 100) / 750);
-        // 9. 再生を開始。
+        if (this.status[guildId].mainAudio) await this.status[guildId].mainAudio.remove();
+        if (this.status[guildId].resource) player.stop();
+        this.status[guildId].resource = undefined;
+        if (this.status[guildId].wap) await this.webAudioPlayer.send({ type: "streamEnd", playerId: this.status[guildId].wap.playerId });
+        this.status[guildId].wap = undefined;
+        this.status[guildId].wap = await this.webAudioPlayer.getPlayer();
+        if (!this.status[guildId].wap) return;
+        this.status[guildId].resource = createAudioResource(this.status[guildId].wap.stream);
         player.play(this.status[guildId].resource);
+        this.status[guildId].mainAudio = await this.status[guildId].wap.addAudioSource(meta.filePath);
+        if (!this.status[guildId].mainAudio) {
+            await this.webAudioPlayer.send({ type: "streamEnd", playerId: this.status[guildId].wap.playerId });
+            return;
+        }
+        await this.status[guildId].mainAudio.play();
+        console.log("おk");
     }
     /** 再生を停止します。サーバー内のどのチャンネルであっても停止をします。 */
-    stop(guildId: string) {
+    async stop(guildId: string) {
         if (this.status[guildId]) {
-            this.status[guildId].player.stop();
-            if (this.status[guildId].spawn) this.status[guildId].spawn.kill();
-            if (this.status[guildId].playing) this.status[guildId].playing = undefined;
+            if (this.status[guildId].mainAudio) await this.status[guildId].mainAudio.remove();
+            this.status[guildId].resource = undefined;
+            if (this.status[guildId].wap) await this.webAudioPlayer.send({ type: "streamEnd", playerId: this.status[guildId].wap.playerId });
+            this.status[guildId].wap = undefined;
         }
         const oldConnection = getVoiceConnection(guildId);
         if (oldConnection) oldConnection.destroy(); // destroyedイベントでplayerの登録は解除されます。
     }
     /** 現在の再生位置を出力します。 */
-    playtimeGet(guildId: string) {
-        return (this.status[guildId]?.playtimeMargin || 0) + (this.status[guildId]?.resource ? this.status[guildId].resource.playbackDuration / 1000 * (this.status[guildId].speed || 1) : 0);
+    async playtimeGet(guildId: string) {
+        return this.status[guildId]?.mainAudio ? await this.status[guildId].mainAudio.playTimeGet() : 0;
     }
     async playtimeSet(guildId: string, playtime: number) {
-        if (!this.status[guildId] || !this.status[guildId].playing) return;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing);
-        if (!meta) return;
-        const player = await this.#playerGet(guildId);
-        if (!player) return;
-        if (this.status[guildId].player.state.status === AudioPlayerStatus.Playing) this.status[guildId].player.stop();
-        if (this.status[guildId].spawn) this.status[guildId].spawn.kill();
-        this.status[guildId].playtimeMargin = (playtime > 0) ? (playtime < Number(meta.ffprobe.duration)) ? playtime : Number(meta.ffprobe.duration) : 0;
-        this.status[guildId].spawn = spawn("ffmpeg", [
-            "-ss", toTimestamp(this.status[guildId].playtimeMargin || 0),
-            "-i", meta.filePath,
-            "-ar", "48000",
-            "-ac", "2",
-            "-c:a", "libopus",
-            "-b:a", "96k",
-            "-filter:a", `asetrate=${meta.ffprobe.sample_rate || 48000}*${this.status[guildId].speed || 1},aresample=${meta.ffprobe.sample_rate || 48000}`,
-            "-f", "ogg",
-            "pipe:1"
-        ], { stdio: ["ignore", "pipe", "pipe"] });
-        // 8. 再生するためのリソースを作成。
-        this.status[guildId].resource = createAudioResource(this.status[guildId].spawn.stdout, {
-            inputType: StreamType.OggOpus,
-            inlineVolume: true
-        });
-        this.status[guildId].resource.volume?.setVolume((this.status[guildId].volume || 100) / 750);
-        // 9. 再生を開始。
-        player.play(this.status[guildId].resource);
     }
-    /** 再生するファイルを変更します。FFmpeg依存のため、複雑なコードになっています。 */
+    /** 再生するファイルを変更します。 */
     async sourceSet(guildId: string, source: Playlist) {
-        if (!this.status[guildId]) return;
-        this.status[guildId].playing = source;
-        const meta = await this.#fileMetaGet(source);
-        if (!meta) return;
-        const player = await this.#playerGet(guildId);
-        if (!player) return;
-        if (this.status[guildId].player.state.status === AudioPlayerStatus.Playing) this.status[guildId].player.stop();
-        if (this.status[guildId].spawn) this.status[guildId].spawn.kill();
-        this.status[guildId].playtimeMargin = 0;
-        this.status[guildId].spawn = spawn("ffmpeg", [
-            "-ss", toTimestamp(this.status[guildId].playtimeMargin || 0),
-            "-i", meta.filePath,
-            "-ar", "48000",
-            "-ac", "2",
-            "-c:a", "libopus",
-            "-b:a", "96k",
-            "-filter:a", `asetrate=${meta.ffprobe.sample_rate || 48000}*${this.status[guildId].speed || 1},aresample=${meta.ffprobe.sample_rate || 48000}`,
-            "-f", "ogg",
-            "pipe:1"
-        ], { stdio: ["ignore", "pipe", "pipe"] });
-        // 8. 再生するためのリソースを作成。
-        this.status[guildId].resource = createAudioResource(this.status[guildId].spawn.stdout, {
-            inputType: StreamType.OggOpus,
-            inlineVolume: true
-        });
-        this.status[guildId].resource.volume?.setVolume((this.status[guildId].volume || 100) / 750);
-        // 9. 再生を開始。
-        player.play(this.status[guildId].resource);
     }
     /** 現在の再生しているメディアを出力します。 */
     playingGet(guildId: string) {
@@ -322,39 +257,10 @@ export class Player extends EventEmitter {
     }
     /** 音量を設定します。 */
     volumeSet(guildId: string, volume: number) {
-        if (!this.status[guildId]) return;
-        this.status[guildId].volume = Math.pow(10, (((volume > 0) ? volume : 0) - 100) / 20) * 100;
-        this.status[guildId].resource?.volume?.setVolume((this.status[guildId].volume || 100) / 750);
+        this.status[guildId]?.mainAudio?.volumeSet(volume / 750);
     }
-    /** 速度を設定します。FFmpeg依存のため、複雑なコードになっています。新しいAPIになったら簡単になります。 */
+    /** 速度を設定します。 */
     async speedSet(guildId: string, speed: number) {
-        if (!this.status[guildId] || !this.status[guildId].playing) return;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing);
-        if (!meta) return;
-        const player = await this.#playerGet(guildId);
-        if (!player) return;
-        if (this.status[guildId].player.state.status === AudioPlayerStatus.Playing) this.status[guildId].player.stop();
-        if (this.status[guildId].spawn) this.status[guildId].spawn.kill();
-        this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
-        this.status[guildId].speed = (speed > 0.1) ? (speed < 20) ? speed : 20 : 0.1;
-        this.status[guildId].spawn = spawn("ffmpeg", [
-            "-ss", toTimestamp(this.status[guildId].playtimeMargin || 0),
-            "-i", meta.filePath,
-            "-ar", "48000",
-            "-ac", "2",
-            "-c:a", "libopus",
-            "-b:a", "96k",
-            "-filter:a", `asetrate=${meta.ffprobe.sample_rate || 48000}*${this.status[guildId].speed || 1},aresample=${meta.ffprobe.sample_rate || 48000}`,
-            "-f", "ogg",
-            "pipe:1"
-        ], { stdio: ["ignore", "pipe", "pipe"] });
-        // 8. 再生するためのリソースを作成。
-        this.status[guildId].resource = createAudioResource(this.status[guildId].spawn.stdout, {
-            inputType: StreamType.OggOpus,
-            inlineVolume: true
-        });
-        this.status[guildId].resource.volume?.setVolume((this.status[guildId].volume || 100) / 750);
-        // 9. 再生を開始。
-        player.play(this.status[guildId].resource);
+        const result = await this.status[guildId]?.mainAudio?.pitchSet(speed);
     }
 }

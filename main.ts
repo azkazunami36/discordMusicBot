@@ -7,9 +7,6 @@ import { ServersDataClass } from "./serversData.js";
 import { InteractionInputData } from "./interface.js";
 import { WebPlayerAPI } from "./webAPI.js";
 import { Player } from "./player.js";
-import { WebAudioPlayer } from "./webAudioAPI/webAudioAPI.js";
-
-const webAudioPlayer = new WebAudioPlayer();
 
 const client = new Discord.Client({
     intents: [
