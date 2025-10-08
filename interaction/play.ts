@@ -25,11 +25,15 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!serverData) return;
         const playlist = await variableExistCheck.playlist();
         if (!playlist) return;
-        await interaction.editReply({ embeds: [messageEmbedGet("VCの状態をチェック中...0%", interaction.client)] });
         serverData.discord.calledChannel = interaction.channelId;
         const metaEmbed = await videoInfoEmbedGet(playlist[0], "再生準備中...0%");
         await interaction.editReply({ embeds: [metaEmbed] });
         const envData = new EnvData(guildData.guildId);
+        let statusTemp: {
+            status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
+            body: { percent?: number; };
+        }
+        let statuscallTime: number = Date.now();
         await inputData.player.forcedPlay({
             guildId: guildData.guildId,
             channelId: vchannelId,
@@ -38,6 +42,17 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             playtime: 0,
             speed: envData.playSpeed,
             volume: envData.volume
+        }, async (status, body) => {
+            const temp = { status, body }
+            if (statusTemp && statusTemp === temp) return;
+            if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
+            statusTemp = temp;
+            statuscallTime = Date.now();
+            if (status === "loading") { metaEmbed.setDescription("音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
+            if (status === "downloading") { metaEmbed.setDescription("音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
+            if (status === "converting") { metaEmbed.setDescription("音声ファイルを再生可能な形式に変換中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
+            if (status === "formatchoosing") { metaEmbed.setDescription((body.type ? (body.type === "youtube" ? "YouTube" : body.type === "niconico" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
+            if (status === "done") { metaEmbed.setDescription("再生開始処理中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
         });
         metaEmbed.setDescription("再生を開始しました。")
         await interaction.editReply({ embeds: [metaEmbed] });

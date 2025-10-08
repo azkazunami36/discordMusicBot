@@ -71,9 +71,12 @@ export class Player extends EventEmitter {
         this.sourcePathManager = new SourcePathManager();
     }
     /** ファイルパスやメタデータを取得します。undefinedだとファイルが存在しないか正しい内容でないか、壊れたファイルです。 */
-    async #fileMetaGet(source: Playlist) {
+    async #fileMetaGet(source: Playlist, statusCallback: (status: "loading" | "downloading" | "converting" | "formatchoosing" | "done", body: {
+        percent?: number;
+        type?: "niconico" | "youtube" | "twitter";
+    }) => void) {
         // 1. 音声ファイルを取得する。
-        const filePath = await this.sourcePathManager.getAudioPath(source);
+        const filePath = await this.sourcePathManager.getAudioPath(source, statusCallback);
         if (!filePath) return console.warn("Player.fileMetaGet: filePathが取得できませんでした。"); // ファイルが取得できずエラーが起きたときは何もしない。
         // 2. 音声のメタデータを取得する。
         const ffprobe = (await new Promise<ffmpeg.FfprobeStream | undefined>((resolve, reject) => {
@@ -264,8 +267,11 @@ export class Player extends EventEmitter {
         voiceVolume?: number;
         /** 音量を決められます。100%にしたいときは100と入力します。0以上であれば無制限です。0以下は自動で補正されます。 */
         volume: number;
-    }) {
-        const meta = await this.#fileMetaGet(data.source);
+    }, statusCallback?: (status: "loading" | "downloading" | "converting" | "formatchoosing" | "done", body: {
+        percent?: number;
+        type?: "niconico" | "youtube" | "twitter";
+    }) => void) {
+        const meta = await this.#fileMetaGet(data.source, statusCallback || (() => {}));
         if (!meta) return console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
         const player = await this.#playerGet(data.guildId, data.channelId, data.adapterCreator);
         if (!player) return console.warn("Player.forcedPlay: playerが取得できませんでした。再生はできません。");
@@ -300,7 +306,7 @@ export class Player extends EventEmitter {
     }
     async playtimeSet(guildId: string, playtime: number) {
         if (!this.status[guildId] || !this.status[guildId].playing) return;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing);
+        const meta = await this.#fileMetaGet(this.status[guildId].playing, (() => {}));
         if (!meta) return;
         this.status[guildId].playtimeMargin = (playtime > 0) ? (playtime < Number(meta.ffprobe.duration)) ? playtime : Number(meta.ffprobe.duration) : 0;
         this.ffmpegPlay({
@@ -309,11 +315,14 @@ export class Player extends EventEmitter {
         })
     }
     /** 再生するファイルを変更します。FFmpeg依存のため、複雑なコードになっています。 */
-    async sourceSet(guildId: string, source: Playlist) {
+    async sourceSet(guildId: string, source: Playlist, statusCallback?: (status: "loading" | "downloading" | "converting" | "formatchoosing" | "done", body: {
+        percent?: number;
+        type?: "niconico" | "youtube" | "twitter";
+    }) => void) {
         if (!this.status[guildId]) return;
         this.status[guildId].playing = source;
         this.status[guildId].playtimeMargin = 0;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing);
+        const meta = await this.#fileMetaGet(this.status[guildId].playing, statusCallback || (() => {}));
         if (!meta) return;
         this.ffmpegPlay({
             guildId: guildId,
@@ -335,7 +344,7 @@ export class Player extends EventEmitter {
         if (!this.status[guildId] || !this.status[guildId].playing) return;
         this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
         this.status[guildId].speed = (speed > 0.1) ? (speed < 20) ? speed : 20 : 0.1;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing);
+        const meta = await this.#fileMetaGet(this.status[guildId].playing, () => {});
         if (!meta) return;
         this.ffmpegPlay({
             guildId: guildId,

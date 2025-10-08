@@ -32,7 +32,23 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         envData.playlistSave(playlist);
         const metaEmbed = await videoInfoEmbedGet(playlist[0], "次の曲の再生準備中...0%");
         await interaction.editReply({ embeds: [metaEmbed] });
-        await inputData.player.sourceSet(guildData.guildId, playlist[0]);
+        let statusTemp: {
+            status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
+            body: { percent?: number; };
+        }
+        let statuscallTime: number = Date.now();
+        await inputData.player.sourceSet(guildData.guildId, playlist[0], async (status, body) => {
+            const temp = { status, body }
+            if (statusTemp && statusTemp === temp) return;
+            if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
+            statusTemp = temp;
+            statuscallTime = Date.now();
+            if (status === "loading") { metaEmbed.setDescription("次の曲の音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
+            if (status === "downloading") { metaEmbed.setDescription("次の曲の音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
+            if (status === "converting") { metaEmbed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
+            if (status === "formatchoosing") { metaEmbed.setDescription("次の曲の" + (body.type ? (body.type === "youtube" ? "YouTube" : body.type === "niconico" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
+            if (status === "done") { metaEmbed.setDescription("次の曲の再生開始処理中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await interaction.editReply({ embeds: [metaEmbed] }); }
+        });
         inputData.player.volumeSet(guildData.guildId, envData.volume);
         metaEmbed.setDescription("次の曲にスキップしました。");
         await interaction.editReply({ embeds: [metaEmbed] });
