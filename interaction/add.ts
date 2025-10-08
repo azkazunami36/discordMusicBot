@@ -5,7 +5,7 @@ import yts from "yt-search";
 import { InteractionInputData } from "../interface.js";
 import { EnvData, Playlist } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
-import { parseNicoVideo, searchNicoVideo } from "../ niconico.js";
+import { parseNicoVideo, searchNicoVideo } from "../niconico.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
 import { parseTweetId } from "../twitter.js";
 

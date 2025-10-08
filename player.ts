@@ -44,8 +44,6 @@ export class Player extends EventEmitter {
             player: AudioPlayer;
             /** playerGetで使用します。プレイヤーがconnectionに登録されているかどうかの状態検出ようです。 */
             subscription?: PlayerSubscription;
-            /** 再生が１０秒間されなかったときにタイムアウトするためのものです。 */
-            timeout?: NodeJS.Timeout;
             /** 再生が終了したとコールバックするまでの猶予です。 */
             endCallbackTimeout?: NodeJS.Timeout;
             playing?: Playlist;
@@ -100,15 +98,6 @@ export class Player extends EventEmitter {
                 this.status[guildId].playing = undefined;
                 /** もしプロセス内部で回避のできないPlayerによるIdleイベントであった場合を加味して、1秒返信を遅らせます。 */
                 this.status[guildId].endCallbackTimeout = setTimeout(() => { this.emit("playAutoEnd", guildId); }, 500);
-                this.status[guildId].timeout = setTimeout(() => {
-                    if (this.status[guildId]) {
-                        this.status[guildId].subscription?.unsubscribe();
-                        this.status[guildId].subscription = undefined;
-                        this.status[guildId].timeout = undefined;
-                    }
-                    const oldConnection = getVoiceConnection(guildId);
-                    if (oldConnection) oldConnection.destroy();
-                }, 10000);
             }
         };
         function playerNotIdleEvent(this: Player, newState: AudioPlayerState) {
@@ -116,10 +105,6 @@ export class Player extends EventEmitter {
                 if (this.status[guildId]?.endCallbackTimeout) {
                     clearTimeout(this.status[guildId].endCallbackTimeout);
                     this.status[guildId].endCallbackTimeout = undefined;
-                }
-                if (this.status[guildId]?.timeout) {
-                    clearTimeout(this.status[guildId].timeout);
-                    this.status[guildId].timeout = undefined;
                 }
             }
         };
