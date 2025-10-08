@@ -4,7 +4,10 @@
   "version": "2.0.0",
   "main": "main.js",
   "dependencies": {
-    "discord.js": "^14.19.3",
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.19.0",
+    "@snazzah/davey": "^0.1.7",
+    "discord.js": "^14.22.1",
     "dotenv": "^17.2.1",
     "electron": "^38.0.0",
     "electron-rebuild": "^3.2.9",
@@ -19,8 +22,6 @@
     "ytdl-core": "^4.11.5"
   },
   "devDependencies": {
-    "@discordjs/opus": "^0.10.0",
-    "@discordjs/voice": "^0.18.0",
     "@types/express": "^5.0.3",
     "@types/fluent-ffmpeg": "^2.1.27",
     "@types/yt-search": "^2.10.3"
