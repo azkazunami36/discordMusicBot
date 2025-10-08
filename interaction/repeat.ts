@@ -23,26 +23,26 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
         const mode = interaction.options.getString("mode");
-        if (mode === null) return await interaction.editReply({ embeds: [messageEmbedGet("リピートモードが選択されていません。選択してからもう一度やり直してください。")] });
+        if (mode === null) return await interaction.editReply({ embeds: [messageEmbedGet("リピートモードが選択されていません。選択してからもう一度やり直してください。", interaction.client)] });
         let num: 1 | 2 | 3;
         switch (mode) {
             case "off": {
-                await interaction.editReply({ embeds: [messageEmbedGet("リピートをオフにしました。")] });
+                await interaction.editReply({ embeds: [messageEmbedGet("リピートをオフにしました。", interaction.client)] });
                 num = 1;
                 break;
             }
             case "repeat": {
                 num = 2;
-                await interaction.editReply({ embeds: [messageEmbedGet("リピートをオンにしました。")] });
+                await interaction.editReply({ embeds: [messageEmbedGet("リピートをオンにしました。", interaction.client)] });
                 break;
             }
             case "only": {
                 num = 3;
-                await interaction.editReply({ embeds: [messageEmbedGet("リピートを１曲のみにしました。")] });
+                await interaction.editReply({ embeds: [messageEmbedGet("リピートを１曲のみにしました。", interaction.client)] });
                 break;
             }
             default: {
-                return await interaction.editReply({ embeds: [messageEmbedGet("正しい選択肢が入力されていません。入力してからもう一度やり直してください。")] });
+                return await interaction.editReply({ embeds: [messageEmbedGet("正しい選択肢が入力されていません。入力してからもう一度やり直してください。", interaction.client)] });
             }
         }
         const envData = new EnvData(guildData.guildId);

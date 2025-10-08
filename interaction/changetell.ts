@@ -23,10 +23,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const envData = new EnvData(guildData.guildId);
         if (type) {
             envData.changeTellIs = true;
-            interaction.editReply({ embeds: [messageEmbedGet("常に曲の切り替えを伝えるように変更しました。")] });
+            interaction.editReply({ embeds: [messageEmbedGet("常に曲の切り替えを伝えるように変更しました。", interaction.client)] });
         } else {
             envData.changeTellIs = false;
-            interaction.editReply({ embeds: [messageEmbedGet("曲の変更は常に通知なしで行われるように変更しました。")] })
+            interaction.editReply({ embeds: [messageEmbedGet("曲の変更は常に通知なしで行われるように変更しました。", interaction.client)] })
         }
 
     }

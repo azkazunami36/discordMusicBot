@@ -25,7 +25,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const second = interaction.options.getNumber("second") || 10;
         await inputData.player.playtimeSet(guildData.guildId, inputData.player.playtimeGet(guildData.guildId) + second);
-        interaction.editReply({ embeds: [messageEmbedGet(second + "秒すすめました。")] });
+        interaction.editReply({ embeds: [messageEmbedGet(second + "秒すすめました。", interaction.client)] });
     }
 }
 

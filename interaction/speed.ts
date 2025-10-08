@@ -23,11 +23,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
         if (!serverData) return;
         const num = interaction.options.getNumber("num");
-        if (!num || num <= 0) return await interaction.editReply({ embeds: [messageEmbedGet("数字が指定されておらず、そして正しい指定ではありません。正しい数字を入力してください。")] });
+        if (!num || num <= 0) return await interaction.editReply({ embeds: [messageEmbedGet("数字が指定されておらず、そして正しい指定ではありません。正しい数字を入力してください。", interaction.client)] });
         const envdata = new EnvData(guildData.guildId);
         envdata.playSpeed = num;
         await inputData.player.speedSet(guildData.guildId, num);
-        await interaction.editReply({ embeds: [messageEmbedGet(num + "倍速にしました。")] });
+        await interaction.editReply({ embeds: [messageEmbedGet(num + "倍速にしました。", interaction.client)] });
     }
 }
 

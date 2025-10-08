@@ -24,7 +24,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!playlist) return;
         if (await variableExistCheck.playlistIsEmpty()) return;
         const number = interaction.options.getNumber("number");
-        if (number === null) return await interaction.editReply({ embeds: [messageEmbedGet("番号が入力されていません。番号を入力してから再度実行してください。")] });
+        if (number === null) return await interaction.editReply({ embeds: [messageEmbedGet("番号が入力されていません。番号を入力してから再度実行してください。", interaction.client)] });
         if (playlist[number - 1]) {
             const playlistData = playlist.splice(number - 1, 1)[0];
             const envData = new EnvData(guildData.guildId);
@@ -33,7 +33,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             const meta = await videoMetaCache.cacheGet(playlistData);
             await interaction.editReply({ embeds: [await videoInfoEmbedGet(playlistData, "曲を削除しました。")] });
         } else {
-            await interaction.editReply({ embeds: [messageEmbedGet("番号が無効です。`/status`を利用してどの番号にどの曲が入っているかを確認してください。")] });
+            await interaction.editReply({ embeds: [messageEmbedGet("番号が無効です。`/status`を利用してどの番号にどの曲が入っているかを確認してください。", interaction.client)] });
         }
     }
 }

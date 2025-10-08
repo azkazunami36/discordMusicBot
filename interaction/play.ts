@@ -25,7 +25,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!serverData) return;
         const playlist = await variableExistCheck.playlist();
         if (!playlist) return;
-        await interaction.editReply({ embeds: [messageEmbedGet("VCの状態をチェック中...0%")] });
+        await interaction.editReply({ embeds: [messageEmbedGet("VCの状態をチェック中...0%", interaction.client)] });
         serverData.discord.calledChannel = interaction.channelId;
         const metaEmbed = await videoInfoEmbedGet(playlist[0], "再生準備中...0%");
         await interaction.editReply({ embeds: [metaEmbed] });

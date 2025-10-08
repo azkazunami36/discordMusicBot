@@ -23,12 +23,12 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (channel) {
             if (guildData.guild.channels.cache.get(channel.id)) {
                 envData.callchannelId = channel.id;
-                interaction.editReply({ embeds: [messageEmbedGet("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。")] });
+                interaction.editReply({ embeds: [messageEmbedGet("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。", interaction.client)] });
                 return;
             }
         }
         envData.callchannelId = "";
-        interaction.editReply({ embeds: [messageEmbedGet("どのチャンネルでもコマンドが利用できるように設定しました。")] });
+        interaction.editReply({ embeds: [messageEmbedGet("どのチャンネルでもコマンドが利用できるように設定しました。", interaction.client)] });
 
     }
 }

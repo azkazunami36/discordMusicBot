@@ -28,11 +28,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const envData = new EnvData(guildData.guildId);
         const time = interaction.options.getString("time");
-        if (time === null) return await interaction.editReply({ embeds: [messageEmbedGet("時間が指定されていません。時間を指定してからもう一度やり直してください。")] });
+        if (time === null) return await interaction.editReply({ embeds: [messageEmbedGet("時間が指定されていません。時間を指定してからもう一度やり直してください。", interaction.client)] });
         const second = parseStrToNum(time);
-        if (second === undefined) return await interaction.editReply({ embeds: [messageEmbedGet("「" + time + "」を正しく分析できません。もう一度入力し直してください。")] });
+        if (second === undefined) return await interaction.editReply({ embeds: [messageEmbedGet("「" + time + "」を正しく分析できません。もう一度入力し直してください。", interaction.client)] });
         await inputData.player.playtimeSet(guildData.guildId, second);
-        await interaction.editReply({ embeds: [messageEmbedGet("時間を" + numberToTimeString(second) + "にしました。")] });
+        await interaction.editReply({ embeds: [messageEmbedGet("時間を" + numberToTimeString(second) + "にしました。", interaction.client)] });
     }
 }
 

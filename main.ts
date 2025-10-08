@@ -2,7 +2,7 @@ import * as Discord from "discord.js";
 import fs from "fs";
 import "dotenv/config";
 
-import { EnvData, VideoMetaCache } from "./envJSON.js";
+import { EnvData } from "./envJSON.js";
 import { ServersDataClass } from "./serversData.js";
 import { InteractionInputData } from "./interface.js";
 import { WebPlayerAPI } from "./webAPI.js";
@@ -51,7 +51,7 @@ player.on("playAutoEnd", async (guildId) => {
     }
     if (playlist.length < 1) {
         if (channel && channel.isTextBased()) {
-            await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また`/add text:[タイトルまたはURL`を行ってください。]")] });
+            await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また`/add text:[タイトルまたはURL`を行ってください。]", client)] });
         }
         player.stop(guildId);
         return;
@@ -108,14 +108,14 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             const envData = new EnvData(interaction.guildId);
             const callchannelId = envData.callchannelId;
             if (callchannelId && callchannelId != interaction.channelId) return await interaction.reply({
-                embeds: [messageEmbedGet("ここで曲を追加することはできません。特定のチャンネルでやり直してください。")],
+                embeds: [messageEmbedGet("ここで曲を追加することはできません。特定のチャンネルでやり直してください。", client)],
                 flags: "Ephemeral"
             });
             if (!runedServerTime.find(data => data.guildId === interaction.guildId)) runedServerTime.push({ guildId: interaction.guildId, runedTime: 0 });
             const runed = runedServerTime.find(data => data.guildId === interaction.guildId);
             if (runed) {
                 if (Date.now() - runed.runedTime < runlimit) return interaction.reply({
-                    embeds: [messageEmbedGet("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。")]
+                    embeds: [messageEmbedGet("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。", client)]
                 });
                 runed.runedTime = Date.now();
             }
@@ -123,7 +123,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, player };
         await interaction.reply({
-            embeds: [messageEmbedGet("コマンド「" + data.command.name + "」の処理を開始しています...")]
+            embeds: [messageEmbedGet("コマンド「" + data.command.name + "」の処理を開始しています...", client)]
         });
         await data.execute(interaction, inputData);
     }
@@ -134,6 +134,7 @@ client.on(Discord.Events.ClientReady, () => {
 });
 // VCの状態が変化したら実行します。
 client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
+    /** 状態が変化したVCを取得 */
     const channel = newState.guild.channels.cache.get(newState.channelId || oldState.channelId || "");
     if (!channel || !channel.isVoiceBased() || !player.playingGet(channel.guildId)) return;
     // 1. VCにいる人数がBotを含め1人以下になったら退出します。
@@ -143,7 +144,8 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
         if (serverData && serverData.discord.calledChannel) {
             const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
             if (channel && channel.isTextBased()) {
-                channel.send({ embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。")] });
+                channel.send({embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。", client) ]
+        });
             }
         }
         // 実際に退出します。
@@ -219,8 +221,8 @@ client.on(Discord.Events.MessageCreate, async message => {
         if (!serverData) return message.reply("ごめん！！エラーっす！www");
         const envData = new EnvData(message.guildId);
         const callchannelId = envData.callchannelId;
-        if (callchannelId !== message.channelId) return;
-        if (!message.member.voice.channelId) return;
+        if (callchannelId && callchannelId !== message.channelId) return console.log("専用チャンネルでないところで成仏させようとしました。ID: " + message.guildId, typeof callchannelId, callchannelId)
+        if (!message.member.voice.channelId) return console.log("チャンネルに参加していない人が成仏させようとしました。ID: " + message.guildId)
         if (!runedServerTime.find(data => data.guildId === message.guildId)) runedServerTime.push({ guildId: message.guildId, runedTime: 0 });
         const runed = runedServerTime.find(data => data.guildId === message.guildId);
         if (runed) {

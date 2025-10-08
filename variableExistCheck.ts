@@ -3,6 +3,7 @@ import * as DiscordVoice from "@discordjs/voice";
 import { EnvData } from "./envJSON.js";
 import { ServersDataClass } from "./serversData.js";
 import { Player } from "./player.js";
+import { messageEmbedGet } from "./embed.js";
 
 /**
  * 変数の存在をチェックし、存在しない変数があるとundefinedを返すだけでなく自動でeditReplyをします。replyを予め行なってください。
@@ -15,7 +16,7 @@ export class VariableExistCheck {
     /** サーバーで実行しているかどうかの検証に役立ちます。 */
     async guild() {
         if (!this.interaction.guildId || !this.interaction.guild || !this.interaction.member) {
-            try { await this.interaction.editReply("このコマンドはサーバーでのみ利用できます。"); } catch (e) { }
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("このコマンドはサーバーでのみ利用できます。", this.interaction.client)] }); } catch (e) { }
             return undefined;
         }
         return { guildId: this.interaction.guildId, guild: this.interaction.guild, member: this.interaction.member };
@@ -25,7 +26,7 @@ export class VariableExistCheck {
         if (guildData === undefined) return undefined;
         const vchannelId = (guildData.member as Discord.GuildMember).voice.channelId;
         if (!vchannelId) {
-            try { await this.interaction.editReply("ボイチャに入ってないとどこに入ればいいかわかりません。できればボイチャ入っててください。"); } catch (e) { }
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("あなたがVCに参加していません。使用したいVCの場所を指定するには、VCに参加してください。", this.interaction.client)] }); } catch (e) { }
             return undefined;
         }
         return vchannelId;
@@ -44,7 +45,7 @@ export class VariableExistCheck {
         const playlist = await this.playlist();
         if (!playlist) return undefined;
         if (playlist.length === 0) {
-            try { await this.interaction.editReply("プレイリストが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。"); } catch (e) { }
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("プレイリストが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。", this.interaction.client)] }); } catch (e) { }
             return true;
         }
         return false;
@@ -55,7 +56,7 @@ export class VariableExistCheck {
         if (!serversDataClass.serversData[guildData.guildId]) serversDataClass.serverDataInit(guildData.guildId);
         const serverData = serversDataClass.serversData[guildData.guildId];
         if (serverData === undefined) {
-            try { await this.interaction.editReply("謎のエラーです。管理者には「サーバーデータの処理に失敗」とお伝えください。"); } catch (e) { }
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("謎のエラーです。管理者には「サーバーデータの処理に失敗」とお伝えください。", this.interaction.client)] }); } catch (e) { }
             return undefined;
         }
         return serverData;
@@ -64,7 +65,7 @@ export class VariableExistCheck {
         const guildData = await this.guild();
         if (!guildData) return;
         if (player.playingGet(guildData.guildId)) {
-            try { await this.interaction.editReply("すでに再生中です。`/help`で使い方をみることができます。"); } catch (e) { };
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("すでに再生中です。`/help`で使い方をみることができます。", this.interaction.client)] }); } catch (e) { };
             return true;
         } else return false;
     }
@@ -72,7 +73,7 @@ export class VariableExistCheck {
         const guildData = await this.guild();
         if (!guildData) return;
         if (!player.playingGet(guildData.guildId)) {
-            try { await this.interaction.editReply("再生されていないためその操作はできません。`/help`で使い方をみることができます。"); } catch (e) { };
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("再生されていないためその操作はできません。`/help`で使い方をみることができます。", this.interaction.client)] }); } catch (e) { };
             return true;
         } else return false;
     }

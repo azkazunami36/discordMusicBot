@@ -7,6 +7,7 @@ import { EnvData, Playlist } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 import { parseNicoVideo, searchNicoVideo } from "../ niconico.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
+import { parseTweetId } from "../twitter.js";
 
 export const command = new SlashCommandBuilder()
     .setName("add")
@@ -19,7 +20,7 @@ export const command = new SlashCommandBuilder()
     .addStringOption(option => option
         .setName("service")
         .setDescription("ダウンロードするサービスを優先して選びます。URLだった場合は自動で選択されます。")
-        .addChoices({ name: "YouTube", value: "youtube" }, { name: "ニコニコ動画", value: "niconico" })
+        .addChoices({ name: "YouTube", value: "youtube" }, { name: "ニコニコ動画", value: "niconico" }, { name: "X", value: "twitter" })
     )
 export const commandExample = "/add text:[URLまたはVideoIDまたは検索したいタイトル]";
 
@@ -29,11 +30,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        if (data === null) return await interaction.editReply({ embeds: [messageEmbedGet("追加したい曲が指定されませんでした。入力してから追加を行なってください。")] });
-        if (data === "") return await interaction.editReply({ embeds: [messageEmbedGet("内容が空です。入力してから追加をしてください。")] });
+        if (data === null) return await interaction.editReply({ embeds: [messageEmbedGet("追加したい曲が指定されませんでした。入力してから追加を行なってください。", interaction.client)] });
+        if (data === "") return await interaction.editReply({ embeds: [messageEmbedGet("内容が空です。入力してから追加をしてください。", interaction.client)] });
         const priority = interaction.options.getString("service");
-        const result = await (async function analysisStr(string: string, priority?: "youtube" | "niconico"): Promise<Playlist | undefined> {
-            await interaction.editReply({ embeds: [messageEmbedGet("文字列を分析中...")] });
+        const result = await (async function analysisStr(string: string, priority?: "youtube" | "niconico" | "twitter"): Promise<Playlist | undefined> {
+            await interaction.editReply({ embeds: [messageEmbedGet("文字列を分析中...", interaction.client)] });
             if (ytdl.validateURL(string)) return {
                 type: "videoId",
                 body: ytdl.getURLVideoID(string)
@@ -43,9 +44,14 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 type: "nicovideoId",
                 body: nicovideoId
             };
-            await interaction.editReply({ embeds: [messageEmbedGet("検索中...")] });
+            const twitterId = await parseTweetId(string);
+            if (twitterId) return {
+                type: "twitterId",
+                body: twitterId
+            }
+            await interaction.editReply({ embeds: [messageEmbedGet("検索中...", interaction.client)] });
 
-            async function search(string: string, type: "youtube" | "niconico"): Promise<Playlist | undefined> {
+            async function search(string: string, type: "youtube" | "niconico" | "twitter"): Promise<Playlist | undefined> {
                 if (type === "youtube") {
                     const result = await yts(string);
                     return result.videos[0] ? {
@@ -65,7 +71,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             const two = priority ? (priority === "niconico" ? "youtube" : "niconico") : "niconico";
             return await search(string, one) || await search(string, two);
         })(data, priority === null ? undefined : priority === "youtube" ? "youtube" : "niconico");
-        if (!result) return await interaction.editReply({ embeds: [messageEmbedGet("「" + data + "」は有効な内容として認識することができず、追加ができませんでした。再度追加するか、botの作成者に相談してください。")] });
+        if (!result) return await interaction.editReply({ embeds: [messageEmbedGet("「" + data + "」は有効な内容として認識することができず、追加ができませんでした。再度追加するか、botの作成者に相談してください。", interaction.client)] });
         const playlist = await variableExistCheck.playlist();
         if (!playlist) return;
         // 追加

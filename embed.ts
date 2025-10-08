@@ -8,7 +8,7 @@ export async function videoInfoEmbedGet(playlistData: Playlist, message: string)
     let authorName = "取得ができませんでした。";
     let authorUrl: string | undefined;
     let authorIconUrl: string | undefined;
-    let videoTitle = (meta?.body?.title || "取得ができませんでした。");
+    let videoTitle = (meta?.type !== "tweetId" ? meta?.body?.title : meta.body?.text) || "取得ができませんでした。";
     let videoUrl: string | undefined;
     let videoThumbnail: string | undefined;
     let serviceColor: "NotQuiteBlack" | "Red" | "Grey" = "NotQuiteBlack";
@@ -18,13 +18,13 @@ export async function videoInfoEmbedGet(playlistData: Playlist, message: string)
         const data = await videoMetaCache.youtubeUserInfoGet(meta.body.author.url);
         if (data) {
             authorName = data?.snippet?.localized?.title || data?.snippet?.title || "取得に失敗";
-            authorUrl = data?.id ? "https://youtube.con/channel/" + data?.id : "";
+            authorUrl = data?.id ? "https://youtube.com/channel/" + data?.id : "";
             authorIconUrl = data?.snippet?.thumbnails?.maxres?.url || data?.snippet?.thumbnails?.high?.url || data?.snippet?.thumbnails?.medium?.url || data?.snippet?.thumbnails?.standard?.url || data?.snippet?.thumbnails?.default?.url || "";
         }
         videoUrl = meta.body.url;
         videoThumbnail = meta.body.thumbnail;
         serviceColor = "Red";
-        serviceMessage = "Service by YouTube";
+        serviceMessage = "Service by YouTube (ID: " + playlistData.body + ")";
         serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/yt_icon_red_digital.png";
     } else if (meta.type === "nicovideoId") {
         if (meta.body.userId) {
@@ -44,9 +44,23 @@ export async function videoInfoEmbedGet(playlistData: Playlist, message: string)
         videoUrl = "https://www.nicovideo.jp/watch/" + meta.body.contentId;
         videoThumbnail = meta.body.thumbnailUrl || "";
         serviceColor = "Grey";
-        serviceMessage = "Service by ニコニコ動画";
+        serviceMessage = "Service by ニコニコ動画 (ID: " + playlistData.body + ")";
         serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/nc296562_ニコニコ_シンボルマーク_白.png";
-    };
+    } else if (meta.type === "tweetId") {
+        if (meta.body.author?.id) {
+            const userData = undefined;
+            if (userData) {
+                authorName = userData || "取得に失敗";
+                authorUrl = userData ? "https://www.nicovideo.jp/user/" + userData : "";
+                authorIconUrl = userData || "";
+            }
+        }
+        videoUrl = "https://www.x/com/i/web/status/" + meta.body.id;
+        videoThumbnail = "";
+        serviceColor = "Grey";
+        serviceMessage = "Service by ニコニコ動画 (ID: " + playlistData.body + ")";
+        serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/nc296562_ニコニコ_シンボルマーク_白.png";
+    }
     const embed = new EmbedBuilder()
     if (authorUrl && authorIconUrl) embed.setAuthor({
         name: authorName,
@@ -88,13 +102,13 @@ export async function statusEmbedGet(data: {
         if (meta?.body) if (meta.type === "videoId") {
             fields.push({
                 name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + meta.body.title,
-                value: "動画時間: `" + numberToTimeString(meta.body.duration.seconds) + "` 動画サービス: `YouTube`",
+                value: "動画時間: `" + numberToTimeString(meta.body.duration.seconds) + "` 動画サービス: `YouTube` ID: `" + playlistData.body + "`",
                 inline: false
             });
         } else if (meta.type === "nicovideoId") {
             fields.push({
                 name: (i + 1) + ". " + meta.body.title,
-                value: "動画時間: `" + (!Number.isNaN(Number(meta.body.lengthSeconds)) ? numberToTimeString(Number(meta.body.lengthSeconds)) : "不明") + "` 動画サービス: `ニコニコ動画`",
+                value: "動画時間: `" + (!Number.isNaN(Number(meta.body.lengthSeconds)) ? numberToTimeString(Number(meta.body.lengthSeconds)) : "不明") + "` 動画サービス: `ニコニコ動画` ID: `" + playlistData.body + "`",
                 inline: false
             });
         }
@@ -145,19 +159,24 @@ export async function statusEmbedGet(data: {
     if (data.playing?.playingPlaylist) {
         const meta = await videoMetaCache.cacheGet(data.playing.playingPlaylist);
         if (meta?.body) {
-            const thumbnail = meta.type === "videoId" ? meta.body.thumbnail : meta.body.thumbnailUrl;
+            const thumbnail = meta.type === "videoId" ? meta.body.thumbnail : meta.type === "nicovideoId" ? meta.body.thumbnailUrl : "";
             if (thumbnail) embed.setThumbnail(thumbnail);
-            embed.setURL(meta?.type === "videoId" ? meta.body.url : "https://www.nicovideo.jp/user/" + meta.body.userId);
+            embed.setURL(meta?.type === "videoId" ? meta.body.url : meta.type === "nicovideoId" ? "https://www.nicovideo.jp/user/" + meta.body.userId : meta.body.author?.id ? "https://x.com/" + meta.body.author.id : "");
         }
-        embed.setTitle("再生中 - " + (meta?.body?.title || "タイトル取得エラー"));
+        embed.setTitle("再生中 - " + ((meta?.type !== "tweetId" ? meta?.body?.title : meta.body?.text)|| "タイトル取得エラー"));
     } else {
-        embed.setTitle("再生していません")
+        embed.setTitle("再生していません");
     }
     return embed;
 }
 
-export function messageEmbedGet(message: string) {
+export function messageEmbedGet(message: string, client: Client) {
     return new EmbedBuilder()
+        .setTitle("メッセージ")
+        .setAuthor({
+            name: "音楽bot",
+            iconURL: client.user?.avatarURL() || "",
+        })
         .setDescription(message)
         .setColor("Purple")
 }

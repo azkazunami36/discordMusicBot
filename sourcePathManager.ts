@@ -16,11 +16,16 @@ export class SourcePathManager {
             percent?: number;
         }) => void) => void;
     } = {}
+    #twitterDownloading: {
+        [videoId: string]: (func: () => void, statusCallback: (status: "loading" | "downloading" | "converting" | "done", body: {
+            percent?: number;
+        }) => void) => void;
+    } = {}
     constructor() { }
     /** VideoIDまたは特殊なIDから音声ファイルのパスを返します。 */
     async getAudioPath(playlistData: Playlist, statusCallback?: (status: "loading" | "downloading" | "converting" | "formatchoosing" | "done", body: {
         percent?: number;
-        type?: "niconico" | "youtube"
+        type?: "niconico" | "youtube" | "twitter"
     }) => void) {
         const statuscall = statusCallback || (st => { });
         statuscall("loading", {
@@ -277,6 +282,124 @@ export class SourcePathManager {
                     type: "niconico"
                 });
                 return "./niconicoCache/" + result;
+            }
+        }
+
+        if (playlistData.type === "twitterId") {
+            const twitterId = playlistData.body;
+            // 1. フォルダ内を取得してVideoIDが一致するファイルが存在するかチェック。
+            if (!fs.existsSync("./twitterCache")) fs.mkdirSync("./twitterCache");
+            const files = fs.readdirSync("./twitterCache");
+            const result = files.find(file => file.startsWith(twitterId + "."));
+            // 2. 存在したらリターン、しなかったら取得。
+            if (result) return "./twitterCache/" + result;
+            else {
+                statuscall("formatchoosing", {
+                    percent: 15,
+                    type: "twitter"
+                });
+                if (this.#twitterDownloading[twitterId]) {
+                    // 1. もしダウンロード中だったらこの処理では処理が終わるまでの待機を待つ。
+                    await new Promise<void>(resolve => {
+                        this.#twitterDownloading[twitterId](resolve, ((status, body) => { statuscall(status, body); }));
+                    });
+                } else {
+                    // 2. もしまだダウンロードされてなかったら、ダウンロードを開始する。
+                    const listener: (() => void)[] = [];
+                    this.#twitterDownloading[twitterId] = function (func) { listener.push(func); };
+                    // 3. その動画に関連づけられているデータから最適なフォーマットを取得する。
+                    interface Format {
+                        format_id: string;
+                        format_note: string;
+                        resolution: string;
+                    }
+                    const formats: Format[] = await new Promise((resolve, reject) => {
+                        exec('yt-dlp --print "%(formats)j" -q --cookies-from-browser chrome --no-warnings https://www.x.com/i/web/status/' + twitterId, (err, stdout, stderr) => {
+                            try { console.log(stdout); resolve(JSON.parse(stdout)) }
+                            catch (e) {
+                                console.log(twitterId);
+                                reject(e);
+                            }
+                        });
+                    });
+                    function pickBestFormat(formats: Format[]): Format | undefined {
+                        return formats
+                            // まず条件に一致するものだけ残す
+                            .filter(f => f.resolution === "audio only")[0];
+                    }
+                    const audioformat = pickBestFormat(formats);
+                    // 4. もし取得できたらダウンロードをして拡張子・コンテナを修正する。
+                    if (audioformat) {
+                        statuscall("downloading", {
+                            percent: 30,
+                            type: "twitter"
+                        });
+                        await new Promise<void>((resolve, reject) => {
+                            const cp = spawn("yt-dlp", [
+                                "--progress", "--newline",
+                                "-f", audioformat.format_id,
+                                "-o", "twitterCache/%(id)s-cache.%(ext)s",
+                                "--progress-template", "%(progress)j",
+                                "--cookies-from-browser", "chrome",
+                                "--add-header", "Referer:https://www.nicovideo.jp/",
+                                `https://www.x.com/i/web/status/${twitterId}`
+                            ], { cwd: process.cwd() });
+
+                            cp.stdout.setEncoding("utf8");
+                            cp.stderr.setEncoding("utf8");
+
+                            cp.stdout.on("data", chunk => {
+                                const progress = parseYtDlpProgressLine(String(chunk));
+                                statuscall("downloading", {
+                                    percent: 40 + ((progress?._percent || 0) / 100) * 20,
+                                    type: "twitter"
+                                });
+                            });
+
+                            cp.stderr.on("data", message => {
+                                console.log(String(message));
+                            });
+
+                            cp.on("close", code => {
+                                if (code === 0) resolve();
+                                else reject(new Error(`yt-dlp exited with code ${code}`));
+                            });
+
+                            cp.on("error", e => reject(e));
+                        });
+                        const files = fs.readdirSync("./twitterCache");
+                        const cacheFilename = files.find(file => file.startsWith(twitterId + "-cache."));
+                        if (cacheFilename) {
+                            statuscall("converting", {
+                                percent: 70,
+                                type: "twitter"
+                            });
+                            const info = await new Promise<ffmpeg.FfprobeData>(resolve => ffmpeg.ffprobe("./twitterCache/" + cacheFilename, (err, data) => resolve(data)));
+                            await new Promise<void>((resolve, reject) => {
+                                exec(`ffmpeg -i twitterCache/${cacheFilename} -c copy twitterCache/${twitterId}.${info.streams[0].codec_name === "aac" ? "m4a" : "ogg"}`, (err, stdout, stderr) => {
+                                    if (err) return reject(err);
+                                    resolve();
+                                });
+                            });
+                            fs.unlinkSync("./twitterCache/" + cacheFilename);
+                        }
+                    }
+                    // 5. 完了したことを伝えて終了。
+                    for (const func of listener) func();
+                    delete this.#twitterDownloading[twitterId];
+                }
+                statuscall("loading", {
+                    percent: 90,
+                    type: "twitter"
+                });
+                // 3. 再度フォルダ内を検索して、見つけたら出力。ないとundefined。
+                const files = fs.readdirSync("./twitterCache");
+                const result = files.find(file => file.startsWith(twitterId + "."));
+                statuscall("done", {
+                    percent: 100,
+                    type: "twitter"
+                });
+                return "./twitterCache/" + result;
             }
         }
     }

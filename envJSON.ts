@@ -2,10 +2,13 @@ import fs from "fs";
 import yts from "yt-search";
 import { NicoSnapshotItem, searchNicoVideo } from "./ niconico.js";
 import { google, youtube_v3 } from "googleapis";
+import { searchTweet, XPostInfo } from "./twitter.js";
 
 export interface Playlist {
-    type: "videoId" | "originalFileId" | "nicovideoId";
+    type: "videoId" | "originalFileId" | "nicovideoId" | "twitterId";
     body: string;
+    /** IDに含まれた動画または音声が複数個ある場合指定します。 */
+    number?: number;
 }
 export interface OriginalFiles {
     id: string;
@@ -142,6 +145,7 @@ interface VideoInfoCache {
     youtubeUsers?: (youtube_v3.Schema$Channel | undefined)[];
     niconicoUsers?: (NicoUserInfo | undefined)[];
     niconicoChannels?: (NicoChannelInfo | undefined)[];
+    twitter?: (XPostInfo | undefined)[];
 }
 
 /** VideoIDに記録されている情報をキャッシュし、読み込めるようにするものです。 */
@@ -507,6 +511,24 @@ export class VideoMetaCache {
         }
     }
 
+    async twitterInfoGet(tweetId: string) {
+        const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
+        if (!json.twitter) json.twitter = [];
+        const data = json.twitter.find(data => data && data.id === tweetId);
+        if (data) return data;
+        else {
+            try {
+                const result = await searchTweet(tweetId, true);
+                if (result === undefined) return;
+                json.twitter.push(result);
+                fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
+                return result;
+            } catch (e) {
+                return undefined;
+            }
+        }
+    }
+
     async cacheGet(data: Playlist): Promise<CacheGetReturn | undefined> {
         if (data.type === "videoId") {
             const body = await this.youtubeInfoGet(data.body);
@@ -528,6 +550,15 @@ export class VideoMetaCache {
                 sourceType: "niconico"
             };
         }
+        if (data.type === "twitterId") {
+            const body = await this.twitterInfoGet(data.body);
+            return {
+                type: "tweetId",
+                body,
+                url: body ? "https://x.com/i/web/status/" + body.id : undefined,
+                sourceType: "twitter"
+            }
+        }
     }
 }
 export type CacheGetReturn = {
@@ -540,5 +571,10 @@ export type CacheGetReturn = {
     body: NicoSnapshotItem | undefined;
     url?: string;                // 正規化済みの絶対URL（生成できない場合は undefined）
     sourceType: "niconico";
+} | {
+    type: "tweetId";
+    body: XPostInfo | undefined;
+    url?: string;
+    sourceType: "twitter"
 };
 

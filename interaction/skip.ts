@@ -24,7 +24,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const playlist = envData.playlistGet();
         const skipNum = interaction.options.getNumber("skipnum") || 2;
         if (envData.playType === 1) playlist.shift();
-        if (skipNum > playlist.length + 10) return await interaction.editReply({ embeds: [messageEmbedGet("指定したスキップ数が大きすぎます。枕がでかすぎる！ンアーッ！")] });
+        if (skipNum > playlist.length + 10) return await interaction.editReply({ embeds: [messageEmbedGet("指定したスキップ数が大きすぎます。枕がでかすぎる！ンアーッ！", interaction.client)] });
         for (let i = 0; i < skipNum - 1; i++) {
             const startPlaylistData = playlist.shift();
             if (startPlaylistData) playlist.push(startPlaylistData);
