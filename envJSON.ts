@@ -290,6 +290,34 @@ export class VideoMetaCache {
             }
         }
 
+        // Scrape minimal snippet for a known channelId from the channel page
+        async function resolveChannelSnippetFromPageById(id: string): Promise<{ title?: string; thumbnail?: string; customUrl?: string } | undefined> {
+            try {
+                const url = `https://www.youtube.com/channel/${id}`;
+                const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ja,en;q=0.8' } });
+                if (!res.ok) {
+                    console.warn('[youtubeUserInfoGet] resolveChannelSnippetFromPageById HTTP', res.status);
+                    return undefined;
+                }
+                const html = await res.text();
+                // title from og:title first
+                const mTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["'][^>]*>/i)
+                              || html.match(/\"title\"\s*:\s*\"([^\"]+)\"/);
+                const title = mTitle ? mTitle[1] : undefined;
+                // thumbnail from og:image (simple and robust)
+                const mThumb = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["'][^>]*>/i);
+                const thumbnail = mThumb ? mThumb[1] : undefined;
+                // customUrl from og:url or canonical
+                const mCustom = html.match(/<meta\s+property=["']og:url["']\s+content=["']https?:\/\/www\.youtube\.com\/([^"']+)["'][^>]*>/i)
+                               || html.match(/<link\s+rel=["']canonical["']\s+href=["']https?:\/\/www\.youtube\.com\/([^"']+)["'][^>]*>/i);
+                const customUrl = mCustom ? mCustom[1] : undefined;
+                return { title, thumbnail, customUrl };
+            } catch (e) {
+                console.error('[youtubeUserInfoGet] resolveChannelSnippetFromPageById error:', e);
+                return undefined;
+            }
+        }
+
         let ytFallback: { channelId?: string; name?: string; image?: string; url?: string } | undefined;
         const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
         if (!json.youtubeUsers) json.youtubeUsers = [];
@@ -584,6 +612,7 @@ export class VideoMetaCache {
             return channel;
         } catch (e) {
             if (isQuotaError(e) && channelId) {
+                // Prefer ytFallback when available
                 if (ytFallback?.channelId === channelId) {
                     console.warn('[youtubeUserInfoGet] quotaExceeded on channels.list — returning minimal channel from yt-search');
                     const minimal: youtube_v3.Schema$Channel = {
@@ -602,6 +631,24 @@ export class VideoMetaCache {
                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                     return minimal;
                 }
+                // Otherwise, scrape the channel page by id to synthesize minimal snippet
+                console.warn('[youtubeUserInfoGet] quotaExceeded on channels.list — falling back to page scrape by id');
+                const meta = await resolveChannelSnippetFromPageById(channelId);
+                const minimal: youtube_v3.Schema$Channel = {
+                    kind: 'youtube#channel',
+                    id: channelId,
+                    snippet: {
+                        title: meta?.title || undefined,
+                        customUrl: meta?.customUrl,
+                        thumbnails: meta?.thumbnail ? {
+                            default: { url: meta.thumbnail },
+                            high: { url: meta.thumbnail }
+                        } : undefined
+                    }
+                } as any;
+                json.youtubeUsers.push(minimal);
+                fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
+                return minimal;
             }
             console.error("[youtubeUserInfoGet] Error fetching channel details:", e);
             return undefined;
