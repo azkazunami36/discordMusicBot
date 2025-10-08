@@ -1,6 +1,6 @@
 import fs from "fs";
 
-import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
 import { InteractionInputData } from "../interface.js";
 
 export const command = new SlashCommandBuilder()
@@ -11,6 +11,16 @@ export const commandExample = "";
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
     if (interaction.isChatInputCommand()) {
         if (interaction.commandName !== "help") return;
-        interaction.editReply(String(fs.readFileSync("helpCommandText.txt")));
+        interaction.editReply({
+            embeds: [new EmbedBuilder()
+                .setTitle("音楽bot v" + JSON.parse(String(fs.readFileSync("package.json"))).version + "のヘルプ")
+                .setAuthor({
+                    name: "音楽bot",
+                    iconURL: interaction.client.user?.avatarURL() || "",
+                })
+                .setDescription(String(fs.readFileSync("helpCommandText.txt")))
+                .setColor("Purple")]
+        });
     }
 }
+
