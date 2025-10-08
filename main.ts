@@ -29,6 +29,7 @@ const webPlayerAPI = new WebPlayerAPI(serversDataClass, client);
 /** 全てのVCの動作を追いかけるクラスです。 */
 const player = new Player();
 
+/** 再生をしきったあとにする操作です。たいていリピート操作や再生停止操作などが行われます。 */
 player.on("playAutoEnd", async (guildId) => {
     const serverData = serversData[guildId];
     if (!serverData || !serverData.discord.calledChannel) return;
@@ -56,22 +57,25 @@ player.on("playAutoEnd", async (guildId) => {
         player.stop(guildId);
         return;
     }
+    const playlistData = playlist[0];
     if (envData.changeTellIs) {
         const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
         if (channel && channel.isTextBased()) {
-            const playlistData = playlist[0];
             const metaEmbed = await videoInfoEmbedGet(playlistData, "次の曲の再生準備中...0%");
             const message = await channel.send({ embeds: [metaEmbed] });
-            await player.forcedPlay({
-                guildId: guildId,
-                source: playlist[0],
-                playtime: 0,
-                speed: envData.playSpeed,
-                volume: envData.volume
-            })
+            await player.sourceSet(guildId, playlist[0]);
+            player.volumeSet(guildId, envData.volume);
             metaEmbed.setDescription("次の曲の再生を開始しました。");
             await message.edit({ embeds: [metaEmbed] });
         }
+    } else {
+        await player.forcedPlay({
+            guildId: guildId,
+            source: playlist[0],
+            playtime: 0,
+            speed: envData.playSpeed,
+            volume: envData.volume
+        });
     }
 })
 
@@ -144,8 +148,9 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
         if (serverData && serverData.discord.calledChannel) {
             const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
             if (channel && channel.isTextBased()) {
-                channel.send({embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。", client) ]
-        });
+                channel.send({
+                    embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。", client)]
+                });
             }
         }
         // 実際に退出します。

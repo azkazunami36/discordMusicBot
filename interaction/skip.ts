@@ -33,6 +33,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const metaEmbed = await videoInfoEmbedGet(playlist[0], "次の曲の再生準備中...0%");
         await interaction.editReply({ embeds: [metaEmbed] });
         await inputData.player.sourceSet(guildData.guildId, playlist[0]);
+        inputData.player.volumeSet(guildData.guildId, envData.volume);
         metaEmbed.setDescription("次の曲にスキップしました。");
         await interaction.editReply({ embeds: [metaEmbed] });
     }

@@ -51,6 +51,7 @@ interface NicoChannelInfo {
 
 /** さまざまなデータをenv.jsonに保存します。 */
 export class EnvData {
+    /** サーバーIDです。 */
     guildId: string;
     constructor(guildId: string) { this.guildId = guildId; }
     #envJSON(name: string, body?: string): string | undefined {
@@ -63,9 +64,11 @@ export class EnvData {
         }
         return json[this.guildId][name];
     }
+    /** プレイリストデータを保存します。 */
     playlistSave(playlist: Playlist[]) {
         this.#envJSON("playlist", JSON.stringify(playlist));
     }
+    /** プレイリストデータを取得します。 */
     playlistGet() {
         const playlistJSONStr = this.#envJSON("playlist") || this.#envJSON("playlist", "[]");
         try {
@@ -79,9 +82,11 @@ export class EnvData {
             return JSON.parse(String(this.#envJSON("playlist", "[]"))) as Playlist[];
         }
     }
+    /** オリジナルファイルに関する情報を保存します。 */
     originalFilesSave(originalFiles: OriginalFiles) {
         this.#envJSON("originalFiles", JSON.stringify(originalFiles));
     }
+    /** オリジナルファイルに関する情報を取得します。 */
     originalFilesGet() {
         const originalFilesJSONStr = this.#envJSON("originalFiles") || this.#envJSON("originalFiles", "[]");
         try {
@@ -96,12 +101,14 @@ export class EnvData {
             return JSON.parse(String(this.#envJSON("originalFiles", "[]"))) as OriginalFiles[];
         }
     }
+    /** botが読み出されたチャンネルのIDです。 */
     get callchannelId() {
         return this.#envJSON("callchannelId");
     }
     set callchannelId(channelId: string | undefined) {
         this.#envJSON("callchannelId", channelId);
     }
+    /** 音量です。 */
     get volume() {
         return Number(this.#envJSON("volume")) || Number(this.#envJSON("volume", "100"));
     }
@@ -124,6 +131,7 @@ export class EnvData {
     set playType(type: 1 | 2 | 3) {
         this.#envJSON("playType", String(type));
     }
+    /** 再生が切り替わった時に通知するかどうか。 */
     get changeTellIs() {
         if (Boolean(this.#envJSON("changeTellIs"))) return true;
         return false;
@@ -131,6 +139,7 @@ export class EnvData {
     set changeTellIs(type: boolean) {
         this.#envJSON("changeTellIs", String(type));
     }
+    /** 再生速度。 */
     set playSpeed(speed: number) {
         this.#envJSON("playSpeed", String(speed));
     }

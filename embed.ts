@@ -58,8 +58,8 @@ export async function videoInfoEmbedGet(playlistData: Playlist, message: string)
         videoUrl = "https://www.x/com/i/web/status/" + meta.body.id;
         videoThumbnail = "";
         serviceColor = "Grey";
-        serviceMessage = "Service by ニコニコ動画 (ID: " + playlistData.body + ")";
-        serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/nc296562_ニコニコ_シンボルマーク_白.png";
+        serviceMessage = "Service by X (ID: " + playlistData.body + ")";
+        serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/x-logo.png";
     }
     const embed = new EmbedBuilder()
     if (authorUrl && authorIconUrl) embed.setAuthor({

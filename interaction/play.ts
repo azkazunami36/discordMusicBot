@@ -38,7 +38,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             playtime: 0,
             speed: envData.playSpeed,
             volume: envData.volume
-        })
+        });
         metaEmbed.setDescription("再生を開始しました。")
         await interaction.editReply({ embeds: [metaEmbed] });
     }
