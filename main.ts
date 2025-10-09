@@ -8,6 +8,7 @@ import { InteractionInputData } from "./interface.js";
 import { WebPlayerAPI } from "./webAPI.js";
 import { Player } from "./player.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "./embed.js";
+import { progressBar } from "./progressBar.js";
 
 const client = new Discord.Client({
     intents: [
@@ -52,7 +53,7 @@ player.on("playAutoEnd", async (guildId) => {
     }
     if (playlist.length < 1) {
         if (channel && channel.isTextBased()) {
-            await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また`/add text:[タイトルまたはURL`を行ってください。]", client)] });
+            await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
         }
         player.stop(guildId);
         return;
@@ -61,7 +62,7 @@ player.on("playAutoEnd", async (guildId) => {
     if (envData.changeTellIs) {
         const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
         if (channel && channel.isTextBased()) {
-            const metaEmbed = await videoInfoEmbedGet(playlistData, "次の曲の再生準備中...0%");
+            const metaEmbed = await videoInfoEmbedGet(playlistData, "次の曲の再生準備中...\n0%`" + progressBar(0, 40) + "`");
             const message = await channel.send({ embeds: [metaEmbed] });
             let statusTemp: {
                 status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
@@ -74,11 +75,11 @@ player.on("playAutoEnd", async (guildId) => {
                 if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
                 statusTemp = temp;
                 statuscallTime = Date.now();
-                if (status === "loading") { metaEmbed.setDescription("次の曲の音声ファイルを準備中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "downloading") { metaEmbed.setDescription("次の曲の音声ファイルをダウンロード中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "converting") { metaEmbed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "formatchoosing") { metaEmbed.setDescription("次の曲の" + (body.type ? (body.type === "youtube" ? "YouTube" : body.type === "niconico" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "done") { metaEmbed.setDescription("次の曲の再生開始処理中..." + (body.percent ? Math.floor(body.percent) + "%" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                if (status === "loading") { metaEmbed.setDescription("次の曲の音声ファイルを準備中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 40) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                if (status === "downloading") { metaEmbed.setDescription("次の曲の音声ファイルをダウンロード中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 40) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                if (status === "converting") { metaEmbed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 40) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                if (status === "formatchoosing") { metaEmbed.setDescription("次の曲の" + (body.type ? (body.type === "youtube" ? "YouTube" : body.type === "niconico" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 40) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                if (status === "done") { metaEmbed.setDescription("次の曲の再生開始処理中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 40) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
             });
             player.volumeSet(guildId, envData.volume);
             metaEmbed.setDescription("次の曲の再生を開始しました。");

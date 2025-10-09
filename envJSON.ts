@@ -271,7 +271,7 @@ export class VideoMetaCache {
                     }
                 });
                 if (!res.ok) {
-                    console.warn('[youtubeUserInfoGet] resolveChannelIdFromPage HTTP', res.status);
+                    info('[youtubeUserInfoGet] resolveChannelIdFromPage HTTP', res.status);
                     return undefined;
                 }
                 const html = await res.text();
@@ -282,7 +282,7 @@ export class VideoMetaCache {
                 if (m2 && m2[1]) return m2[1];
                 const m3 = html.match(/\"externalId\"\s*:\s*\"(UC[0-9A-Za-z_-]+)\"/);
                 if (m3 && m3[1]) return m3[1];
-                console.warn('[youtubeUserInfoGet] resolveChannelIdFromPage: channelId not found');
+                info('[youtubeUserInfoGet] resolveChannelIdFromPage: channelId not found');
                 return undefined;
             } catch (e) {
                 console.error('[youtubeUserInfoGet] resolveChannelIdFromPage error:', e);
@@ -296,7 +296,7 @@ export class VideoMetaCache {
                 const url = `https://www.youtube.com/channel/${id}`;
                 const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ja,en;q=0.8' } });
                 if (!res.ok) {
-                    console.warn('[youtubeUserInfoGet] resolveChannelSnippetFromPageById HTTP', res.status);
+                    info('[youtubeUserInfoGet] resolveChannelSnippetFromPageById HTTP', res.status);
                     return undefined;
                 }
                 const html = await res.text();
@@ -319,6 +319,76 @@ export class VideoMetaCache {
         }
 
         let ytFallback: { channelId?: string; name?: string; image?: string; url?: string } | undefined;
+        // --- Query normalization helpers for yt-search fallbacks ---
+        function buildQueryVariants(raw: string): string[] {
+            const out: string[] = [];
+            const seen = new Set<string>();
+            const add = (s?: string) => {
+                if (!s) return;
+                const v = s.trim();
+                if (v.length === 0) return;
+                if (!seen.has(v)) { seen.add(v); out.push(v); }
+            };
+
+            const trimmed = (raw || "").trim();
+            let decoded: string | undefined = undefined;
+            try {
+                if (/%[0-9A-Fa-f]{2}/.test(trimmed)) {
+                    decoded = decodeURIComponent(trimmed);
+                }
+            } catch { /* ignore */ }
+
+            // Heuristic: looks like an ID/handle/custom path? then DO NOT suffix-strip.
+            const looksLikeIdOrHandle = (s: string) => {
+                if (!s) return false;
+                if (/^@.+/.test(s)) return true;                // handle
+                if (/^UC[0-9A-Za-z_-]+$/.test(s)) return true;   // channelId
+                if (/\b(channel|user|c)\//i.test(s)) return true; // url-ish path
+                return false;
+            };
+
+            // 1) Prefer decoded first (most reliable), then original
+            if (decoded) add(decoded);
+            add(trimmed);
+
+            // 2) For each of the first two, add light normalizations (no suffix removal)
+            const baseVariants = Array.from(out);
+            for (const v of baseVariants) {
+                add(v.replace(/_/g, ' '));
+                add(v.replace(/[\s\u3000]+/g, ' ').trim());
+            }
+
+            // 3) Only if the input does NOT look like an ID/handle, add a few last-resort suffix-stripped variants
+            //    These are tried **after** all safe forms above.
+            if (!looksLikeIdOrHandle(decoded || trimmed)) {
+                const candidates = Array.from(out);
+                for (const v of candidates) {
+                    // drop a short trailing token like -r3k / _abc (2-6 alnum)
+                    const stripped = v.replace(/[-_][A-Za-z0-9]{2,6}$/i, '');
+                    if (stripped !== v) add(stripped.trim());
+                }
+            }
+
+            return out;
+        }
+
+        async function resolveChannelIdViaYtSearch(rawQuery: string, logLabel: string): Promise<{ channelId?: string; name?: string; image?: string; url?: string } | undefined> {
+            const variants = buildQueryVariants(rawQuery);
+            for (const q of variants) {
+                try {
+                    const r = await yts({ query: q, hl: 'ja', gl: 'JP' });
+                    const ch = (r as any)?.channels?.[0];
+                    if (ch?.channelId) return { channelId: ch.channelId, name: ch.name, image: ch.image, url: ch.url };
+                    // If no channels, try deriving from first video result
+                    const v = (r as any)?.videos?.[0];
+                    if (v?.author?.channelID) return { channelId: v.author.channelID, name: v.author.name, image: v.author.bestAvatar?.url, url: v.author.url } as any;
+                } catch (e) {
+                    console.error(`[youtubeUserInfoGet] yt-search error in ${logLabel} for variant`, q, e);
+                }
+            }
+            info(`[youtubeUserInfoGet] yt-search returned 0 channels for variants:`, variants);
+            return undefined;
+        }
         const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
         if (!json.youtubeUsers) json.youtubeUsers = [];
         if (!json.youtubeAliases) json.youtubeAliases = {};
@@ -404,34 +474,21 @@ export class VideoMetaCache {
                         fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                     } catch (e) {
                         if (isQuotaError(e)) {
-                            console.warn('[youtubeUserInfoGet] quotaExceeded on search.list — falling back to yt-search');
-                            const query = parsed.type === 'handle' ? parsed.idOrName.replace(/^@/, '') : parsed.idOrName;
-                            try {
-                                const r = await yts({ query, hl: 'ja', gl: 'JP' });
-                                const ch = (r as any)?.channels?.[0];
-                                if (!ch) {
-                                    console.warn('[youtubeUserInfoGet] yt-search returned 0 channels for query:', query ?? channelOrUrl);
-                                    return undefined;
-                                }
-                                channelId = ch.channelId;
-                                ytFallback = { channelId: ch.channelId, name: ch.name, image: ch.image, url: ch.url };
-                                // Record aliases
+                            info('[youtubeUserInfoGet] quotaExceeded on search.list — falling back to yt-search');
+                            const fall = await resolveChannelIdViaYtSearch(parsed.type === 'handle' ? parsed.idOrName.replace(/^@/, '') : parsed.idOrName, 'URL-handle/custom');
+                            if (fall?.channelId) {
+                                channelId = fall.channelId;
+                                ytFallback = fall;
                                 const keys = toAliasKey(parsed, channelOrUrl);
                                 keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                                 fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
-                            } catch (e2) {
-                                console.error('[youtubeUserInfoGet] yt-search fallback failed:', e2);
-                                return undefined;
                             }
-                            // Final fallback: scrape the public page for channelId
                             if (!channelId) {
-                                const pageKey = parsed.type === 'handle' ? parsed.idOrName : parsed.idOrName;
                                 const pageInput = parsed.type === 'handle' ? parsed.idOrName : `c/${parsed.idOrName}`;
                                 const cid = await resolveChannelIdFromPage(pageInput);
                                 if (cid) {
                                     info('[youtubeUserInfoGet] resolved via page scrape:', cid);
                                     channelId = cid;
-                                    // Record aliases
                                     const keys = toAliasKey(parsed, channelOrUrl);
                                     keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
@@ -487,30 +544,20 @@ export class VideoMetaCache {
                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                 } catch (e) {
                     if (isQuotaError(e)) {
-                        console.warn('[youtubeUserInfoGet] quotaExceeded on search.list(handle) — falling back to yt-search');
-                        try {
-                            const r = await yts({ query, hl: 'ja', gl: 'JP' });
-                            const ch = (r as any)?.channels?.[0];
-                            if (!ch) {
-                                console.warn('[youtubeUserInfoGet] yt-search returned 0 channels for query:', query ?? channelOrUrl);
-                                return undefined;
-                            }
-                            channelId = ch.channelId;
-                            ytFallback = { channelId: ch.channelId, name: ch.name, image: ch.image, url: ch.url };
-                            // Record aliases
+                info('[youtubeUserInfoGet] quotaExceeded on search.list(handle) — falling back to yt-search');
+                        const fall = await resolveChannelIdViaYtSearch(query, 'handle');
+                        if (fall?.channelId) {
+                            channelId = fall.channelId;
+                            ytFallback = fall;
                             const keys = toAliasKey(parsedForAlias, channelOrUrl);
                             keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                             fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
-                        } catch (e2) {
-                            console.error('[youtubeUserInfoGet] yt-search fallback(handle) failed:', e2);
-                            return undefined;
                         }
                         if (!channelId) {
                             const cid = await resolveChannelIdFromPage(channelOrUrl);
                             if (cid) {
                                 info('[youtubeUserInfoGet] resolved via page scrape (handle):', cid);
                                 channelId = cid;
-                                // Record aliases
                                 const keys = toAliasKey(parsedForAlias, channelOrUrl);
                                 keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                                 fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
@@ -542,30 +589,20 @@ export class VideoMetaCache {
                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                 } catch (e) {
                     if (isQuotaError(e)) {
-                        console.warn('[youtubeUserInfoGet] quotaExceeded on search.list(fallback) — falling back to yt-search');
-                        try {
-                            const r = await yts({ query: channelOrUrl, hl: 'ja', gl: 'JP' });
-                            const ch = (r as any)?.channels?.[0];
-                            if (!ch) {
-                                console.warn('[youtubeUserInfoGet] yt-search returned 0 channels for query:', channelOrUrl);
-                                return undefined;
-                            }
-                            channelId = ch.channelId;
-                            ytFallback = { channelId: ch.channelId, name: ch.name, image: ch.image, url: ch.url };
-                            // Record aliases
+                        info('[youtubeUserInfoGet] quotaExceeded on search.list(fallback) — falling back to yt-search');
+                        const fall = await resolveChannelIdViaYtSearch(channelOrUrl, 'name-fallback');
+                        if (fall?.channelId) {
+                            channelId = fall.channelId;
+                            ytFallback = fall;
                             const keys = toAliasKey(parsedForAlias, channelOrUrl);
                             keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                             fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
-                        } catch (e2) {
-                            console.error('[youtubeUserInfoGet] yt-search fallback(fallback) failed:', e2);
-                            return undefined;
                         }
                         if (!channelId) {
                             const cid = await resolveChannelIdFromPage(channelOrUrl);
                             if (cid) {
                                 info('[youtubeUserInfoGet] resolved via page scrape (name):', cid);
                                 channelId = cid;
-                                // Record aliases
                                 const keys = toAliasKey(parsedForAlias, channelOrUrl);
                                 keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                                 fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
@@ -632,7 +669,7 @@ export class VideoMetaCache {
                     return minimal;
                 }
                 // Otherwise, scrape the channel page by id to synthesize minimal snippet
-                console.warn('[youtubeUserInfoGet] quotaExceeded on channels.list — falling back to page scrape by id');
+                info('[youtubeUserInfoGet] quotaExceeded on channels.list — falling back to page scrape by id');
                 const meta = await resolveChannelSnippetFromPageById(channelId);
                 const minimal: youtube_v3.Schema$Channel = {
                     kind: 'youtube#channel',
