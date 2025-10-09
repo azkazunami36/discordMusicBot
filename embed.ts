@@ -1,4 +1,5 @@
 import { APIEmbedField, Client, EmbedBuilder } from "discord.js";
+import fs from "fs";
 import { EnvData, Playlist, VideoMetaCache } from "./envJSON.js";
 import { numberToTimeString } from "./numberToTimeString.js";
 
@@ -21,8 +22,12 @@ export async function videoInfoEmbedGet(playlistData: Playlist, message: string)
             authorUrl = data?.id ? "https://youtube.com/channel/" + data?.id : "";
             authorIconUrl = data?.snippet?.thumbnails?.maxres?.url || data?.snippet?.thumbnails?.high?.url || data?.snippet?.thumbnails?.medium?.url || data?.snippet?.thumbnails?.standard?.url || data?.snippet?.thumbnails?.default?.url || "";
         }
+        const metadataJson = JSON.parse(String(fs.readFileSync("./idToCustomMetadata.json")));
+        if (metadataJson.youtube[playlistData.body]?.title !== undefined) videoTitle = metadataJson.youtube[playlistData.body].title;
+        if (metadataJson.youtube[playlistData.body]?.artist !== undefined) authorName = metadataJson.youtube[playlistData.body].artist;
+        if (metadataJson.youtube[playlistData.body]?.artistURL !== undefined) authorUrl = metadataJson.youtube[playlistData.body].artistURL;
         videoUrl = meta.body.url;
-        videoThumbnail = meta.body.thumbnail;
+        videoThumbnail = metadataJson.youtube[playlistData.body] ? metadataJson.youtube[playlistData.body].thumbnailUrl : meta.body.thumbnail;
         serviceColor = "Red";
         serviceMessage = "Service by YouTube (ID: " + playlistData.body + ")";
         serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/yt_icon_red_digital.png";
@@ -62,9 +67,9 @@ export async function videoInfoEmbedGet(playlistData: Playlist, message: string)
         serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/x-logo.png";
     }
     const embed = new EmbedBuilder()
-    if (authorUrl && authorIconUrl) embed.setAuthor({
+    if (authorIconUrl) embed.setAuthor({
         name: authorName,
-        url: authorUrl,
+        url: authorUrl || undefined,
         iconURL: authorIconUrl,
     })
     embed.setTitle(videoTitle)
@@ -91,6 +96,7 @@ export async function statusEmbedGet(data: {
     }
 }) {
     const { client, guildId, page, playlist } = data;
+    const metadataJson = JSON.parse(String(fs.readFileSync("./idToCustomMetadata.json")));
     const videoMetaCache = new VideoMetaCache();
     const playlistPage = Math.ceil(playlist.length / 5);
     const selectPlaylistPage = page < playlistPage ? page : playlistPage;
@@ -101,7 +107,7 @@ export async function statusEmbedGet(data: {
         const meta = await videoMetaCache.cacheGet(playlistData);
         if (meta?.body) if (meta.type === "videoId") {
             fields.push({
-                name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + meta.body.title,
+                name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + (metadataJson.youtube[playlistData.body]?.title !== undefined ? metadataJson.youtube[playlistData.body].title : meta.body.title),
                 value: "動画時間: `" + numberToTimeString(meta.body.duration.seconds) + "` 動画サービス: `YouTube` ID: `" + playlistData.body + "`",
                 inline: false
             });
@@ -159,11 +165,11 @@ export async function statusEmbedGet(data: {
     if (data.playing?.playingPlaylist) {
         const meta = await videoMetaCache.cacheGet(data.playing.playingPlaylist);
         if (meta?.body) {
-            const thumbnail = meta.type === "videoId" ? meta.body.thumbnail : meta.type === "nicovideoId" ? meta.body.thumbnailUrl : "";
+            const thumbnail = meta.type === "videoId" ? (metadataJson.youtube[data.playing.playingPlaylist.body]?.thumbnailUrl !== undefined ? metadataJson.youtube[data.playing.playingPlaylist.body].thumbnailUrl : meta.body?.thumbnail) : meta.type === "nicovideoId" ? meta.body.thumbnailUrl : "";
             if (thumbnail) embed.setThumbnail(thumbnail);
             embed.setURL(meta?.type === "videoId" ? meta.body.url : meta.type === "nicovideoId" ? "https://www.nicovideo.jp/user/" + meta.body.userId : meta.body.author?.id ? "https://x.com/" + meta.body.author.id : "");
         }
-        embed.setTitle("再生中 - " + ((meta?.type !== "tweetId" ? meta?.body?.title : meta.body?.text)|| "タイトル取得エラー"));
+        embed.setTitle("再生中 - " + ((meta?.type !== "tweetId" ? meta?.type === "videoId" ? (metadataJson.youtube[data.playing.playingPlaylist.body]?.title !== undefined ? metadataJson.youtube[data.playing.playingPlaylist.body].title : meta.body?.title) : meta?.body?.title : meta.body?.text) || "タイトル取得エラー"));
     } else {
         embed.setTitle("再生していません");
     }
