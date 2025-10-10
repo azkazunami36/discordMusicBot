@@ -41,7 +41,8 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             adapterCreator: guildData.guild.voiceAdapterCreator,
             source: playlist[0],
             playtime: 0,
-            speed: envData.playSpeed,
+            tempo: envData.playTempo,
+            pitch: envData.playPitch,
             volume: envData.volume
         }, async (status, body) => {
             const temp = { status, body }

@@ -49,7 +49,9 @@ export class Player extends EventEmitter {
             playing?: Playlist;
             volume?: number;
             /** 再生速度です。 */
-            speed?: number;
+            tempo?: number;
+            /** 音程です。 */
+            pitch?: number;
             /** FFmpegに依存しています。 */
             spawn?: ChildProcessByStdio<null, Stream.Readable, Stream.Readable>;
             /** 再生の際に使用します。FFmpegに依存しています。 */
@@ -210,21 +212,150 @@ export class Player extends EventEmitter {
         if (this.status[guildId].player.state.status === AudioPlayerStatus.Playing) this.status[guildId].player.stop();
         if (this.status[guildId].spawn) this.status[guildId].spawn.kill();
         if (this.status[guildId].resource) this.status[guildId].resource = undefined;
+        /**
+         * Created by ChatGPT
+         * 速度と音程を自由に変えられます。
+         */
+        function buildTempoPitchFilter(
+            tempo: number = 1,
+            pitch: number = 0,
+            sampleRate: number = 48000
+        ): string {
+            const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+            const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
+
+            const T0 = Number.isFinite(tempo) && tempo > 0 ? tempo : 1;
+            const T = round6(clamp(T0, 0.01, 100));
+            const P0 = Number.isFinite(pitch) ? pitch : 0;
+            const pitchRatio = round6(Math.pow(2, P0 / 12));
+
+            const absSemi = Math.abs(P0);
+            const near1 = (T >= 0.95 && T <= 1.05);
+            const micro = (T >= 0.85 && T <= 1.15);
+            const fast = (T > 1.25);
+            const highPitchUp = (P0 >= 12); // 大きく上げる(+12以上)ときのアーチファクト抑制
+
+            // ★ ピッチを少し下げる時（-1〜-3）＆テンポ≈1：エコー抑制プロファイル
+            // ねらい：残響感↓（window短め/phase=laminar/平滑OFF/位相一貫性優先）
+            // ＊formant=shifted は“声質がやや低く”なるが、エコー感は減る傾向
+            const isDownPitchEchoSensitive = (P0 < 0 && absSemi <= 3 && near1);
+            const optsDownPitch = [
+                `tempo=${T}`, `pitch=${pitchRatio}`,
+                `transients=crisp`,
+                `detector=soft`,          // ボーカル寄りの検出
+                `phase=laminar`,
+                `window=standard`,        // long よりにじみ少
+                `smoothing=off`,          // 平滑で“もわっ”を避ける
+                `formant=shifted`,        // preserved で出る残響感を回避
+                `pitchq=consistency`,     // 位相一貫性を最優先
+                `channels=together`,
+            ];
+
+            // 微調整域（反コーラス寄り）
+            const optsMicro = [
+                `tempo=${T}`, `pitch=${pitchRatio}`,
+                `transients=crisp`,
+                `detector=compound`,
+                `phase=laminar`,
+                `window=standard`,
+                `smoothing=off`,
+                `formant=preserved`,
+                `pitchq=consistency`,
+                `channels=together`,
+            ];
+
+            // 高速域（アンチ・チリ）
+            const optsFast = [
+                `tempo=${T}`, `pitch=${pitchRatio}`,
+                `transients=crisp`,
+                `detector=compound`,
+                `phase=laminar`,
+                `window=standard`,
+                `smoothing=on`,
+                `formant=preserved`,
+                `pitchq=consistency`,
+                `channels=together`,
+            ];
+
+            // 高い方向に大きく上げる(+12以上)：高域チリ抑制寄り
+            const optsHighPitchUp = [
+                `tempo=${T}`, `pitch=${pitchRatio}`,
+                `transients=crisp`,
+                `detector=compound`,
+                `phase=laminar`,
+                `window=standard`,      // longだとチリが出やすい
+                `smoothing=on`,
+                `formant=preserved`,
+                `pitchq=consistency`,   // 位相一貫性優先
+                `channels=together`,
+            ];
+
+            // それ以外は HQ（解像度寄り）
+            const optsHQ = [
+                `tempo=${T}`, `pitch=${pitchRatio}`,
+                `transients=mixed`,
+                `detector=compound`,
+                `phase=laminar`,
+                `window=long`,
+                `smoothing=on`,
+                `formant=preserved`,
+                `pitchq=quality`,
+                `channels=together`,
+            ];
+
+            const opts = (highPitchUp ? optsHighPitchUp
+                : isDownPitchEchoSensitive ? optsDownPitch
+                : micro ? optsMicro
+                : fast ? optsFast
+                : optsHQ).join(":");
+
+            // 仕上げ soxr（高品質リサンプル）
+            return `rubberband=${opts},aresample=${sampleRate}:resampler=soxr:precision=28`;
+        }
+        const currentTempo = this.status[guildId].tempo ?? 1;
+        const currentPitch = this.status[guildId].pitch ?? 0;
+        const opusBitrate = (Math.abs(currentPitch) >= 12 || currentTempo > 1.25) ? "160k" : "128k";
         this.status[guildId].spawn = spawn("ffmpeg", [
+            "-hide_banner", "-loglevel", "error", "-nostdin",
             "-ss", toTimestamp(this.status[guildId].playtimeMargin || 0),
             "-i", data.meta.filePath,
             "-ar", "48000",
             "-ac", "2",
             "-c:a", "libopus",
-            "-b:a", "92k",
-            "-filter:a", `asetrate=${data.meta.ffprobe.sample_rate || 48000}*${this.status[guildId].speed},aresample=${data.meta.ffprobe.sample_rate || 48000}`,
+            "-b:a", opusBitrate,
+            "-vbr", "on",
+            "-application", "audio",
+            "-frame_duration", "20",
+            "-filter:a", buildTempoPitchFilter(this.status[guildId].tempo, this.status[guildId].pitch),
             "-f", "ogg",
             "pipe:1"
         ], { stdio: ["ignore", "pipe", "pipe"] });
         this.status[guildId].spawn.on("error", e => console.log(e));
         this.status[guildId].spawn.stderr.on("error", e => console.log(e));
+        // === FFmpeg 出力バッファ（約1分相当を想定）===
+        // Ogg/Opus は可変ビットレートのため厳密な秒数ではありませんが、
+        // ここでは ~8〜12MB 程度のバッファで 1 分前後を目安にします。
+        // 必要に応じて値を調整してください。
+        const BUFFER_BYTES = 12 * 1024 * 1024; // 12MB くらい
+        const bufferedOut = new Stream.PassThrough({ highWaterMark: BUFFER_BYTES });
+        this.status[guildId].spawn.stdout.pipe(bufferedOut);
+        this.status[guildId].spawn.stderr.on("data", data => {
+            const msg = data.toString();
+            // 無視してよい正常系エラー
+            const ignorePatterns = [
+                "Broken pipe",
+                "Error muxing a packet",
+                "Error writing trailer",
+                "Error closing file",
+                "Error submitting a packet to the muxer",
+                "Task finished with error code",
+                "Terminating thread with return code"
+            ];
+            if (ignorePatterns.some(p => msg.includes(p))) return; // 無視
+            console.error("[ffmpeg stderr]", msg); // 本当のエラーのみ出力
+        });
         // 8. 再生するためのリソースを作成。
-        this.status[guildId].resource = createAudioResource(this.status[guildId].spawn.stdout, {
+        this.status[guildId].resource = createAudioResource(bufferedOut, {
             inputType: StreamType.OggOpus,
             inlineVolume: true
         });
@@ -247,7 +378,9 @@ export class Player extends EventEmitter {
         /** どの位置から再生するかを指定します。予想外の位置の場合自動で補正されます。 */
         playtime: number;
         /** どの速度で再生するかを指定します。0.1-20から外れていても自動で補正されます。 */
-        speed: number;
+        tempo: number;
+        /** どの音程で再生するかを指定します。-100から100まで選べます。外れていても自動で補正されます。 */
+        pitch: number;
         /** 声を削除するか、声のみにするかを決められます。0が声なし、1が通常、2が声のみです。小数点を使うと音量を変えられます。0-2の範囲外は自動で修正されます。入力しないと、通常再生になります。 */
         voiceVolume?: number;
         /** 音量を決められます。100%にしたいときは100と入力します。0以上であれば無制限です。0以下は自動で補正されます。 */
@@ -256,7 +389,7 @@ export class Player extends EventEmitter {
         percent?: number;
         type?: "niconico" | "youtube" | "twitter";
     }) => void) {
-        const meta = await this.#fileMetaGet(data.source, statusCallback || (() => {}));
+        const meta = await this.#fileMetaGet(data.source, statusCallback || (() => { }));
         if (!meta) return console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
         const player = await this.#playerGet(data.guildId, data.channelId, data.adapterCreator);
         if (!player) return console.warn("Player.forcedPlay: playerが取得できませんでした。再生はできません。");
@@ -265,7 +398,8 @@ export class Player extends EventEmitter {
         this.status[guildId].playing = data.source;
         // 7. FFmpeg再生ストリームを作成。
         this.status[guildId].playtimeMargin = (data.playtime > 0) ? (data.playtime < Number(meta.ffprobe.duration)) ? data.playtime : Number(meta.ffprobe.duration) : 0;
-        this.status[guildId].speed = (data.speed > 0.1) ? (data.speed < 20) ? data.speed : 20 : 0.1;
+        this.status[guildId].tempo = (data.tempo > 0.1) ? (data.tempo < 20) ? data.tempo : 20 : 0.1;
+        this.status[guildId].pitch = (data.pitch > -100) ? (data.pitch < 100) ? data.pitch : 100 : -100;
         this.status[guildId].volume = Math.pow(10, (((data.volume > 0) ? data.volume : 0) - 100) / 20) * 100;
         this.ffmpegPlay({
             guildId: data.guildId,
@@ -287,11 +421,11 @@ export class Player extends EventEmitter {
     }
     /** 現在の再生位置を出力します。 */
     playtimeGet(guildId: string) {
-        return (this.status[guildId]?.playtimeMargin || 0) + (this.status[guildId]?.resource ? this.status[guildId].resource.playbackDuration / 1000 * (this.status[guildId].speed || 1) : 0);
+        return (this.status[guildId]?.playtimeMargin || 0) + (this.status[guildId]?.resource ? this.status[guildId].resource.playbackDuration / 1000 * (this.status[guildId].tempo || 1) : 0);
     }
     async playtimeSet(guildId: string, playtime: number) {
         if (!this.status[guildId] || !this.status[guildId].playing) return;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing, (() => {}));
+        const meta = await this.#fileMetaGet(this.status[guildId].playing, (() => { }));
         if (!meta) return;
         this.status[guildId].playtimeMargin = (playtime > 0) ? (playtime < Number(meta.ffprobe.duration)) ? playtime : Number(meta.ffprobe.duration) : 0;
         this.ffmpegPlay({
@@ -307,7 +441,7 @@ export class Player extends EventEmitter {
         if (!this.status[guildId]) return;
         this.status[guildId].playing = source;
         this.status[guildId].playtimeMargin = 0;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing, statusCallback || (() => {}));
+        const meta = await this.#fileMetaGet(this.status[guildId].playing, statusCallback || (() => { }));
         if (!meta) return;
         this.ffmpegPlay({
             guildId: guildId,
@@ -325,11 +459,23 @@ export class Player extends EventEmitter {
         this.status[guildId].resource?.volume?.setVolume((this.status[guildId].volume || 100) / 750);
     }
     /** 速度を設定します。FFmpeg依存のため、複雑なコードになっています。新しいAPIになったら簡単になります。 */
-    async speedSet(guildId: string, speed: number) {
+    async speedSet(guildId: string, tempo: number) {
         if (!this.status[guildId] || !this.status[guildId].playing) return;
         this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
-        this.status[guildId].speed = (speed > 0.1) ? (speed < 20) ? speed : 20 : 0.1;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing, () => {});
+        this.status[guildId].tempo = (tempo > 0.1) ? (tempo < 20) ? tempo : 20 : 0.1;
+        const meta = await this.#fileMetaGet(this.status[guildId].playing, () => { });
+        if (!meta) return;
+        this.ffmpegPlay({
+            guildId: guildId,
+            meta: meta,
+        })
+    }
+    /** 音程を設定します。FFmpeg依存のため、複雑なコードになっています。新しいAPIになったら簡単になります。 */
+    async pitchSet(guildId: string, pitch: number) {
+        if (!this.status[guildId] || !this.status[guildId].playing) return;
+        this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
+        this.status[guildId].pitch = (pitch > -100) ? (pitch < 100) ? pitch : 100 : -100;
+        const meta = await this.#fileMetaGet(this.status[guildId].playing, () => { });
         if (!meta) return;
         this.ffmpegPlay({
             guildId: guildId,

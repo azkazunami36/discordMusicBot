@@ -165,7 +165,12 @@ export async function statusEmbedGet(data: {
         },
         {
             name: "スピード",
-            value: envData.playSpeed + "倍速",
+            value: envData.playTempo + "倍速",
+            inline: true
+        },
+        {
+            name: "音程",
+            value: String(envData.playPitch),
             inline: true
         },
         {

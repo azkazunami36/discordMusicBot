@@ -12,3 +12,4 @@ package-lock.json
 !types/**/*.d.ts
 !webAudioAPI/worklet/**/*.js
 musicBrainzCache.json
+log

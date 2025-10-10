@@ -6,11 +6,11 @@ import { EnvData } from "../envJSON.js";
 import { messageEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
-    .setName("speed")
-    .setDescription("曲の再生速度を変更します。")
+    .setName("pitch")
+    .setDescription("曲の音程を変更します。")
     .addNumberOption(option => option
         .setName("num")
-        .setDescription("1倍速や2倍速、0.5倍速など、さまざまな倍速にすることができます。")
+        .setDescription("0、1、12など、さまざまな音程にすることができます。キーを調整する感じです。")
         .setRequired(true)
     )
 export const commandExample = "";
@@ -23,11 +23,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
         if (!serverData) return;
         const num = interaction.options.getNumber("num");
-        if (!num || num <= 0) return await interaction.editReply({ embeds: [messageEmbedGet("数字が指定されておらず、そして正しい指定ではありません。正しい数字を入力してください。", interaction.client)] });
+        if (num === null || num < -100 || num > 100) return await interaction.editReply({ embeds: [messageEmbedGet("数字が指定されておらず、そして正しい指定ではありません。正しい数字を入力してください。", interaction.client)] });
         const envdata = new EnvData(guildData.guildId);
-        envdata.playTempo = num;
-        await inputData.player.speedSet(guildData.guildId, num);
-        await interaction.editReply({ embeds: [messageEmbedGet(num + "倍速にしました。", interaction.client)] });
+        envdata.playPitch = num;
+        await inputData.player.pitchSet(guildData.guildId, num);
+        await interaction.editReply({ embeds: [messageEmbedGet("ピッチを" + num + "にしました。", interaction.client)] });
     }
 }
 

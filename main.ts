@@ -1,6 +1,15 @@
 import * as Discord from "discord.js";
 import fs from "fs";
 import "dotenv/config";
+import "./logger.js"
+
+process.on("uncaughtException", (err) => {
+  console.error("uncaughtException:", err.stack || String(err));
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandledRejection:", (reason as any)?.stack || String(reason));
+});
 
 import { EnvData } from "./envJSON.js";
 import { ServersDataClass } from "./serversData.js";
@@ -90,7 +99,8 @@ player.on("playAutoEnd", async (guildId) => {
             guildId: guildId,
             source: playlist[0],
             playtime: 0,
-            speed: envData.playSpeed,
+            tempo: envData.playTempo,
+            pitch: envData.playPitch,
             volume: envData.volume
         });
     }
@@ -103,12 +113,12 @@ const interactionFuncs = (() => {
         command?: Discord.SlashCommandOptionsOnlyBuilder;
     }[] = [];
     fs.readdirSync("interaction").forEach(async str => {
-        if (str.endsWith(".ts") || str.endsWith(".d.ts")) return;
+        if (!str.endsWith(".js")) return;
         try {
             const { execute, command } = await import("./interaction/" + str);
             arr.push({ execute, command });
         } catch (e) {
-            console.log(e);
+            console.error(e, str);
         }
     });
     return arr;
@@ -259,7 +269,8 @@ client.on(Discord.Events.MessageCreate, async message => {
             adapterCreator: message.guild.voiceAdapterCreator,
             source: { type: "videoId", body: videoId },
             playtime: 0,
-            speed: envData.playSpeed,
+            tempo: envData.playTempo,
+            pitch: envData.playPitch,
             volume: 1145141919
         });
         await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。プレイリストや設定は変更していないため、次の曲からは音量は" + envData.volume + "%に戻ります。");

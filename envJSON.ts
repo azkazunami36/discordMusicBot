@@ -140,11 +140,17 @@ export class EnvData {
         this.#envJSON("changeTellIs", String(type));
     }
     /** 再生速度。 */
-    set playSpeed(speed: number) {
+    set playTempo(speed: number) {
         this.#envJSON("playSpeed", String(speed));
     }
-    get playSpeed() {
+    get playTempo() {
         return Number(this.#envJSON("playSpeed") || 1);
+    }
+    set playPitch(speed: number) {
+        this.#envJSON("playPitch", String(speed));
+    }
+    get playPitch() {
+        return Number(this.#envJSON("playPitch") || 0);
     }
 }
 
@@ -302,14 +308,14 @@ export class VideoMetaCache {
                 const html = await res.text();
                 // title from og:title first
                 const mTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["'][^>]*>/i)
-                              || html.match(/\"title\"\s*:\s*\"([^\"]+)\"/);
+                    || html.match(/\"title\"\s*:\s*\"([^\"]+)\"/);
                 const title = mTitle ? mTitle[1] : undefined;
                 // thumbnail from og:image (simple and robust)
                 const mThumb = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["'][^>]*>/i);
                 const thumbnail = mThumb ? mThumb[1] : undefined;
                 // customUrl from og:url or canonical
                 const mCustom = html.match(/<meta\s+property=["']og:url["']\s+content=["']https?:\/\/www\.youtube\.com\/([^"']+)["'][^>]*>/i)
-                               || html.match(/<link\s+rel=["']canonical["']\s+href=["']https?:\/\/www\.youtube\.com\/([^"']+)["'][^>]*>/i);
+                    || html.match(/<link\s+rel=["']canonical["']\s+href=["']https?:\/\/www\.youtube\.com\/([^"']+)["'][^>]*>/i);
                 const customUrl = mCustom ? mCustom[1] : undefined;
                 return { title, thumbnail, customUrl };
             } catch (e) {
@@ -396,7 +402,7 @@ export class VideoMetaCache {
         let channelId: string | undefined = undefined;
 
         // --- Alias helpers ---
-        const toAliasKey = (parsed: { type: 'channel'|'user'|'custom'|'handle', idOrName: string } | null, raw: string): string[] => {
+        const toAliasKey = (parsed: { type: 'channel' | 'user' | 'custom' | 'handle', idOrName: string } | null, raw: string): string[] => {
             const keys: string[] = [];
             const normRaw = raw.trim().toLowerCase();
             keys.push(normRaw);
@@ -544,7 +550,7 @@ export class VideoMetaCache {
                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                 } catch (e) {
                     if (isQuotaError(e)) {
-                info('[youtubeUserInfoGet] quotaExceeded on search.list(handle) — falling back to yt-search');
+                        info('[youtubeUserInfoGet] quotaExceeded on search.list(handle) — falling back to yt-search');
                         const fall = await resolveChannelIdViaYtSearch(query, 'handle');
                         if (fall?.channelId) {
                             channelId = fall.channelId;
