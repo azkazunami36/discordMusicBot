@@ -4,11 +4,11 @@ import "dotenv/config";
 import "./logger.js"
 
 process.on("uncaughtException", (err) => {
-  console.error("uncaughtException:", err.stack || String(err));
+    console.error("uncaughtException:", err.stack || String(err));
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("unhandledRejection:", (reason as any)?.stack || String(reason));
+    console.error("unhandledRejection:", (reason as any)?.stack || String(reason));
 });
 
 import { EnvData } from "./envJSON.js";
@@ -18,6 +18,7 @@ import { WebPlayerAPI } from "./webAPI.js";
 import { Player } from "./player.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "./embed.js";
 import { progressBar } from "./progressBar.js";
+import { getVoiceConnections, VoiceConnection } from "@discordjs/voice";
 
 const client = new Discord.Client({
     intents: [
@@ -217,33 +218,81 @@ const bt = [
 ]
 let joubutuNumber = Math.floor(Math.random() * bt.length);
 client.on(Discord.Events.MessageCreate, async message => {
-    if (message.guildId === "926965020724691005" && message.content === "音楽botのコマンドを再定義する") {// JSON へ変換（REST 配信用）
-        function toJSONBody(builders: Discord.SlashCommandOptionsOnlyBuilder[]): Discord.RESTPostAPIApplicationCommandsJSONBody[] {
-            return builders.map((b) => (b as any).toJSON ? (b as any).toJSON() : (b as unknown as Discord.RESTPostAPIApplicationCommandsJSONBody));
+    if (message.guildId === "926965020724691005") {
+        if (message.content === "音楽botのコマンドを再定義する") {
+            // JSON へ変換（REST 配信用）
+            function toJSONBody(builders: Discord.SlashCommandOptionsOnlyBuilder[]): Discord.RESTPostAPIApplicationCommandsJSONBody[] {
+                return builders.map((b) => (b as any).toJSON ? (b as any).toJSON() : (b as unknown as Discord.RESTPostAPIApplicationCommandsJSONBody));
+            }
+            const botmessage = await message.reply("処理を開始します...");
+            const token = process.env.DISCORD_TOKEN;
+            const clientId = "1028285721955553362";
+
+            if (!token || !clientId) return await botmessage.edit("トークンまたはクライアントIDが無効だったよ。");
+            const commands = interactionFuncs.map(func => func.command).filter((cmd): cmd is Discord.SlashCommandOptionsOnlyBuilder => cmd !== undefined);
+            const body = toJSONBody(commands);
+            const rest = new Discord.REST({ version: "10" }).setToken(token);
+
+            botmessage.edit("グローバルコマンドをセットしています...");
+            await rest.put(Discord.Routes.applicationCommands(clientId), { body: body });
+
+            // サーバーのID一覧
+            const guildIds = ["926965020724691005"];
+            for (let i = 0; i < guildIds.length; i++) {
+                const guildId = guildIds[i];
+                botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」に登録しています...時間がかかります。");
+                await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: body });
+                botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」から削除しています...");
+                await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: [] });
+            }
+            botmessage.edit("グローバルコマンドを登録しました。");
+            return;
         }
-        const botmessage = await message.reply("処理を開始します...");
-        const token = process.env.DISCORD_TOKEN;
-        const clientId = "1028285721955553362";
-
-        if (!token || !clientId) return await botmessage.edit("トークンまたはクライアントIDが無効だったよ。");
-        const commands = interactionFuncs.map(func => func.command).filter((cmd): cmd is Discord.SlashCommandOptionsOnlyBuilder => cmd !== undefined);
-        const body = toJSONBody(commands);
-        const rest = new Discord.REST({ version: "10" }).setToken(token);
-
-        botmessage.edit("グローバルコマンドをセットしています...");
-        await rest.put(Discord.Routes.applicationCommands(clientId), { body: body });
-
-        // Botが参加している全サーバーのID一覧
-        const guildIds = client.guilds.cache.map(guild => guild.id);
-        for (let i = 0; i < guildIds.length; i++) {
-            const guildId = guildIds[i];
-            botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」に登録しています...時間がかかります。");
-            await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: body });
-            botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」から削除しています...");
-            await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: [] });
+        if (message.content === "音楽botのステータス") {
+            const connections = getVoiceConnections();
+            const list: VoiceConnection[] = [];
+            connections.forEach(connection => list.push(connection));
+            await message.reply("現在音楽botは" + list.length + "箇所で再生されています。: " + (() => {
+                let string = "";
+                for (const data of list) {
+                    string += "\n" + (() => {
+                        try {
+                            return client.guilds.cache.get(data.joinConfig.guildId)?.name
+                        } catch {
+                            return "取得エラー"
+                        }
+                    })() + " / " + data.joinConfig.guildId
+                }
+                return string;
+            })());
         }
-        botmessage.edit("グローバルコマンドを登録しました。");
-        return;
+        if (message.content.startsWith("音楽botをシャットダウンする")) {
+            const connections = getVoiceConnections();
+            const list: VoiceConnection[] = [];
+            connections.forEach(connection => list.push(connection));
+            const botmessage = await message.reply("再生を停止してシャットダウンの旨を連絡中...");
+            let i = 0;
+            for (const data of list) {
+                i++;
+                await botmessage.edit("再生を停止してシャットダウンの旨を連絡中...(" + i + "/" + list.length + ")");
+                try {
+                    const serverData = serversData[data.joinConfig.guildId];
+                    if (serverData && serverData.discord.calledChannel) {
+                        const channel = client.guilds.cache.get(data.joinConfig.guildId)?.channels.cache.get(serverData.discord.calledChannel);
+                        if (channel && channel.isTextBased()) {
+                            const adminMessage = message.content.split("♡")[1];
+                            await channel.send({ embeds: [messageEmbedGet("お楽しみ中のところ大変申し訳ありません。音楽botはメンテナンス・再起動のため強制的にシャットダウン処理を開始します。音楽botがオンラインになるまでしばらくお待ちください。" + (adminMessage ? "管理者からシャットダウン理由について説明されています。\n\n**〜管理者よりメッセージ〜**\n\n" + adminMessage : "再起動理由について、管理者はメッセージを用意しませんでした。意図について詳しく説明できず、復旧タイミングも不明です。\n\n現在のメッセージから５分経ってもこのbotのオンラインステータスが復帰しない場合、X(旧Twitter)で@kazunami36_sum1のツイート情報をご確認ください。"), client)] });
+                        }
+                    }
+                    player.stop(data.joinConfig.guildId);
+                } catch (e) {
+                    console.error("再生停止処理中にエラー(処理は続行されます)", e)
+                }
+            }
+            await botmessage.edit("シャットダウンの準備が整いました。システムが終了しているか確認してください。");
+            await client.destroy();
+            process.exit(0);
+        }
     }
     // 1. bot呼び出しでないものをスキップする。
     if (!message.guildId || !message.member || !message.guild) return message.reply("ごめん！！エラーっす！www");
@@ -273,6 +322,6 @@ client.on(Discord.Events.MessageCreate, async message => {
             pitch: envData.playPitch,
             volume: 1145141919
         });
-        await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。プレイリストや設定は変更していないため、次の曲からは音量は" + envData.volume + "%に戻ります。");
+        await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。キューや設定は変更していないため、次の曲からは音量は" + envData.volume + "%に戻ります。");
     }
 })

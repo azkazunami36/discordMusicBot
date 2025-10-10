@@ -149,7 +149,7 @@ export async function statusEmbedGet(data: {
     })
     const envData = new EnvData(guildId);
     fields.push({
-        name: "プレイリストページ",
+        name: "キューページ",
         value: playlistPage + "ページ中" + selectPlaylistPage + "ページ目",
         inline: false
     },
@@ -188,7 +188,7 @@ export async function statusEmbedGet(data: {
             name: "音楽bot",
             iconURL: client.user?.avatarURL() || "",
         })
-        .setDescription("プレイリスト")
+        .setDescription("キュー")
         .addFields(fields)
         .setColor("Purple")
     if (data.playing?.playingPlaylist) {

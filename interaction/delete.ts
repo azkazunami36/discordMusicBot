@@ -7,7 +7,7 @@ import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("delete")
-    .setDescription("プレイリスト内の曲を削除します。")
+    .setDescription("キュー内の曲を削除します。")
     .addNumberOption(option => option
         .setName("number")
         .setDescription("削除したい曲の番号を指定します。")

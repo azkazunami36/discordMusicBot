@@ -64,11 +64,11 @@ export class EnvData {
         }
         return json[this.guildId][name];
     }
-    /** プレイリストデータを保存します。 */
+    /** キューデータを保存します。 */
     playlistSave(playlist: Playlist[]) {
         this.#envJSON("playlist", JSON.stringify(playlist));
     }
-    /** プレイリストデータを取得します。 */
+    /** キューデータを取得します。 */
     playlistGet() {
         const playlistJSONStr = this.#envJSON("playlist") || this.#envJSON("playlist", "[]");
         try {

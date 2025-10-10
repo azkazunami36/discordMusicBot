@@ -31,21 +31,21 @@ export class VariableExistCheck {
         }
         return vchannelId;
     }
-    /** プレイリストを取得します。正しく取得できないと自動でユーザーに連絡されるので、undefinedだった場合の処理は不要です。 */
+    /** キューを取得します。正しく取得できないと自動でユーザーに連絡されるので、undefinedだった場合の処理は不要です。 */
     async playlist() {
         const guildData = await this.guild();
         if (guildData === undefined) return undefined;
         const envData = new EnvData(guildData.guildId);
         return envData.playlistGet();
     }
-    /** プレイリストが空かどうかを検証します。からだったらfalse、じゃなければtrue、そもそも前提データがない場合はundefinedです。 */
+    /** キューが空かどうかを検証します。からだったらfalse、じゃなければtrue、そもそも前提データがない場合はundefinedです。 */
     async playlistIsEmpty() {
         const guildData = await this.guild();
         if (guildData === undefined) return undefined;
         const playlist = await this.playlist();
         if (!playlist) return undefined;
         if (playlist.length === 0) {
-            try { await this.interaction.editReply({ embeds: [messageEmbedGet("プレイリストが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。", this.interaction.client)] }); } catch (e) { }
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("キューが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。", this.interaction.client)] }); } catch (e) { }
             return true;
         }
         return false;

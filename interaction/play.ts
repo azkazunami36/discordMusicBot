@@ -9,7 +9,7 @@ import { progressBar } from "../progressBar.js";
 
 export const command = new SlashCommandBuilder()
     .setName("play")
-    .setDescription("プレイリスト内の曲を再生します。")
+    .setDescription("キュー内の曲を再生します。")
 export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {

@@ -6,7 +6,7 @@ import { statusEmbedGet } from "../embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("status")
-    .setDescription("プレイリスト・再生状態を確認できます。")
+    .setDescription("キュー・再生状態を確認できます。")
     .addNumberOption(option => option
         .setName("page")
         .setDescription("ページを指定します。")

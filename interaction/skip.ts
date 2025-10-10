@@ -11,7 +11,7 @@ export const command = new SlashCommandBuilder()
     .setDescription("現在の曲をスキップして次の曲を再生します。")
     .addNumberOption(option => option
         .setName("skipnum")
-        .setDescription("指定した番号だけプレイリストを進めます。プレイリストより多い数でも機能はしますが、負荷がかかるのでおやめください。")
+        .setDescription("指定した番号だけキューを進めます。キューより多い数でも機能はしますが、負荷がかかるのでおやめください。")
     )
 export const commandExample = "";
 
