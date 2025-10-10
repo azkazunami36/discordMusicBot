@@ -217,6 +217,9 @@ const bt = [
     },
 ]
 let joubutuNumber = Math.floor(Math.random() * bt.length);
+client.on(Discord.Events.GuildCreate, guild => {
+    console.log("音楽botが新しいサーバーに参加。参加したサーバー名: " + guild.name + " 現在の参加数: " + client.guilds.cache.size)
+})
 client.on(Discord.Events.MessageCreate, async message => {
     if (message.guildId === "926965020724691005") {
         if (message.content === "音楽botのコマンドを再定義する") {
