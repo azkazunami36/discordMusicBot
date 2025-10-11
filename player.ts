@@ -397,11 +397,24 @@ export class Player extends EventEmitter {
         type?: "niconico" | "youtube" | "twitter";
     }) => void) {
         const meta = await this.#fileMetaGet(data.source, statusCallback || (() => { }));
-        if (!meta) return console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
+        if (!meta) {
+            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
+            throw new Error("音声ファイルが無効または音声ファイルのダウンロードに失敗しています。このエラーは管理者が気づき次第エラーを特定し修正されます。他の曲をお試しください。")
+        }
         const player = await this.#playerGet(data.guildId, data.channelId, data.adapterCreator);
-        if (!player) return console.warn("Player.forcedPlay: playerが取得できませんでした。再生はできません。");
+        if (!player) {
+            console.warn("Player.forcedPlay: playerが取得できませんでした。再生はできません。");
+            throw new Error("VCに参加することができませんでした。このエラーは管理者が気づき次第エラーを特定して修正されます。他の曲を試すか、サーバーの設定をご確認ください。")
+        };
         const guildId = data.guildId;
-        if (!this.status[guildId]) return console.warn("Player.forcedPlay: playerGetで定義されたはずのstatus内変数が取得できませんでした。再生はできません。");
+        if (!this.status[guildId]) {
+            console.warn("Player.forcedPlay: playerGetで定義されたはずのstatus内変数が取得できませんでした。再生はできません。");
+            try {
+                const oldConnection = getVoiceConnection(guildId);
+                if (oldConnection) oldConnection.destroy();
+            } catch { }
+            throw new Error("想定外の挙動です。通常音楽botがVCに参加すると定義されるはずの、サーバーごとの再生状態データが定義されず、正しい処理が行えません。エラーが特定されるまで、他の操作をお試しください。");
+        }
         this.status[guildId].playing = data.source;
         // 7. FFmpeg再生ストリームを作成。
         this.status[guildId].playtimeMargin = (data.playtime > 0) ? (data.playtime < Number(meta.ffprobe.duration)) ? data.playtime : Number(meta.ffprobe.duration) : 0;
@@ -433,7 +446,10 @@ export class Player extends EventEmitter {
     async playtimeSet(guildId: string, playtime: number) {
         if (!this.status[guildId] || !this.status[guildId].playing) return;
         const meta = await this.#fileMetaGet(this.status[guildId].playing, (() => { }));
-        if (!meta) return;
+        if (!meta) {
+            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
+            throw new Error("音声ファイルが無効または音声ファイルのダウンロードに失敗しています。このエラーは管理者が気づき次第エラーを特定し修正されます。他の曲をお試しください。")
+        }
         this.status[guildId].playtimeMargin = (playtime > 0) ? (playtime < Number(meta.ffprobe.duration)) ? playtime : Number(meta.ffprobe.duration) : 0;
         this.ffmpegPlay({
             guildId: guildId,
@@ -449,7 +465,10 @@ export class Player extends EventEmitter {
         this.status[guildId].playing = source;
         this.status[guildId].playtimeMargin = 0;
         const meta = await this.#fileMetaGet(this.status[guildId].playing, statusCallback || (() => { }));
-        if (!meta) return;
+        if (!meta) {
+            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
+            throw new Error("音声ファイルが無効または音声ファイルのダウンロードに失敗しています。このエラーは管理者が気づき次第エラーを特定し修正されます。他の曲をお試しください。")
+        }
         this.ffmpegPlay({
             guildId: guildId,
             meta: meta,
@@ -471,7 +490,10 @@ export class Player extends EventEmitter {
         this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
         this.status[guildId].tempo = (tempo > 0.1) ? (tempo < 20) ? tempo : 20 : 0.1;
         const meta = await this.#fileMetaGet(this.status[guildId].playing, () => { });
-        if (!meta) return;
+        if (!meta) {
+            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
+            throw new Error("音声ファイルが無効または音声ファイルのダウンロードに失敗しています。このエラーは管理者が気づき次第エラーを特定し修正されます。他の曲をお試しください。")
+        }
         this.ffmpegPlay({
             guildId: guildId,
             meta: meta,
@@ -483,7 +505,10 @@ export class Player extends EventEmitter {
         this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
         this.status[guildId].pitch = (pitch > -100) ? (pitch < 100) ? pitch : 100 : -100;
         const meta = await this.#fileMetaGet(this.status[guildId].playing, () => { });
-        if (!meta) return;
+        if (!meta) {
+            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
+            throw new Error("音声ファイルが無効または音声ファイルのダウンロードに失敗しています。このエラーは管理者が気づき次第エラーを特定し修正されます。他の曲をお試しください。")
+        }
         this.ffmpegPlay({
             guildId: guildId,
             meta: meta,

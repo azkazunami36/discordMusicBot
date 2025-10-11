@@ -74,26 +74,40 @@ player.on("playAutoEnd", async (guildId) => {
         if (channel && channel.isTextBased()) {
             const metaEmbed = await videoInfoEmbedGet(playlistData, "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`");
             const message = await channel.send({ embeds: [metaEmbed] });
-            let statusTemp: {
-                status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
-                body: { percent?: number; };
+            try {
+                let statusTemp: {
+                    status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
+                    body: { percent?: number; };
+                }
+                let statuscallTime: number = Date.now();
+                await player.sourceSet(guildId, playlist[0], async (status, body) => {
+                    const temp = { status, body }
+                    if (statusTemp && statusTemp === temp) return;
+                    if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
+                    statusTemp = temp;
+                    statuscallTime = Date.now();
+                    if (status === "loading") { metaEmbed.setDescription("次の曲の音声ファイルを準備中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                    if (status === "downloading") { metaEmbed.setDescription("次の曲の音声ファイルをダウンロード中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                    if (status === "converting") { metaEmbed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                    if (status === "formatchoosing") { metaEmbed.setDescription("次の曲の" + (body.type ? (body.type === "youtube" ? "YouTube" : body.type === "niconico" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                    if (status === "done") { metaEmbed.setDescription("次の曲の再生開始処理中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                });
+                player.volumeSet(guildId, envData.volume);
+                metaEmbed.setDescription("次の曲の再生を開始しました。");
+                await message.edit({ embeds: [metaEmbed] });
+            } catch (e) {
+                await message.edit({
+                    embeds: [new Discord.EmbedBuilder()
+                        .setTitle("エラー")
+                        .setAuthor({
+                            name: "音楽bot",
+                            iconURL: client.user?.avatarURL() || "",
+                        })
+                        .setDescription("このbotで次の曲を再生する処理をしている途中でエラーが発生しました。以下のエラーは管理者側でも確認可能です。修正まで放置しておくか、`/skip`コマンドや`/delete`コマンドを使用してこのエラーを回避してください。\n```" + e + "\n```")
+                        .setColor("Purple")
+                    ]
+                });
             }
-            let statuscallTime: number = Date.now();
-            await player.sourceSet(guildId, playlist[0], async (status, body) => {
-                const temp = { status, body }
-                if (statusTemp && statusTemp === temp) return;
-                if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
-                statusTemp = temp;
-                statuscallTime = Date.now();
-                if (status === "loading") { metaEmbed.setDescription("次の曲の音声ファイルを準備中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "downloading") { metaEmbed.setDescription("次の曲の音声ファイルをダウンロード中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "converting") { metaEmbed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "formatchoosing") { metaEmbed.setDescription("次の曲の" + (body.type ? (body.type === "youtube" ? "YouTube" : body.type === "niconico" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "done") { metaEmbed.setDescription("次の曲の再生開始処理中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-            });
-            player.volumeSet(guildId, envData.volume);
-            metaEmbed.setDescription("次の曲の再生を開始しました。");
-            await message.edit({ embeds: [metaEmbed] });
         }
     } else {
         await player.forcedPlay({
@@ -157,7 +171,21 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         await interaction.reply({
             embeds: [messageEmbedGet("コマンド「" + data.command.name + "」の処理を開始しています...", client)]
         });
-        await data.execute(interaction, inputData);
+        try {
+            await data.execute(interaction, inputData);
+        } catch (e) {
+            await interaction.editReply({
+                embeds: [new Discord.EmbedBuilder()
+                    .setTitle("エラー")
+                    .setAuthor({
+                        name: "音楽bot",
+                        iconURL: client.user?.avatarURL() || "",
+                    })
+                    .setDescription("このbotでコマンドの処理をしている途中でエラーが発生しました。以下のエラーは生のエラー内容です。これは管理者側でもチェックが可能です。修正までしばらくお待ちください。\n```" + e + "\n```")
+                    .setColor("Purple")
+                ]
+            });
+        }
     }
 });
 client.on(Discord.Events.ClientReady, () => {
@@ -266,6 +294,18 @@ client.on(Discord.Events.MessageCreate, async message => {
                         }
                     })() + " / " + data.joinConfig.guildId
                 }
+                return string;
+            })() + "\nこの音楽botは" + client.guilds.cache.size + "箇所に参加しています。: " + (() => {
+                let string = "";
+                client.guilds.cache.forEach(data => {
+                    string += "\n" + (() => {
+                        try {
+                            return client.guilds.cache.get(data.id)?.name
+                        } catch {
+                            return "取得エラー"
+                        }
+                    })() + " / " + data.id
+                })
                 return string;
             })());
         }

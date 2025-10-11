@@ -138,6 +138,8 @@ export class SourcePathManager {
                             });
                             fs.unlinkSync("./youtubeCache/" + cacheFilename);
                         }
+                    } else {
+                        console.error("このYouTubeのIDは無効のようです。: ", playlistData);
                     }
                     // 5. 完了したことを伝えて終了。
                     for (const func of listener) func();
@@ -186,9 +188,21 @@ export class SourcePathManager {
                         format_id: string;
                         format_note: string;
                         resolution: string;
+                        url?: string;
+                        manifest_url?: string;
+                        ext?: string | null;
+                        protocol?: string | null;
+                        has_drm?: boolean;
+                        vcodec?: string | null;
+                        acodec?: string | null;
+                        audio_ext?: string | null;
+                        video_ext?: string | null;
+                        abr?: number | null;  // audio bitrate (kbps)
+                        tbr?: number | null;  // total bitrate (kbps)
                     }
                     const formats: Format[] = await new Promise((resolve, reject) => {
                         exec('yt-dlp --print "%(formats)j" -q --cookies-from-browser chrome --no-warnings --add-header "Referer:https://www.nicovideo.jp/" https://www.nicovideo.jp/watch/' + nicovideoId, (err, stdout, stderr) => {
+                            if (stderr) console.log(stderr);
                             try { resolve(JSON.parse(stdout)) }
                             catch (e) {
                                 console.log(nicovideoId);
@@ -196,18 +210,48 @@ export class SourcePathManager {
                             }
                         });
                     });
+
                     function pickBestFormat(formats: Format[]): Format | undefined {
-                        return formats
-                            // まず条件に一致するものだけ残す
-                            .filter(f => f.resolution === "audio only" && (
-                                f.format_note === "Main Audio, high"
-                            ))
-                            // その中から asr が最大のものを選ぶ
-                            .reduce<Format | undefined>((best, cur) => {
-                                if (!best) return cur;
-                                if ((cur.asr ?? 0) > (best.asr ?? 0)) return cur;
-                                return best;
-                            }, undefined);
+                        if (!Array.isArray(formats) || formats.length === 0) return undefined;
+
+                        const isAudioOnly = (f: Format) => {
+                            const res = (f.resolution ?? '').toLowerCase();
+                            return (
+                                (f.vcodec ?? '').toLowerCase() === 'none' ||
+                                (f.video_ext ?? '').toLowerCase() === 'none' ||
+                                res.includes('audio only')
+                            );
+                        };
+
+                        // 1) 音声のみ & 非DRM に絞る
+                        const audioCandidates = formats.filter(f => isAudioOnly(f) && !f.has_drm);
+
+                        if (audioCandidates.length === 0) {
+                            // 最低限のフェイルセーフ：音声トラックを含むもの全般から選ぶ
+                            const anyWithAudio = formats.filter(f => (f.acodec && f.acodec !== 'none') && !f.has_drm);
+                            if (anyWithAudio.length === 0) return undefined;
+                            return anyWithAudio.sort(sorter).at(0) ?? undefined;
+                        }
+
+                        // 2) "Main Audio" を優先（"Main Audio, high" など含む広い判定）
+                        const mainAudio = audioCandidates.filter(f =>
+                            (f.format_note ?? '').toLowerCase().includes('main audio')
+                        );
+
+                        const pool = mainAudio.length > 0 ? mainAudio : audioCandidates;
+
+                        // 3) 品質順に並べて先頭を採用
+                        return pool.sort(sorter).at(0) ?? undefined;
+
+                        // 並び替え関数：ABR > ASR > TBR（降順）
+                        function num(n: number | null | undefined) { return typeof n === 'number' && isFinite(n) ? n : 0; }
+                        function sorter(a: Format, b: Format) {
+                            const abrDiff = num(b.abr) - num(a.abr);
+                            if (abrDiff !== 0) return abrDiff;
+                            const asrDiff = num(b.asr) - num(a.asr);
+                            if (asrDiff !== 0) return asrDiff;
+                            return num(b.tbr) - num(a.tbr);
+                        }
                     }
                     const audioformat = pickBestFormat(formats);
                     // 4. もし取得できたらダウンロードをして拡張子・コンテナを修正する。
@@ -265,6 +309,8 @@ export class SourcePathManager {
                             });
                             fs.unlinkSync("./niconicoCache/" + cacheFilename);
                         }
+                    } else {
+                        console.error("このYouTubeのIDは無効のようです。: ", playlistData, formats, audioformat);
                     }
                     // 5. 完了したことを伝えて終了。
                     for (const func of listener) func();
