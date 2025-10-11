@@ -62,13 +62,15 @@ export class SourcePathManager {
                     }
                     const formats: Format[] = await new Promise((resolve, reject) => {
                         let text = "";
-                        const proc = exec('yt-dlp --print "%(formats)j" -q --extractor-args youtube:player_client=tv_embedded --cookies /Users/kazunami36_sum2/cookies.txt --no-warnings https://youtu.be/' + videoId, (err, stdout, stderr) => {
+                        let errt = "";
+                        const proc = exec('yt-dlp --print "%(formats)j" -q --extractor-args youtube:player_client=tv_embedded --cookies-from-browser chrome --no-warnings https://youtu.be/' + videoId, (err, stdout, stderr) => {
                             text += stdout;
+                            errt += stderr;
                         });
                         proc.on("close", () => {
                             try { resolve(JSON.parse(text)) }
                             catch (e) {
-                                console.log("次の動画のJSONをパースしようとしたらエラーが発生しました。", videoId, text);
+                                console.log("次の動画のJSONをパースしようとしたらエラーが発生しました。", videoId, text, errt);
                                 reject(new Error("この動画(" + videoId + ")の解析を行うためにフォーマットリストを解析しようとした時にエラーが発生しました。: " + e));
                             }
                         })
@@ -101,7 +103,7 @@ export class SourcePathManager {
                                 "-o", "youtubeCache/%(id)s-cache.%(ext)s",
                                 "--progress-template", "%(progress)j",
                                 "--extractor-args", 'youtube:player_client=tv_embedded',
-                                "--cookies", "/Users/kazunami36_sum2/cookies.txt",
+                                "--cookies-from-browser", "chrome",
                                 `https://youtu.be/${videoId}`
                             ], { cwd: process.cwd() });
 
@@ -206,7 +208,7 @@ export class SourcePathManager {
                         tbr?: number | null;  // total bitrate (kbps)
                     }
                     const formats: Format[] = await new Promise((resolve, reject) => {
-                        exec('yt-dlp --print "%(formats)j" -q --cookies /Users/kazunami36_sum2/cookies.txt --no-warnings --add-header "Referer:https://www.nicovideo.jp/" https://www.nicovideo.jp/watch/' + nicovideoId, (err, stdout, stderr) => {
+                        exec('yt-dlp --print "%(formats)j" -q --cookies-from-browser chrome --no-warnings --add-header "Referer:https://www.nicovideo.jp/" https://www.nicovideo.jp/watch/' + nicovideoId, (err, stdout, stderr) => {
                             if (stderr) console.log(stderr);
                             try { resolve(JSON.parse(stdout)) }
                             catch (e) {
@@ -271,7 +273,7 @@ export class SourcePathManager {
                                 "-f", audioformat.format_id,
                                 "-o", "niconicoCache/%(id)s-cache.%(ext)s",
                                 "--progress-template", "%(progress)j",
-                                "--cookies", "/Users/kazunami36_sum2/cookies.txt",
+                                "--cookies-from-browser", "chrome",
                                 "--add-header", "Referer:https://www.nicovideo.jp/",
                                 `https://www.nicovideo.jp/watch/${nicovideoId}`
                             ], { cwd: process.cwd() });
@@ -365,7 +367,7 @@ export class SourcePathManager {
                         resolution: string;
                     }
                     const formats: Format[] = await new Promise((resolve, reject) => {
-                        exec('yt-dlp --print "%(formats)j" -q --cookies /Users/kazunami36_sum2/cookies.txt --no-warnings https://www.x.com/i/web/status/' + twitterId, (err, stdout, stderr) => {
+                        exec('yt-dlp --print "%(formats)j" -q --cookies-from-browser chrome --no-warnings https://www.x.com/i/web/status/' + twitterId, (err, stdout, stderr) => {
                             try { console.log(stdout); resolve(JSON.parse(stdout)) }
                             catch (e) {
                                 console.log(twitterId);
@@ -391,7 +393,7 @@ export class SourcePathManager {
                                 "-f", audioformat.format_id,
                                 "-o", "twitterCache/%(id)s-cache.%(ext)s",
                                 "--progress-template", "%(progress)j",
-                                "--cookies", "/Users/kazunami36_sum2/cookies.txt",
+                                "--cookies-from-browser", "chrome",
                                 "--add-header", "Referer:https://www.nicovideo.jp/",
                                 `https://www.x.com/i/web/status/${twitterId}`
                             ], { cwd: process.cwd() });
