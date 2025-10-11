@@ -4,6 +4,7 @@ import { EnvData } from "./envJSON.js";
 import { ServersDataClass } from "./serversData.js";
 import { Player } from "./player.js";
 import { messageEmbedGet } from "./embed.js";
+import { ChannelType, ChatInputCommandInteraction, GuildMember, PermissionsBitField, VoiceBasedChannel } from "discord.js";
 
 /**
  * 変数の存在をチェックし、存在しない変数があるとundefinedを返すだけでなく自動でeditReplyをします。replyを予め行なってください。
@@ -24,6 +25,81 @@ export class VariableExistCheck {
     async voiceChannelId() {
         const guildData = await this.guild();
         if (guildData === undefined) return undefined;
+        /**
+         * 実行ユーザーが今いるVCに対して「Bot」と「ユーザー」が
+         * 参加(Connect)＋発言(Speak)できるなら true。
+         * それ以外（DM/未参加/型不一致/権限不足/想定外）はすべて false を返す。
+         * 例外は投げません（throw/try未使用）。
+         */
+        function canBothJoinAndSpeak(interaction: ChatInputCommandInteraction): boolean {
+            // 基本前提が揃っていなければ false
+            if (!interaction || !interaction.guild || !interaction.member) return false;
+
+            const member = interaction.member as GuildMember;
+            const vc = getInvokersVoiceChannel(member);
+            if (!vc) return false;
+
+            // 対象がVC以外（例: ステージ以外の未知タイプ）は false
+            if (!isVoiceOrStage(vc)) return false;
+
+            const me = interaction.guild.members.me;
+            if (!me) return false;
+
+            // Bot権限チェック
+            const botPerms = me.permissionsIn(vc.id);
+            if (!hasJoinAndSpeak(botPerms, vc.type)) return false;
+
+            // ユーザー権限チェック
+            const userPerms = member.permissionsIn(vc.id);
+            if (!hasJoinAndSpeak(userPerms, vc.type)) return false;
+
+            return true;
+        }
+
+        /* ===== ヘルパ ===== */
+
+        function getInvokersVoiceChannel(member: GuildMember): VoiceBasedChannel | null {
+            // voice または stage に居なければ null
+            const ch = member.voice?.channel ?? null;
+            return ch ?? null;
+        }
+
+        function isVoiceOrStage(channel: VoiceBasedChannel): boolean {
+            return (
+                channel.type === ChannelType.GuildVoice ||
+                channel.type === ChannelType.GuildStageVoice
+            );
+        }
+
+        function hasJoinAndSpeak(perms: PermissionsBitField, chType: ChannelType): boolean {
+            if (!perms) return false;
+
+            // 共通（見る＋入る）
+            if (!perms.has(PermissionsBitField.Flags.ViewChannel)) return false;
+            if (!perms.has(PermissionsBitField.Flags.Connect)) return false;
+
+            // 発言（Voice と Stage で判定を分ける）
+            if (chType === ChannelType.GuildVoice) {
+                // 通常VCは Speak が必要
+                return perms.has(PermissionsBitField.Flags.Speak);
+            }
+
+            if (chType === ChannelType.GuildStageVoice) {
+                // Stage は Speak 権限が無いことが多いので、
+                // 1) Speak がある もしくは 2) RequestToSpeak がある のどちらかを満たせば「発言可能」とみなす
+                return (
+                    perms.has(PermissionsBitField.Flags.Speak) ||
+                    perms.has(PermissionsBitField.Flags.RequestToSpeak)
+                );
+            }
+
+            // 想定外タイプは false（ここには来ない想定だがthrowはしない）
+            return false;
+        }
+        if (!this.interaction.isChatInputCommand() || !canBothJoinAndSpeak(this.interaction)) {
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("あなたが参加しているVCに入る権限がなく、操作を実行できませんでした。", this.interaction.client)] }); } catch (e) { }
+            return undefined;
+        }
         const vchannelId = (guildData.member as Discord.GuildMember).voice.channelId;
         if (!vchannelId) {
             try { await this.interaction.editReply({ embeds: [messageEmbedGet("あなたがVCに参加していません。使用したいVCの場所を指定するには、VCに参加してください。", this.interaction.client)] }); } catch (e) { }

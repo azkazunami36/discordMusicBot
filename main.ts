@@ -62,8 +62,12 @@ player.on("playAutoEnd", async (guildId) => {
         }
     }
     if (playlist.length < 1) {
-        if (channel && channel.isTextBased()) {
-            await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
+        try {
+            if (channel && channel.isTextBased()) {
+                await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
+            }
+        } catch (e) {
+            console.error(e);
         }
         player.stop(guildId);
         return;
@@ -71,43 +75,53 @@ player.on("playAutoEnd", async (guildId) => {
     const playlistData = playlist[0];
     if (envData.changeTellIs) {
         const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
-        if (channel && channel.isTextBased()) {
-            const metaEmbed = await videoInfoEmbedGet(playlistData, "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`");
-            const message = await channel.send({ embeds: [metaEmbed] });
-            try {
-                let statusTemp: {
-                    status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
-                    body: { percent?: number; };
+        try {
+            if (channel && channel.isTextBased()) {
+                const metaEmbed = await videoInfoEmbedGet(playlistData, "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`");
+                const message = await channel.send({ embeds: [metaEmbed] });
+                try {
+                    let statusTemp: {
+                        status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",
+                        body: { percent?: number; };
+                    }
+                    let statuscallTime: number = Date.now();
+                    await player.sourceSet(guildId, playlist[0], async (status, body) => {
+                        const temp = { status, body }
+                        if (statusTemp && statusTemp === temp) return;
+                        if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
+                        statusTemp = temp;
+                        statuscallTime = Date.now();
+                        if (status === "loading") { metaEmbed.setDescription("次の曲の音声ファイルを準備中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                        if (status === "downloading") { metaEmbed.setDescription("次の曲の音声ファイルをダウンロード中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                        if (status === "converting") { metaEmbed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                        if (status === "formatchoosing") { metaEmbed.setDescription("次の曲の" + (body.type ? (body.type === "youtube" ? "YouTube" : body.type === "niconico" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                        if (status === "done") { metaEmbed.setDescription("次の曲の再生開始処理中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
+                    });
+                    player.volumeSet(guildId, envData.volume);
+                    metaEmbed.setDescription("次の曲の再生を開始しました。");
+                    await message.edit({ embeds: [metaEmbed] });
+                } catch (e) {
+                    try {
+                        await message.edit({
+                            embeds: [new Discord.EmbedBuilder()
+                                .setTitle("エラー")
+                                .setAuthor({
+                                    name: "音楽bot",
+                                    iconURL: client.user?.avatarURL() || "",
+                                })
+                                .setDescription("このbotで次の曲を再生する処理をしている途中でエラーが発生しました。以下のエラーは管理者側でも確認可能です。修正まで放置しておくか、`/skip`コマンドや`/delete`コマンドを使用してこのエラーを回避してください。\n```" + e + "\n```")
+                                .setColor("Purple")
+                            ]
+                        });
+                    } catch (e) {
+                        console.error(e);
+                    }
                 }
-                let statuscallTime: number = Date.now();
-                await player.sourceSet(guildId, playlist[0], async (status, body) => {
-                    const temp = { status, body }
-                    if (statusTemp && statusTemp === temp) return;
-                    if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
-                    statusTemp = temp;
-                    statuscallTime = Date.now();
-                    if (status === "loading") { metaEmbed.setDescription("次の曲の音声ファイルを準備中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                    if (status === "downloading") { metaEmbed.setDescription("次の曲の音声ファイルをダウンロード中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                    if (status === "converting") { metaEmbed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                    if (status === "formatchoosing") { metaEmbed.setDescription("次の曲の" + (body.type ? (body.type === "youtube" ? "YouTube" : body.type === "niconico" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                    if (status === "done") { metaEmbed.setDescription("次の曲の再生開始処理中...\n" + (body.percent ? Math.floor(body.percent) + "%`" + progressBar(body.percent, 35) + "`" : "")); await message.edit({ embeds: [metaEmbed] }); }
-                });
-                player.volumeSet(guildId, envData.volume);
-                metaEmbed.setDescription("次の曲の再生を開始しました。");
-                await message.edit({ embeds: [metaEmbed] });
-            } catch (e) {
-                await message.edit({
-                    embeds: [new Discord.EmbedBuilder()
-                        .setTitle("エラー")
-                        .setAuthor({
-                            name: "音楽bot",
-                            iconURL: client.user?.avatarURL() || "",
-                        })
-                        .setDescription("このbotで次の曲を再生する処理をしている途中でエラーが発生しました。以下のエラーは管理者側でも確認可能です。修正まで放置しておくか、`/skip`コマンドや`/delete`コマンドを使用してこのエラーを回避してください。\n```" + e + "\n```")
-                        .setColor("Purple")
-                    ]
-                });
             }
+        } catch (e) {
+            await player.sourceSet(guildId, playlist[0]);
+            player.volumeSet(guildId, envData.volume);
+            console.error(e);
         }
     } else {
         await player.forcedPlay({
@@ -144,7 +158,212 @@ const runedServerTime: { guildId: string; runedTime: number; }[] = [];
 /** コマンドの最短実行間隔です。 */
 const runlimit = 1000;
 client.on(Discord.Events.InteractionCreate, async interaction => {
+    if (fs.existsSync("./log/userinteraction.log")) {
+        const meta = fs.statSync("./log/userinteraction.log");
+        if (meta.size > 10 * 1000 * 1000) {
+            let num = 0;
+            while (fs.existsSync("./log/userinteraction." + num + ".log")) num++;
+            fs.renameSync("./log/userinteraction.log", "./log/userinteraction." + num + ".log")
+        }
+    }
+    if (!fs.existsSync("./log/userinteraction.log")) fs.writeFileSync("./log/userinteraction.log", "");
+    function formatDateJST(date = new Date()) {
+        const offsetMs = 9 * 60 * 60 * 1000; // JST(+9時間)
+        const jstDate = new Date(date.getTime() + offsetMs);
+
+        const iso = jstDate.toISOString(); // 例: 2025-10-11T20:33:14.112Z
+        return iso.replace('Z', '+09:00');
+    }
+    function summarizeInteraction(interaction: Discord.Interaction) {
+        // ユーティリティ：安全にJSON化（循環・BigInt回避）
+        const safe = (o: unknown) =>
+            JSON.stringify(o, (_k, v) => (typeof v === 'bigint' ? v.toString() : v), "  ");
+
+        // 1) ボタン
+        if (interaction.isButton()) {
+            return {
+                type: 'Button',
+                body: safe({
+                    customId: interaction.customId,
+                    messageId: interaction.message?.id,
+                    channelId: interaction.channelId,
+                }),
+            };
+        }
+
+        // 2) モーダル
+        if (interaction.isModalSubmit()) {
+            return {
+                type: 'ModalSubmit',
+                body: safe({
+                    customId: interaction.customId,
+                    fields: interaction.fields.fields.map(f => ({
+                        customId: f.customId,
+                        value: interaction.fields.getTextInputValue(f.customId),
+                    })),
+                }),
+            };
+        }
+
+        // 3) セレクトメニュー群
+        if (interaction.isAnySelectMenu()) {
+            // 種別名の見栄え整形
+            const typeName =
+                interaction.isStringSelectMenu() ? 'StringSelectMenu' :
+                    interaction.isUserSelectMenu() ? 'UserSelectMenu' :
+                        interaction.isRoleSelectMenu() ? 'RoleSelectMenu' :
+                            interaction.isMentionableSelectMenu() ? 'MentionableSelectMenu' :
+                                interaction.isChannelSelectMenu() ? 'ChannelSelectMenu' :
+                                    'SelectMenu';
+
+            return {
+                type: typeName,
+                body: safe({
+                    customId: interaction.customId,
+                    values:
+                        'values' in interaction ? interaction.values : undefined, // string[]
+                    users:
+                        interaction.isUserSelectMenu()
+                            ? interaction.users.map(u => ({ id: u.id, tag: u.tag }))
+                            : undefined,
+                    roles:
+                        interaction.isRoleSelectMenu()
+                            ? interaction.roles.map(r => ({ id: r.id, name: r.name }))
+                            : undefined,
+                    channels:
+                        interaction.isChannelSelectMenu()
+                            ? interaction.channels.map(c => ({ id: c.id, name: c.type }))
+                            : undefined,
+                    mentionables:
+                        interaction.isMentionableSelectMenu()
+                            ? interaction.values // mentionableはID配列
+                            : undefined,
+                }),
+            };
+        }
+
+        // 4) メッセージコンポーネント（一般）
+        if (interaction.isMessageComponent()) {
+            // 上の個別分岐に引っかからなかったコンポーネント（稀）
+            return {
+                type: 'MessageComponent',
+                body: "never",
+            };
+        }
+
+        // 5) オートコンプリート
+        if (interaction.isAutocomplete()) {
+            const focused = interaction.options.getFocused(true);
+            return {
+                type: 'Autocomplete',
+                body: safe({
+                    commandName: interaction.commandName,
+                    focusedOption: { name: focused.name, value: focused.value },
+                }),
+            };
+        }
+
+        // 6) Chat Input（スラッシュ）コマンド
+        if (interaction.isChatInputCommand()) {
+            // オプションを素直に展開
+            const opts = interaction.options.data.map(o => ({
+                name: o.name,
+                type: o.type,
+                value: o.value,
+                focused: (o as any).focused ?? false,
+                options: (o as any).options ?? undefined,
+            }));
+            return {
+                type: 'ChatInputCommand',
+                body: safe({
+                    commandName: interaction.commandName,
+                    options: opts,
+                }),
+            };
+        }
+
+        // 7) コンテキストメニューコマンド（メッセージ／ユーザー）
+        if (interaction.isContextMenuCommand()) {
+            const base = {
+                commandName: interaction.commandName,
+                targetId: interaction.targetId,
+            };
+
+            if (interaction.isMessageContextMenuCommand()) {
+                return {
+                    type: 'MessageContextMenuCommand',
+                    body: safe({
+                        ...base,
+                        targetMessageId: interaction.targetMessage.id,
+                        targetAuthorId: interaction.targetMessage.author?.id,
+                    }),
+                };
+            }
+            if (interaction.isUserContextMenuCommand()) {
+                return {
+                    type: 'UserContextMenuCommand',
+                    body: safe({
+                        ...base,
+                        targetUserId: interaction.targetUser.id,
+                        targetUserTag: interaction.targetUser.tag,
+                    }),
+                };
+            }
+
+            // 予備（将来型）
+            return {
+                type: 'ContextMenuCommand',
+                body: safe(base),
+            };
+        }
+
+        // 8) 一般の CommandInteraction（後方互換）
+        if (interaction.isCommand && interaction.isCommand()) {
+            return {
+                type: 'Command',
+                body: safe({
+                    commandName: (interaction as any).commandName,
+                }),
+            };
+        }
+
+        // 9) PrimaryEntryPointCommand（対応環境向け）
+        if ((interaction as any).isPrimaryEntryPointCommand?.()) {
+            return {
+                type: 'PrimaryEntryPointCommand',
+                body: safe({
+                    commandName: (interaction as any).commandName,
+                }),
+            };
+        }
+
+        // 10) Repliable（返信可能）かどうかのメタ
+        if (interaction.isRepliable()) {
+            return {
+                type: 'Repliable',
+                body: safe({
+                    id: interaction.id,
+                    channelId: interaction.channelId,
+                }),
+            };
+        }
+
+        // Fallback
+        return {
+            type: 'Unknown',
+            body: safe({
+                id: "never",
+                type: (interaction as any).type,
+            }),
+        };
+    }
+    const stat = summarizeInteraction(interaction);
+    fs.appendFileSync("./log/userinteraction.log", "\n[" + formatDateJST() + "] [" + stat.type + "] [" + interaction.guild?.name + "(" + interaction.guildId + ")" + "] [" + interaction.user.globalName + "(" + interaction.user.username + "/" + interaction.user.id + ")" + "] " + stat.body)
+
     if (!interaction.isCommand()) return;
+    if (!interaction.guild) return await interaction.reply({
+        embeds: [messageEmbedGet("ここではコマンドは実行できません。", client)]
+    });
     /** 1. コマンドを検索します。ヒットしたコマンドがここに記録されます。 */
     const data = interactionFuncs.find(d => d.command?.name === interaction.commandName);
     // 2. コマンドが正しく検索され、そのコマンドが正しく取得できていた場合実行します。
@@ -166,10 +385,32 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
                 runed.runedTime = Date.now();
             }
         }
+        let permissionIs = true;
+        if (!interaction.channel) permissionIs = false;
+        const isThread = interaction.channel?.type === Discord.ChannelType.PublicThread ||
+            interaction.channel?.type === Discord.ChannelType.PrivateThread ||
+            interaction.channel?.type === Discord.ChannelType.AnnouncementThread;
+        const checkPermission = [Discord.PermissionsBitField.Flags.SendMessages, isThread ? Discord.PermissionsBitField.Flags.SendMessagesInThreads : Discord.PermissionsBitField.Flags.ViewChannel];
+        if (interaction.channel?.type === Discord.ChannelType.GuildText) {
+            const me = interaction.guild.members.me;
+            if (!me) permissionIs = false;
+            else if (!interaction.channel.permissionsFor(me).has(checkPermission)) permissionIs = false;
+        }
         // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, player };
         await interaction.reply({
             embeds: [messageEmbedGet("コマンド「" + data.command.name + "」の処理を開始しています...", client)]
+        });
+        if (!permissionIs) await interaction.followUp({
+            embeds: [new Discord.EmbedBuilder()
+                .setTitle("警告")
+                .setAuthor({
+                    name: "音楽bot",
+                    iconURL: client.user?.avatarURL() || "",
+                })
+                .setDescription("この音楽botはテキスト送信権限のないチャンネルでコマンドを実行しています。権限を付与しない場合、様々な機能が利用できません。ご注意ください。この警告は改善されるまで常に表示されます。")
+                .setColor("Purple")
+            ]
         });
         try {
             await data.execute(interaction, inputData);
@@ -249,6 +490,70 @@ client.on(Discord.Events.GuildCreate, guild => {
     console.log("音楽botが新しいサーバーに参加。参加したサーバー名: " + guild.name + " 現在の参加数: " + client.guilds.cache.size)
 })
 client.on(Discord.Events.MessageCreate, async message => {
+    if (!message.author.bot) {
+        if (fs.existsSync("./log/usermessage.log")) {
+            const meta = fs.statSync("./log/usermessage.log");
+            if (meta.size > 10 * 1000 * 1000) {
+                let num = 0;
+                while (fs.existsSync("./log/usermessage." + num + ".log")) num++;
+                fs.renameSync("./log/usermessage.log", "./log/usermessage." + num + ".log")
+            }
+        }
+        if (!fs.existsSync("./log/usermessage.log")) fs.writeFileSync("./log/usermessage.log", "");
+        function formatDateJST(date = new Date()) {
+            const offsetMs = 9 * 60 * 60 * 1000; // JST(+9時間)
+            const jstDate = new Date(date.getTime() + offsetMs);
+
+            const iso = jstDate.toISOString(); // 例: 2025-10-11T20:33:14.112Z
+            return iso.replace('Z', '+09:00');
+        }
+        function extractMessageExtras(message: Discord.Message) {
+            const results = [];
+
+            // 添付ファイル（画像・動画・PDFなど）
+            for (const [, attachment] of message.attachments) {
+                results.push({
+                    type: 'attachment',
+                    body: attachment.url
+                });
+            }
+
+            // ステッカー（スタンプ）
+            for (const [, sticker] of message.stickers) {
+                results.push({
+                    type: 'sticker',
+                    body: sticker.id
+                });
+            }
+
+            // 埋め込み（リンクのメタ情報など）
+            for (const embed of message.embeds) {
+                results.push({
+                    type: 'embed',
+                    body: embed.url || embed.title || '[embed without url]'
+                });
+            }
+
+            // ボタン・メニューなど（components）
+            for (const row of message.components) {
+                results.push({
+                    type: 'component',
+                    body: JSON.stringify(row.toJSON())
+                });
+            }
+
+            // 投票（poll）
+            if (message.poll) {
+                results.push({
+                    type: 'poll',
+                    body: message.poll.question?.text ?? '[poll]'
+                });
+            }
+
+            return results;
+        }
+        fs.appendFileSync("./log/usermessage.log", "\n[" + formatDateJST() + "] [" + message.guild?.name + "(" + message.guildId + ")" + "] [" + message.author.globalName + "(" + message.author.username + "/" + message.author.id + ")" + "] " + message.content + ", " + JSON.stringify(extractMessageExtras(message), null, "  "))
+    }
     if (message.guildId === "926965020724691005") {
         if (message.content === "音楽botのコマンドを再定義する") {
             // JSON へ変換（REST 配信用）
