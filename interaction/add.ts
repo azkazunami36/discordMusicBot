@@ -45,7 +45,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 body: nicovideoId
             };
             const twitterId = await parseTweetId(string);
-            if (twitterId) return {
+            if (0 && twitterId) return {
                 type: "twitterId",
                 body: twitterId
             }

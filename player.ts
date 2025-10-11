@@ -227,47 +227,47 @@ export class Player extends EventEmitter {
             const T0 = Number.isFinite(tempo) && tempo > 0 ? tempo : 1;
             const T = round6(clamp(T0, 0.01, 100));
             const P0 = Number.isFinite(pitch) ? pitch : 0;
+            // helpers for exact tempo and pitch-only
+            const exactTempo = (T >= 0.98 && T <= 1.02);
+            const pitchOnly = (exactTempo && P0 !== 0);
             const pitchRatio = round6(Math.pow(2, P0 / 12));
 
             const absSemi = Math.abs(P0);
             const near1 = (T >= 0.95 && T <= 1.05);
-            const micro = (T >= 0.85 && T <= 1.15);
             const fast = (T > 1.25);
             const highPitchUp = (P0 >= 12); // 大きく上げる(+12以上)ときのアーチファクト抑制
 
-            // ★ ピッチを少し下げる時（-1〜-3）＆テンポ≈1：エコー抑制プロファイル
-            // ねらい：残響感↓（window短め/phase=laminar/平滑OFF/位相一貫性優先）
-            // ＊formant=shifted は“声質がやや低く”なるが、エコー感は減る傾向
-            const isDownPitchEchoSensitive = (P0 < 0 && absSemi <= 3 && near1);
+            // choose transient type based on tempo
+            let transientMode: string;
+            if (T < 0.85) transientMode = "mixed";
+            else if (T <= 1.1) transientMode = "smooth";
+            else transientMode = "crisp";
+
+            // If tempo is exactly 1x but pitch is changed, prefer a bit more attack
+            if (T === 1 && P0 !== 0) {
+                transientMode = "mixed";
+            }
+
+            // ★ ピッチを少し下げる時（-1〜-3）＆テンポ≈1：周期的リフレッシュ感を除去し自然なサウンドを保つ
+            // → 分析窓を長く・smoothing=on・formant=preserved で自然さ優先
+            // widen tempo band so 0.90× hits this profile
+            const isDownPitchEchoSensitive = (P0 < 0 && absSemi <= 3 && (T >= 0.85 && T <= 1.05));
             const optsDownPitch = [
                 `tempo=${T}`, `pitch=${pitchRatio}`,
-                `transients=crisp`,
-                `detector=soft`,          // ボーカル寄りの検出
-                `phase=laminar`,
-                `window=standard`,        // long よりにじみ少
-                `smoothing=off`,          // 平滑で“もわっ”を避ける
-                `formant=shifted`,        // preserved で出る残響感を回避
-                `pitchq=consistency`,     // 位相一貫性を最優先
-                `channels=together`,
-            ];
-
-            // 微調整域（反コーラス寄り）
-            const optsMicro = [
-                `tempo=${T}`, `pitch=${pitchRatio}`,
-                `transients=crisp`,
+                `transients=${transientMode}`,
                 `detector=compound`,
                 `phase=laminar`,
-                `window=standard`,
-                `smoothing=off`,
+                `window=${near1 ? "standard" : "long"}`,
+                `smoothing=${pitchOnly ? "off" : "on"}`,
                 `formant=preserved`,
-                `pitchq=consistency`,
-                `channels=together`,
+                `pitchq=${pitchOnly ? "quality" : "consistency"}`,
+                `channels=${pitchOnly ? "together" : "together"}`,
             ];
 
             // 高速域（アンチ・チリ）
             const optsFast = [
                 `tempo=${T}`, `pitch=${pitchRatio}`,
-                `transients=crisp`,
+                `transients=${transientMode}`,
                 `detector=compound`,
                 `phase=laminar`,
                 `window=standard`,
@@ -280,7 +280,7 @@ export class Player extends EventEmitter {
             // 高い方向に大きく上げる(+12以上)：高域チリ抑制寄り
             const optsHighPitchUp = [
                 `tempo=${T}`, `pitch=${pitchRatio}`,
-                `transients=crisp`,
+                `transients=${transientMode}`,
                 `detector=compound`,
                 `phase=laminar`,
                 `window=standard`,      // longだとチリが出やすい
@@ -293,21 +293,28 @@ export class Player extends EventEmitter {
             // それ以外は HQ（解像度寄り）
             const optsHQ = [
                 `tempo=${T}`, `pitch=${pitchRatio}`,
-                `transients=mixed`,
+                `transients=${transientMode}`,
                 `detector=compound`,
                 `phase=laminar`,
-                `window=long`,
-                `smoothing=on`,
+                `window=${exactTempo ? "standard" : "long"}`,
+                `smoothing=${pitchOnly ? "off" : "on"}`,
                 `formant=preserved`,
-                `pitchq=quality`,
-                `channels=together`,
+                `pitchq=${pitchOnly ? "quality" : "quality"}`,
+                `channels=${pitchOnly ? "together" : "together"}`,
             ];
+
+            // safe bypass for truly no-change case
+            if (T === 1 && P0 === 0) {
+                return `aresample=${sampleRate}:resampler=soxr:precision=28`;
+            }
+
+            // Refined: If pitchOnly at 1x, preserve stereo image (channels=together)
+            // This is now handled above in the optsHQ and optsDownPitch definitions.
 
             const opts = (highPitchUp ? optsHighPitchUp
                 : isDownPitchEchoSensitive ? optsDownPitch
-                : micro ? optsMicro
-                : fast ? optsFast
-                : optsHQ).join(":");
+                    : fast ? optsFast
+                        : optsHQ).join(":");
 
             // 仕上げ soxr（高品質リサンプル）
             return `rubberband=${opts},aresample=${sampleRate}:resampler=soxr:precision=28`;
