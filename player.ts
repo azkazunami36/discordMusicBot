@@ -136,6 +136,7 @@ export class Player extends EventEmitter {
                     return player;
                 }
             }
+            console.log("Player.playerGet:", guildId, "は接続したいVCに参加していませんでしたので、まず接続を破棄します。");
             // 2. 接続したいチャンネルじゃなかったら古い接続を破棄する。
             if (this.status[guildId]) {
                 this.status[guildId].subscription?.unsubscribe();

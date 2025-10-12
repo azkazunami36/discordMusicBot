@@ -25,6 +25,11 @@ export class VariableExistCheck {
     async voiceChannelId() {
         const guildData = await this.guild();
         if (guildData === undefined) return undefined;
+        const vchannelId = (guildData.member as Discord.GuildMember).voice.channelId;
+        if (!vchannelId) {
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("あなたがVCに参加していません。使用したいVCの場所を指定するには、VCに参加してください。", this.interaction.client)] }); } catch (e) { }
+            return undefined;
+        }
         /**
          * 実行ユーザーが今いるVCに対して「Bot」と「ユーザー」が
          * 参加(Connect)＋発言(Speak)できるなら true。
@@ -98,11 +103,6 @@ export class VariableExistCheck {
         }
         if (!this.interaction.isChatInputCommand() || !canBothJoinAndSpeak(this.interaction)) {
             try { await this.interaction.editReply({ embeds: [messageEmbedGet("あなたが参加しているVCに入る権限がなく、操作を実行できませんでした。", this.interaction.client)] }); } catch (e) { }
-            return undefined;
-        }
-        const vchannelId = (guildData.member as Discord.GuildMember).voice.channelId;
-        if (!vchannelId) {
-            try { await this.interaction.editReply({ embeds: [messageEmbedGet("あなたがVCに参加していません。使用したいVCの場所を指定するには、VCに参加してください。", this.interaction.client)] }); } catch (e) { }
             return undefined;
         }
         return vchannelId;

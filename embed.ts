@@ -50,14 +50,14 @@ export async function videoInfoEmbedGet(playlistData: Playlist, message: string)
         if (meta.body.userId) {
             const userData = await videoMetaCache.niconicoUserInfoGet(meta.body.userId);
             if (userData) {
-                authorName = userData?.name || "取得に失敗";
+                authorName = (userData?.name.endsWith(" - ニコニコ") ? userData.name.slice(0, userData.name.length - 7) : userData.name) || "取得に失敗";
                 authorUrl = userData?.id ? "https://www.nicovideo.jp/user/" + userData?.id : "";
                 authorIconUrl = userData?.iconUrl || "";
             }
         }
         if (meta.body.channelId) {
             const channelData = await videoMetaCache.niconicoChannelInfoGet(meta.body.channelId.startsWith("ch") ? meta.body.channelId : "ch" + meta.body.channelId);
-            authorName = channelData?.name || "取得に失敗";
+            authorName = (channelData?.name.endsWith(" - ニコニコ") ? channelData.name.slice(0, channelData.name.length - 7) : channelData?.name) || "取得に失敗";
             authorUrl = channelData?.id ? "https://www.nicovideo.jp/user/" + channelData?.id : "";
             authorIconUrl = channelData?.iconUrl || "";
         }
@@ -137,8 +137,20 @@ export async function statusEmbedGet(data: {
             });
         } else if (meta.type === "nicovideoId") {
             fields.push({
-                name: (i + 1) + ". " + meta.body.title,
+                name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + meta.body.title,
                 value: "動画時間: `" + (!Number.isNaN(Number(meta.body.lengthSeconds)) ? numberToTimeString(Number(meta.body.lengthSeconds)) : "不明") + "` 動画サービス: `ニコニコ動画` ID: `" + playlistData.body + "`",
+                inline: false
+            });
+        } else if (meta.type === "tweetId") {
+            fields.push({
+                name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + (meta.body.text),
+                value: "動画時間: `" + (!Number.isNaN(Number(meta.body.media ? (meta.body.media[playlistData.number || 0].duration_ms || 0) / 1000 : 0)) ? numberToTimeString(Number(meta.body.media ? (meta.body.media[playlistData.number || 0].duration_ms || 0) / 1000 : 0)) : "不明") + "` 動画サービス: `X` ID: `" + playlistData.body + "`",
+                inline: false
+            });
+        } else {
+            fields.push({
+                name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + "不明",
+                value: "動画時間: `不明` 動画サービス: `不明` ID: `" + playlistData.body + "`",
                 inline: false
             });
         }
@@ -196,7 +208,7 @@ export async function statusEmbedGet(data: {
         if (meta?.body) {
             const thumbnail = meta.type === "videoId" ? (albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body] !== undefined ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body].release + "/front" : meta.body?.thumbnail) : meta.type === "nicovideoId" ? meta.body.thumbnailUrl : "";
             if (thumbnail) embed.setThumbnail(thumbnail);
-            embed.setURL(meta?.type === "videoId" ? meta.body.url : meta.type === "nicovideoId" ? "https://www.nicovideo.jp/user/" + meta.body.userId : meta.body.author?.id ? "https://x.com/" + meta.body.author.id : "");
+            embed.setURL(data.playing.playingPlaylist.type === "videoId" ? "https://youtu.be/" + data.playing.playingPlaylist.body : data.playing.playingPlaylist.type === "nicovideoId" ? "https://www.nicovideo.jp/watch/" + data.playing.playingPlaylist.body : "https://www.x/com/i/web/status/" + data.playing.playingPlaylist.body);
         }
         embed.setTitle("再生中 - " + ((meta?.type !== "tweetId" ? meta?.type === "videoId" ? (albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body] !== undefined ? (await musicBrainz.recordingInfoGet(albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body].recording)).title : meta.body?.title) : meta?.body?.title : meta.body?.text) || "タイトル取得エラー"));
     } else {
