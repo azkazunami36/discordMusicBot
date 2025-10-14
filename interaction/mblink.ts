@@ -84,7 +84,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                             .setTitle("MusicBrainzリンク済み動画(" + selectvideoIdsPage + "/" + videoIdsPage + ")")
                             .setAuthor({
                                 name: "音楽bot",
-                                iconURL: interaction.client.user?.avatarURL() || "",
+                                iconURL: interaction.client.user?.avatarURL() || undefined,
                             })
                             .setDescription("この音楽botには **" + videoIds.length + "** 個関連づけられた動画があります。")
                             .setColor("Purple")
@@ -125,7 +125,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                     embed.setDescription("Release MBIDの内容です。");
                     embed.setAuthor({
                         name: "音楽bot",
-                        iconURL: interaction.client.user?.avatarURL() || "",
+                        iconURL: interaction.client.user?.avatarURL() || undefined,
                     })
                     embed.setColor("Purple");
                     embeds.push(embed);
@@ -138,7 +138,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                     embed.setDescription("Release MBIDの内容です。");
                     embed.setAuthor({
                         name: "音楽bot",
-                        iconURL: interaction.client.user?.avatarURL() || "",
+                        iconURL: interaction.client.user?.avatarURL() || undefined,
                     })
                     embed.setColor("Purple");
                     embeds.push(embed);

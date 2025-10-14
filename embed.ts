@@ -82,7 +82,7 @@ export async function videoInfoEmbedGet(playlistData: Playlist, message: string)
         serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/x-logo.png";
     }
     const embed = new EmbedBuilder()
-    if (authorIconUrl) embed.setAuthor({
+    embed.setAuthor({
         name: authorName,
         url: authorUrl || undefined,
         iconURL: authorIconUrl,
@@ -198,7 +198,7 @@ export async function statusEmbedGet(data: {
     const embed = new EmbedBuilder()
         .setAuthor({
             name: "音楽bot",
-            iconURL: client.user?.avatarURL() || "",
+            iconURL: client.user?.avatarURL() || undefined,
         })
         .setDescription("キュー")
         .addFields(fields)
@@ -222,7 +222,7 @@ export function messageEmbedGet(message: string, client: Client) {
         .setTitle("メッセージ")
         .setAuthor({
             name: "音楽bot",
-            iconURL: client.user?.avatarURL() || "",
+            iconURL: client.user?.avatarURL() || undefined,
         })
         .setDescription(message)
         .setColor("Purple")

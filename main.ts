@@ -107,7 +107,7 @@ player.on("playAutoEnd", async (guildId) => {
                                 .setTitle("エラー")
                                 .setAuthor({
                                     name: "音楽bot",
-                                    iconURL: client.user?.avatarURL() || "",
+                                    iconURL: client.user?.avatarURL() || undefined,
                                 })
                                 .setDescription("このbotで次の曲を再生する処理をしている途中でエラーが発生しました。以下のエラーは管理者側でも確認可能です。修正まで放置しておくか、`/skip`コマンドや`/delete`コマンドを使用してこのエラーを回避してください。\n```" + e + "\n```")
                                 .setColor("Purple")
@@ -399,7 +399,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
                 .setTitle("警告")
                 .setAuthor({
                     name: "音楽bot",
-                    iconURL: client.user?.avatarURL() || "",
+                    iconURL: client.user?.avatarURL() || undefined,
                 })
                 .setDescription("この音楽botはテキスト送信権限のないチャンネルでコマンドを実行しています。権限を付与しない場合、様々な機能が利用できません。ご注意ください。この警告は改善されるまで常に表示されます。")
                 .setColor("Purple")
@@ -408,12 +408,13 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         try {
             await data.execute(interaction, inputData);
         } catch (e) {
+            console.error(e);
             await interaction.editReply({
                 embeds: [new Discord.EmbedBuilder()
                     .setTitle("エラー")
                     .setAuthor({
                         name: "音楽bot",
-                        iconURL: client.user?.avatarURL() || "",
+                        iconURL: client.user?.avatarURL() || undefined,
                     })
                     .setDescription("このbotでコマンドの処理をしている途中でエラーが発生しました。以下のエラーは生のエラー内容です。これは管理者側でもチェックが可能です。修正までしばらくお待ちください。\n```" + e + "\n```")
                     .setColor("Purple")
@@ -548,14 +549,14 @@ client.on(Discord.Events.MessageCreate, async message => {
         fs.appendFileSync("./log/usermessage.log", "\n[" + formatDateJST() + "] [" + message.guild?.name + "(" + message.guildId + ")" + "] [" + message.author.globalName + "(" + message.author.username + "/" + message.author.id + ")" + "] " + message.content + ", " + JSON.stringify(extractMessageExtras(message), null, "  "))
     }
     if (message.guildId === "926965020724691005") {
-        if (message.content === "音楽botのコマンドを再定義する") {
+        if (message.content === client.user?.displayName + "のコマンドを再定義する") {
             // JSON へ変換（REST 配信用）
             function toJSONBody(builders: Discord.SlashCommandOptionsOnlyBuilder[]): Discord.RESTPostAPIApplicationCommandsJSONBody[] {
                 return builders.map((b) => (b as any).toJSON ? (b as any).toJSON() : (b as unknown as Discord.RESTPostAPIApplicationCommandsJSONBody));
             }
             const botmessage = await message.reply("処理を開始します...");
             const token = process.env.DISCORD_TOKEN;
-            const clientId = "1028285721955553362";
+            const clientId = client.user?.id || "";
 
             if (!token || !clientId) return await botmessage.edit("トークンまたはクライアントIDが無効だったよ。");
             const commands = interactionFuncs.map(func => func.command).filter((cmd): cmd is Discord.SlashCommandOptionsOnlyBuilder => cmd !== undefined);
@@ -577,7 +578,7 @@ client.on(Discord.Events.MessageCreate, async message => {
             botmessage.edit("グローバルコマンドを登録しました。");
             return;
         }
-        if (message.content === "音楽botのステータス") {
+        if (message.content === client.user?.displayName + "のステータス") {
             const connections = getVoiceConnections();
             const list: VoiceConnection[] = [];
             connections.forEach(connection => list.push(connection));
@@ -607,7 +608,7 @@ client.on(Discord.Events.MessageCreate, async message => {
                 return string;
             })());
         }
-        if (message.content.startsWith("音楽botをシャットダウンする")) {
+        if (message.content.startsWith(client.user?.displayName + "をシャットダウンする")) {
             const connections = getVoiceConnections();
             const list: VoiceConnection[] = [];
             connections.forEach(connection => list.push(connection));

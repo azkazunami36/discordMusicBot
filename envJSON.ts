@@ -133,7 +133,7 @@ export class EnvData {
     }
     /** 再生が切り替わった時に通知するかどうか。 */
     get changeTellIs() {
-        if (Boolean(this.#envJSON("changeTellIs"))) return true;
+        if (this.#envJSON("changeTellIs") === "true") return true;
         return false;
     }
     set changeTellIs(type: boolean) {

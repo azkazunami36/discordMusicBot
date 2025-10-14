@@ -16,7 +16,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 .setTitle("音楽bot v" + JSON.parse(String(fs.readFileSync("package.json"))).version + "のヘルプ")
                 .setAuthor({
                     name: "音楽bot",
-                    iconURL: interaction.client.user?.avatarURL() || "",
+                    iconURL: interaction.client.user?.avatarURL() || undefined,
                 })
                 .setDescription(String(fs.readFileSync("helpCommandText.txt")))
                 .setColor("Purple")]
