@@ -124,14 +124,7 @@ player.on("playAutoEnd", async (guildId) => {
             console.error(e);
         }
     } else {
-        await player.forcedPlay({
-            guildId: guildId,
-            source: playlist[0],
-            playtime: 0,
-            tempo: envData.playTempo,
-            pitch: envData.playPitch,
-            volume: envData.volume
-        });
+        await player.sourceSet(guildId, playlist[0]);
     }
 })
 

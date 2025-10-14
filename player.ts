@@ -114,7 +114,7 @@ export class Player extends EventEmitter {
         const oldConnection = getVoiceConnection(guildId);
         if (oldConnection) {
             // 1. 古い接続が接続したいチャンネルに参加している場合はそのまま利用する。
-            if (channelId && (oldConnection.joinConfig.channelId === channelId)) {
+            if (!channelId || channelId && (oldConnection.joinConfig.channelId === channelId)) {
                 const player = this.status[guildId]?.player;
                 if (player) return player;
                 else {
@@ -136,7 +136,7 @@ export class Player extends EventEmitter {
                     return player;
                 }
             }
-            console.log("Player.playerGet:", guildId, "は接続したいVCに参加していませんでしたので、まず接続を破棄します。");
+            console.log("Player.playerGet:", guildId, "は接続したいVCに参加していませんでしたので、まず接続を破棄します。詳細: ", channelId, oldConnection.joinConfig.channelId);
             // 2. 接続したいチャンネルじゃなかったら古い接続を破棄する。
             if (this.status[guildId]) {
                 this.status[guildId].subscription?.unsubscribe();
