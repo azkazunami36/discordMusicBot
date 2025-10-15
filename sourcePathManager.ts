@@ -77,11 +77,12 @@ export class SourcePathManager {
 
                     });
                     function pickBestFormat(formats: Format[]): Format | undefined {
-                        return formats
-                            // まず条件に一致するものだけ残す
-                            .filter(f => f.resolution === "audio only" && (
-                                f.format_note === "Default, high" || f.format_note === "medium"
-                            ))
+                        return formats.filter(f => { // まず条件に一致するものだけ残す
+                            const formatNoteSplit = f.format_note.split(",");
+                            return f.resolution === "audio only" && (
+                                formatNoteSplit.indexOf("high") !== -1 || formatNoteSplit.indexOf("medium") !== -1
+                            )
+                        })
                             // その中から asr が最大のものを選ぶ
                             .reduce<Format | undefined>((best, cur) => {
                                 if (!best) return cur;
@@ -146,7 +147,7 @@ export class SourcePathManager {
                             fs.unlinkSync("./youtubeCache/" + cacheFilename);
                         }
                     } else {
-                        console.error("このYouTubeのIDは無効のようです。: ", playlistData);
+                        console.error("このYouTubeのIDは無効のようです。: ", playlistData, "内容: ", JSON.stringify(formats, null, "  "));
                     }
                     // 5. 完了したことを伝えて終了。
                     for (const func of listener) func();

@@ -44,7 +44,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
             }
 
             videoUrl = meta.body.url;
-            videoThumbnail = albumInfoJson.youtubeLink.videoId[playlistData.body] ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[playlistData.body].release + "/front" : meta.body.thumbnail;
+            videoThumbnail = albumInfoJson.youtubeLink.videoId[playlistData.body] ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[playlistData.body].release + "/front" : await videoMetaCache.youtubeThumbnailGet(playlistData.body) || meta.body.thumbnail;
             serviceColor = "Red";
             serviceMessage = "Service by YouTube (ID: " + playlistData.body + ")";
             serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/yt_icon_red_digital.png";
@@ -156,7 +156,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
                 name: "音楽bot",
                 iconURL: client.user?.avatarURL() || undefined,
             })
-            .setDescription(playlistDatas.length + "曲が追加されました。")
+            .setDescription(message)
             .addFields(fields)
             .setColor("Purple");
         return embed;
@@ -269,7 +269,7 @@ export async function statusEmbedGet(data: {
     if (data.playing?.playingPlaylist) {
         const meta = await videoMetaCache.cacheGet(data.playing.playingPlaylist);
         if (meta?.body) {
-            const thumbnail = meta.type === "videoId" ? (albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body] !== undefined ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body].release + "/front" : meta.body?.thumbnail) : meta.type === "nicovideoId" ? meta.body.thumbnailUrl : "";
+            const thumbnail = meta.type === "videoId" ? (albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body] !== undefined ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body].release + "/front" : await videoMetaCache.youtubeThumbnailGet(data.playing.playingPlaylist.body) || meta.body.thumbnail) : meta.type === "nicovideoId" ? meta.body.thumbnailUrl : "";
             if (thumbnail) embed.setThumbnail(thumbnail);
             embed.setURL(data.playing.playingPlaylist.type === "videoId" ? "https://youtu.be/" + data.playing.playingPlaylist.body : data.playing.playingPlaylist.type === "nicovideoId" ? "https://www.nicovideo.jp/watch/" + data.playing.playingPlaylist.body : "https://www.x/com/i/web/status/" + data.playing.playingPlaylist.body);
         }

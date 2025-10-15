@@ -3,6 +3,31 @@ import yts from "yt-search";
 import { NicoSnapshotItem, searchNicoVideo } from "./niconico.js";
 import { google, youtube_v3 } from "googleapis";
 import { searchTweet, XPostInfo } from "./twitter.js";
+import * as youtubei from "youtubei.js";
+import { getCookiesPromised } from "chrome-cookies-secure";
+
+// --- Shared lightweight fetch logger ---
+async function fetchWithLog(url: string, init?: any): Promise<Response> {
+    const method = (init?.method || 'GET').toUpperCase();
+    try {
+        const res = await fetch(url, init);
+        const loc = res.headers?.get?.('location');
+        const ct = res.headers?.get?.('content-type');
+        const line = `[HTTP] ${method} ${res.status} ${res.statusText} - ${url}`;
+        console.log(line);
+        if (res.status >= 300 && res.status < 400 && loc) {
+            console.log(`[HTTP] Redirect: ${loc}`);
+        }
+        if (res.status >= 400) {
+            if (ct) console.log(`[HTTP] Content-Type: ${ct}`);
+            if (loc) console.log(`[HTTP] Location: ${loc}`);
+        }
+        return res;
+    } catch (e: any) {
+        console.log(`[HTTP] ${method} FETCH ERROR - ${url} ${e?.message || e}`);
+        throw e;
+    }
+}
 
 export interface Playlist {
     type: "videoId" | "originalFileId" | "nicovideoId" | "twitterId";
@@ -156,12 +181,17 @@ export class EnvData {
 
 interface VideoInfoCache {
     youtube?: (yts.VideoMetadataResult | undefined)[];
+    youtubeThumbnail?: { videoId: string; thumbnailUrl: string; }[];
     niconico?: (NicoSnapshotItem | undefined)[];
     youtubeUsers?: (youtube_v3.Schema$Channel | undefined)[];
     youtubeAliases?: Record<string, string>;
     niconicoUsers?: (NicoUserInfo | undefined)[];
     niconicoChannels?: (NicoChannelInfo | undefined)[];
     twitter?: (XPostInfo | undefined)[];
+    /** Spotify track/playlist to YouTube video mapping cache */
+    spotifyToYouTube?: { spotifyId: string; videoId: string }[];
+    /** Apple Music song to YouTube video mapping cache */
+    appleMusicToYouTube?: { appleId: string; videoId: string }[];
 }
 
 /** VideoIDに記録されている情報をキャッシュし、読み込めるようにするものです。 */
@@ -214,13 +244,14 @@ export class VideoMetaCache {
     async youtubeUserInfoGet(channelOrUrl: string) {
         const apiKey = process.env.YOUTUBE_API_KEY;
         if (!apiKey) {
-            console.error("[youtubeUserInfoGet] YOUTUBE_API_KEY is not set in environment variables");
+            // （エラー出力は削除）鍵が未設定でも極力フォールバックで進む
         } else {
-            // debug/info logging
+            // debug/info logging（DEBUG_YT=1 の時だけ動く簡易ロガーは残します）
             const isDebug = process.env.DEBUG_YT === '1';
             const info = (...args: any[]) => { if (isDebug) console.log(...args); };
             info("[youtubeUserInfoGet] Using YOUTUBE_API_KEY (length):", apiKey.length);
         }
+        // Add debug log helper（上の isDebug/info を常時使えるよう再定義）
         const isDebug = process.env.DEBUG_YT === '1';
         const info = (...args: any[]) => { if (isDebug) console.log(...args); };
 
@@ -233,7 +264,6 @@ export class VideoMetaCache {
         }
 
         function normalizeUrlMaybe(input: string): string {
-            // If it looks like a youtube domain but missing scheme, add https://
             if (/^(?:www\.)?youtube\.com\//i.test(input) || /^(?:www\.)?youtu\.be\//i.test(input)) {
                 return `https://${input}`;
             }
@@ -248,7 +278,6 @@ export class VideoMetaCache {
                 if (parts[0] === 'channel' && parts[1]) return { type: 'channel', idOrName: parts[1] };
                 if (parts[0] === 'user' && parts[1]) return { type: 'user', idOrName: parts[1] };
                 if (parts[0] === 'c' && parts[1]) return { type: 'custom', idOrName: parts[1] };
-                // handle form may be either /@handle or just path with @handle
                 const handle = parts.find(p => p.startsWith('@')) || (parsedUrl.pathname.startsWith('/@') ? parts[0] : undefined);
                 if (handle) return { type: 'handle', idOrName: handle };
                 return null;
@@ -259,73 +288,60 @@ export class VideoMetaCache {
 
         async function resolveChannelIdFromPage(input: string): Promise<string | undefined> {
             try {
-                // Build a best-effort URL (handle/custom/channel accepted)
                 let url = input;
                 if (!/^(?:https?:)?\/\//i.test(url)) {
                     if (url.startsWith('@')) url = `https://www.youtube.com/${url}`;
                     else if (/^UC[0-9A-Za-z_-]+$/.test(url)) url = `https://www.youtube.com/channel/${url}`;
-                    else url = `https://www.youtube.com/${url}`; // e.g. c/CustomName
+                    else url = `https://www.youtube.com/${url}`;
                 }
-                // Force www + https for consistency
                 url = url.replace(/^https?:\/\/youtube\.com\//i, 'https://www.youtube.com/');
-
-                info('[youtubeUserInfoGet] resolveChannelIdFromPage fetching:', url);
-                const res = await fetch(url, {
-                    headers: {
-                        'user-agent': 'Mozilla/5.0',
-                        'accept-language': 'ja,en;q=0.8'
-                    }
+                const res = await fetchWithLog(url, {
+                    headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ja,en;q=0.8' },
+                    redirect: 'follow' as any
                 });
-                if (!res.ok) {
-                    info('[youtubeUserInfoGet] resolveChannelIdFromPage HTTP', res.status);
-                    return undefined;
-                }
+                if (!res.ok) return undefined;
+
+                const finalUrl = (res as any).url as string | undefined;
                 const html = await res.text();
-                // Try several robust patterns
-                const m1 = html.match(/\"channelId\"\s*:\s*\"(UC[0-9A-Za-z_-]+)\"/);
-                if (m1 && m1[1]) return m1[1];
+                const m1 = html.match(/\\"channelId\\"\s*:\s*\\"(UC[0-9A-Za-z_-]+)\\"/);
                 const m2 = html.match(/https:\/\/www\.youtube\.com\/channel\/(UC[0-9A-Za-z_-]+)/);
-                if (m2 && m2[1]) return m2[1];
-                const m3 = html.match(/\"externalId\"\s*:\s*\"(UC[0-9A-Za-z_-]+)\"/);
-                if (m3 && m3[1]) return m3[1];
-                info('[youtubeUserInfoGet] resolveChannelIdFromPage: channelId not found');
-                return undefined;
-            } catch (e) {
-                console.error('[youtubeUserInfoGet] resolveChannelIdFromPage error:', e);
+                const m3 = html.match(/\\"externalId\\"\s*:\s*\\"(UC[0-9A-Za-z_-]+)\\"/);
+                const mFinal = finalUrl ? finalUrl.match(/\/channel\/(UC[0-9A-Za-z_-]+)/) : null;
+
+                let best: string | undefined;
+                if (m2?.[1] && m3?.[1] && m2[1] === m3[1]) best = m2[1];
+                else if (mFinal?.[1]) best = mFinal[1];
+                else if (m1?.[1]) best = m1[1];
+                else if (m2?.[1]) best = m2[1];
+                else if (m3?.[1]) best = m3[1];
+
+                return best;
+            } catch {
                 return undefined;
             }
         }
 
-        // Scrape minimal snippet for a known channelId from the channel page
         async function resolveChannelSnippetFromPageById(id: string): Promise<{ title?: string; thumbnail?: string; customUrl?: string } | undefined> {
             try {
                 const url = `https://www.youtube.com/channel/${id}`;
-                const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ja,en;q=0.8' } });
-                if (!res.ok) {
-                    info('[youtubeUserInfoGet] resolveChannelSnippetFromPageById HTTP', res.status);
-                    return undefined;
-                }
+                const res = await fetchWithLog(url, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ja,en;q=0.8' } });
+                if (!res.ok) return undefined;
                 const html = await res.text();
-                // title from og:title first
-                const mTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["'][^>]*>/i)
-                    || html.match(/\"title\"\s*:\s*\"([^\"]+)\"/);
+                const mTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["'][^>]*>/i) || html.match(/\"title\"\s*:\s*\"([^\"]+)\"/);
                 const title = mTitle ? mTitle[1] : undefined;
-                // thumbnail from og:image (simple and robust)
                 const mThumb = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["'][^>]*>/i);
                 const thumbnail = mThumb ? mThumb[1] : undefined;
-                // customUrl from og:url or canonical
                 const mCustom = html.match(/<meta\s+property=["']og:url["']\s+content=["']https?:\/\/www\.youtube\.com\/([^"']+)["'][^>]*>/i)
                     || html.match(/<link\s+rel=["']canonical["']\s+href=["']https?:\/\/www\.youtube\.com\/([^"']+)["'][^>]*>/i);
                 const customUrl = mCustom ? mCustom[1] : undefined;
                 return { title, thumbnail, customUrl };
-            } catch (e) {
-                console.error('[youtubeUserInfoGet] resolveChannelSnippetFromPageById error:', e);
+            } catch {
                 return undefined;
             }
         }
 
         let ytFallback: { channelId?: string; name?: string; image?: string; url?: string } | undefined;
-        // --- Query normalization helpers for yt-search fallbacks ---
+
         function buildQueryVariants(raw: string): string[] {
             const out: string[] = [];
             const seen = new Set<string>();
@@ -339,69 +355,58 @@ export class VideoMetaCache {
             const trimmed = (raw || "").trim();
             let decoded: string | undefined = undefined;
             try {
-                if (/%[0-9A-Fa-f]{2}/.test(trimmed)) {
-                    decoded = decodeURIComponent(trimmed);
-                }
+                if (/%[0-9A-Fa-f]{2}/.test(trimmed)) decoded = decodeURIComponent(trimmed);
             } catch { /* ignore */ }
 
-            // Heuristic: looks like an ID/handle/custom path? then DO NOT suffix-strip.
             const looksLikeIdOrHandle = (s: string) => {
                 if (!s) return false;
-                if (/^@.+/.test(s)) return true;                // handle
-                if (/^UC[0-9A-Za-z_-]+$/.test(s)) return true;   // channelId
-                if (/\b(channel|user|c)\//i.test(s)) return true; // url-ish path
+                if (/^@.+/.test(s)) return true;
+                if (/^UC[0-9A-Za-z_-]+$/.test(s)) return true;
+                if (/\b(channel|user|c)\//i.test(s)) return true;
                 return false;
             };
 
-            // 1) Prefer decoded first (most reliable), then original
             if (decoded) add(decoded);
             add(trimmed);
 
-            // 2) For each of the first two, add light normalizations (no suffix removal)
             const baseVariants = Array.from(out);
             for (const v of baseVariants) {
                 add(v.replace(/_/g, ' '));
                 add(v.replace(/[\s\u3000]+/g, ' ').trim());
             }
 
-            // 3) Only if the input does NOT look like an ID/handle, add a few last-resort suffix-stripped variants
-            //    These are tried **after** all safe forms above.
             if (!looksLikeIdOrHandle(decoded || trimmed)) {
                 const candidates = Array.from(out);
                 for (const v of candidates) {
-                    // drop a short trailing token like -r3k / _abc (2-6 alnum)
                     const stripped = v.replace(/[-_][A-Za-z0-9]{2,6}$/i, '');
                     if (stripped !== v) add(stripped.trim());
                 }
             }
-
             return out;
         }
 
-        async function resolveChannelIdViaYtSearch(rawQuery: string, logLabel: string): Promise<{ channelId?: string; name?: string; image?: string; url?: string } | undefined> {
+        async function resolveChannelIdViaYtSearch(rawQuery: string, _label: string): Promise<{ channelId?: string; name?: string; image?: string; url?: string } | undefined> {
             const variants = buildQueryVariants(rawQuery);
             for (const q of variants) {
                 try {
                     const r = await yts({ query: q, hl: 'ja', gl: 'JP' });
                     const ch = (r as any)?.channels?.[0];
                     if (ch?.channelId) return { channelId: ch.channelId, name: ch.name, image: ch.image, url: ch.url };
-                    // If no channels, try deriving from first video result
                     const v = (r as any)?.videos?.[0];
-                    if (v?.author?.channelID) return { channelId: v.author.channelID, name: v.author.name, image: v.author.bestAvatar?.url, url: v.author.url } as any;
-                } catch (e) {
-                    console.error(`[youtubeUserInfoGet] yt-search error in ${logLabel} for variant`, q, e);
-                }
+                    if (v?.author?.channelID) {
+                        return { channelId: v.author.channelID, name: v.author.name, image: v.author.bestAvatar?.url, url: v.author.url } as any;
+                    }
+                } catch { /* ignore single variant errors */ }
             }
-            info(`[youtubeUserInfoGet] yt-search returned 0 channels for variants:`, variants);
             return undefined;
         }
+
         const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
         if (!json.youtubeUsers) json.youtubeUsers = [];
         if (!json.youtubeAliases) json.youtubeAliases = {};
 
-        let channelId: string | undefined = undefined;
+        let channelId: string | undefined;
 
-        // --- Alias helpers ---
         const toAliasKey = (parsed: { type: 'channel' | 'user' | 'custom' | 'handle', idOrName: string } | null, raw: string): string[] => {
             const keys: string[] = [];
             const normRaw = raw.trim().toLowerCase();
@@ -423,96 +428,85 @@ export class VideoMetaCache {
             }
             return undefined;
         };
-        // Determine if input is a URL
+
         const looksLikeUrl = /^(?:https?:)?\/\//i.test(channelOrUrl) || /^(?:www\.)?youtube\.com\//i.test(channelOrUrl) || /^(?:www\.)?youtu\.be\//i.test(channelOrUrl);
+
         if (looksLikeUrl) {
             const parsed = parseChannelUrl(channelOrUrl);
-            info("[youtubeUserInfoGet] Parsed URL input:", channelOrUrl, "=>", parsed);
             if (!parsed) return undefined;
-            // Early alias lookup
+
             const aliasKeys = toAliasKey(parsed, channelOrUrl);
             const aliasHit = findAliasChannelId(aliasKeys);
             if (aliasHit) {
                 channelId = aliasHit;
                 const cached = json.youtubeUsers.find(data => data && data.id === channelId);
                 if (cached) return cached;
-                // If not cached, we will continue below to fetch details (but without any search calls)
             }
+
             const youtube = google.youtube("v3");
             try {
                 if (parsed.type === 'channel') {
                     channelId = parsed.idOrName;
-                    // Record aliases
                     const keys = toAliasKey(parsed, channelOrUrl);
                     keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                 } else if (parsed.type === 'user') {
-                    // Resolve legacy username to channelId (note: forUsername is effectively legacy and may return empty)
-                    const res = await youtube.channels.list({
-                        key: apiKey,
-                        forUsername: parsed.idOrName,
-                        part: ['id'],
-                    });
-                    info("[youtubeUserInfoGet] channels.list(forUsername) status: items=", res.data.items?.length || 0);
+                    const res = await youtube.channels.list({ key: apiKey, forUsername: parsed.idOrName, part: ['id'] });
                     if (!res.data.items || res.data.items.length === 0) return undefined;
                     channelId = res.data.items[0].id || undefined;
-                    // Record aliases
                     const keys = toAliasKey(parsed, channelOrUrl);
                     keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                 } else if (parsed.type === 'custom' || parsed.type === 'handle') {
-                    // Search by custom url path or handle. For handle, strip leading '@' as Search API matches better without it.
-                    try {
-                        const query = parsed.type === 'handle' ? parsed.idOrName.replace(/^@/, '') : parsed.idOrName;
-                        const res = await youtube.search.list({
-                            key: apiKey,
-                            q: query,
-                            type: ['channel'],
-                            part: ['snippet'],
-                            maxResults: 1,
-                        });
-                        info("[youtubeUserInfoGet] search.list(q=", query, ") items=", res.data.items?.length || 0);
-                        if (!res.data.items || res.data.items.length === 0) return undefined;
-                        channelId = res.data.items[0].snippet?.channelId || undefined;
-                        // Record aliases
+                    let resolvedChannelId: string | undefined = undefined;
+                    if (parsed.type === 'handle') resolvedChannelId = await resolveChannelIdFromPage(parsed.idOrName);
+                    else resolvedChannelId = await resolveChannelIdFromPage(`c/${parsed.idOrName}`);
+
+                    if (resolvedChannelId) {
+                        channelId = resolvedChannelId;
                         const keys = toAliasKey(parsed, channelOrUrl);
                         keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                         fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
-                    } catch (e) {
-                        if (isQuotaError(e)) {
-                            info('[youtubeUserInfoGet] quotaExceeded on search.list — falling back to yt-search');
-                            const fall = await resolveChannelIdViaYtSearch(parsed.type === 'handle' ? parsed.idOrName.replace(/^@/, '') : parsed.idOrName, 'URL-handle/custom');
-                            if (fall?.channelId) {
-                                channelId = fall.channelId;
-                                ytFallback = fall;
-                                const keys = toAliasKey(parsed, channelOrUrl);
-                                keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
-                                fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
-                            }
-                            if (!channelId) {
-                                const pageInput = parsed.type === 'handle' ? parsed.idOrName : `c/${parsed.idOrName}`;
-                                const cid = await resolveChannelIdFromPage(pageInput);
-                                if (cid) {
-                                    info('[youtubeUserInfoGet] resolved via page scrape:', cid);
-                                    channelId = cid;
+                    } else {
+                        try {
+                            const query = parsed.type === 'handle' ? parsed.idOrName.replace(/^@/, '') : parsed.idOrName;
+                            const res = await youtube.search.list({ key: apiKey, q: query, type: ['channel'], part: ['snippet'], maxResults: 1 });
+                            if (!res.data.items || res.data.items.length === 0) return undefined;
+                            channelId = res.data.items[0].snippet?.channelId || undefined;
+                            const keys = toAliasKey(parsed, channelOrUrl);
+                            keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
+                            fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
+                        } catch (e) {
+                            if (isQuotaError(e)) {
+                                const fall = await resolveChannelIdViaYtSearch(parsed.type === 'handle' ? parsed.idOrName.replace(/^@/, '') : parsed.idOrName, 'URL-handle/custom');
+                                if (fall?.channelId) {
+                                    channelId = fall.channelId;
+                                    ytFallback = fall;
                                     const keys = toAliasKey(parsed, channelOrUrl);
                                     keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                                 }
+                                if (!channelId) {
+                                    const pageInput = parsed.type === 'handle' ? parsed.idOrName : `c/${parsed.idOrName}`;
+                                    const cid = await resolveChannelIdFromPage(pageInput);
+                                    if (cid) {
+                                        channelId = cid;
+                                        const keys = toAliasKey(parsed, channelOrUrl);
+                                        keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
+                                        fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
+                                    }
+                                }
+                                if (!channelId) return undefined;
+                            } else {
+                                return undefined;
                             }
-                            if (!channelId) return undefined;
-                        } else {
-                            console.error("[youtubeUserInfoGet] Error while resolving URL to channelId:", e);
-                            return undefined;
                         }
                     }
                 }
-            } catch (e) {
-                console.error("[youtubeUserInfoGet] Error while resolving URL to channelId:", e);
+            } catch {
                 return undefined;
             }
         } else {
-            // Non-URL branch
             const parsedForAlias = parseChannelUrl(channelOrUrl);
             const aliasKeys2 = toAliasKey(parsedForAlias, channelOrUrl);
             const aliasHit2 = findAliasChannelId(aliasKeys2);
@@ -520,82 +514,65 @@ export class VideoMetaCache {
                 channelId = aliasHit2;
                 const cached = json.youtubeUsers.find(data => data && data.id === channelId);
                 if (cached) return cached;
-                // fallthrough to details fetch if not cached
             }
-            // Assume direct channelId or handle-like string
             if (/^UC[0-9A-Za-z_-]+$/.test(channelOrUrl)) {
                 channelId = channelOrUrl;
-                // Record aliases
                 const keys = toAliasKey(parsedForAlias, channelOrUrl);
                 keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                 fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
             } else if (channelOrUrl.startsWith('@')) {
-                // Resolve handle to channel via search
-                const youtube = google.youtube("v3");
-                const query = channelOrUrl.replace(/^@/, '');
-                try {
-                    const res = await youtube.search.list({
-                        key: apiKey,
-                        q: query,
-                        type: ['channel'],
-                        part: ['snippet'],
-                        maxResults: 1,
-                    });
-                    info("[youtubeUserInfoGet] search.list(handle) items=", res.data.items?.length || 0);
-                    if (!res.data.items || res.data.items.length === 0) return undefined;
-                    channelId = res.data.items[0].snippet?.channelId || undefined;
-                    // Record aliases
+                const cidByPage = await resolveChannelIdFromPage(channelOrUrl);
+                if (cidByPage) {
+                    channelId = cidByPage;
                     const keys = toAliasKey(parsedForAlias, channelOrUrl);
                     keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
-                } catch (e) {
-                    if (isQuotaError(e)) {
-                        info('[youtubeUserInfoGet] quotaExceeded on search.list(handle) — falling back to yt-search');
-                        const fall = await resolveChannelIdViaYtSearch(query, 'handle');
-                        if (fall?.channelId) {
-                            channelId = fall.channelId;
-                            ytFallback = fall;
-                            const keys = toAliasKey(parsedForAlias, channelOrUrl);
-                            keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
-                            fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
-                        }
-                        if (!channelId) {
-                            const cid = await resolveChannelIdFromPage(channelOrUrl);
-                            if (cid) {
-                                info('[youtubeUserInfoGet] resolved via page scrape (handle):', cid);
-                                channelId = cid;
+                } else {
+                    const youtube = google.youtube("v3");
+                    const query = channelOrUrl.replace(/^@/, '');
+                    try {
+                        const res = await youtube.search.list({ key: apiKey, q: query, type: ['channel'], part: ['snippet'], maxResults: 1 });
+                        if (!res.data.items || res.data.items.length === 0) return undefined;
+                        channelId = res.data.items[0].snippet?.channelId || undefined;
+                        const keys = toAliasKey(parsedForAlias, channelOrUrl);
+                        keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
+                        fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
+                    } catch (e) {
+                        if (isQuotaError(e)) {
+                            const fall = await resolveChannelIdViaYtSearch(query, 'handle');
+                            if (fall?.channelId) {
+                                channelId = fall.channelId;
+                                ytFallback = fall;
                                 const keys = toAliasKey(parsedForAlias, channelOrUrl);
                                 keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                                 fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                             }
+                            if (!channelId) {
+                                const cid = await resolveChannelIdFromPage(channelOrUrl);
+                                if (cid) {
+                                    channelId = cid;
+                                    const keys = toAliasKey(parsedForAlias, channelOrUrl);
+                                    keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
+                                    fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
+                                }
+                            }
+                            if (!channelId) return undefined;
+                        } else {
+                            return undefined;
                         }
-                        if (!channelId) return undefined;
-                    } else {
-                        console.error("[youtubeUserInfoGet] Error resolving handle via search:", e);
-                        return undefined;
                     }
                 }
             } else {
-                // As a fallback, try searching the string as a channel name
                 const youtube = google.youtube("v3");
                 try {
-                    const res = await youtube.search.list({
-                        key: apiKey,
-                        q: channelOrUrl,
-                        type: ['channel'],
-                        part: ['snippet'],
-                        maxResults: 1,
-                    });
-                    info("[youtubeUserInfoGet] search.list(fallback) items=", res.data.items?.length || 0);
+                    const res = await youtube.search.list({ key: apiKey, q: channelOrUrl, type: ['channel'], part: ['snippet'], maxResults: 1 });
                     if (!res.data.items || res.data.items.length === 0) return undefined;
                     channelId = res.data.items[0].snippet?.channelId || undefined;
-                    // Record aliases
                     const keys = toAliasKey(parsedForAlias, channelOrUrl);
                     keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                 } catch (e) {
                     if (isQuotaError(e)) {
-                        info('[youtubeUserInfoGet] quotaExceeded on search.list(fallback) — falling back to yt-search');
                         const fall = await resolveChannelIdViaYtSearch(channelOrUrl, 'name-fallback');
                         if (fall?.channelId) {
                             channelId = fall.channelId;
@@ -607,7 +584,6 @@ export class VideoMetaCache {
                         if (!channelId) {
                             const cid = await resolveChannelIdFromPage(channelOrUrl);
                             if (cid) {
-                                info('[youtubeUserInfoGet] resolved via page scrape (name):', cid);
                                 channelId = cid;
                                 const keys = toAliasKey(parsedForAlias, channelOrUrl);
                                 keys.forEach(k => { json.youtubeAliases![k] = channelId!; });
@@ -616,23 +592,16 @@ export class VideoMetaCache {
                         }
                         if (!channelId) return undefined;
                     } else {
-                        console.error("[youtubeUserInfoGet] Error in fallback search:", e);
                         return undefined;
                     }
                 }
             }
         }
 
-        if (!channelId) {
-            console.warn("[youtubeUserInfoGet] channelId could not be resolved.");
-            return undefined;
-        }
+        if (!channelId) return undefined;
 
         const cached = json.youtubeUsers.find(data => data && data.id === channelId);
-        if (cached) {
-            info("[youtubeUserInfoGet] Cache hit for channelId:", channelId);
-            return cached;
-        }
+        if (cached) return cached;
 
         const youtube = google.youtube("v3");
         try {
@@ -643,21 +612,15 @@ export class VideoMetaCache {
                 hl: 'ja'
             });
             const count = res.data.items?.length || 0;
-            info("[youtubeUserInfoGet] channels.list(id) items=", count);
             if (!res.data.items || count === 0) return undefined;
             const channel = res.data.items[0];
-            if (channel.id !== channelId) {
-                console.warn("[youtubeUserInfoGet] Returned channel id does not match requested:", { requested: channelId, returned: channel.id });
-                return undefined;
-            }
+            if (channel.id !== channelId) return undefined;
             json.youtubeUsers.push(channel);
             fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
             return channel;
         } catch (e) {
             if (isQuotaError(e) && channelId) {
-                // Prefer ytFallback when available
                 if (ytFallback?.channelId === channelId) {
-                    console.warn('[youtubeUserInfoGet] quotaExceeded on channels.list — returning minimal channel from yt-search');
                     const minimal: youtube_v3.Schema$Channel = {
                         kind: 'youtube#channel',
                         id: channelId,
@@ -674,8 +637,6 @@ export class VideoMetaCache {
                     fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                     return minimal;
                 }
-                // Otherwise, scrape the channel page by id to synthesize minimal snippet
-                info('[youtubeUserInfoGet] quotaExceeded on channels.list — falling back to page scrape by id');
                 const meta = await resolveChannelSnippetFromPageById(channelId);
                 const minimal: youtube_v3.Schema$Channel = {
                     kind: 'youtube#channel',
@@ -693,7 +654,6 @@ export class VideoMetaCache {
                 fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                 return minimal;
             }
-            console.error("[youtubeUserInfoGet] Error fetching channel details:", e);
             return undefined;
         }
     }
@@ -727,7 +687,8 @@ export class VideoMetaCache {
                 }
             }
             if (!userId) {
-                console.error("[niconicoUserInfoGet] ユーザーID/URLの解析に失敗しました:", userIdOrUrl);
+                const ts = new Date().toISOString();
+                console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] ユーザーID/URLの解析に失敗しました:`, userIdOrUrl);
                 return undefined;
             }
             const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
@@ -745,6 +706,7 @@ export class VideoMetaCache {
                         'User-Agent': 'Mozilla/5.0'
                     }
                 });
+                const ts = new Date().toISOString();
                 if (nv.ok) {
                     const j = await nv.json();
                     const u = j?.data?.user ?? j?.data;
@@ -779,24 +741,27 @@ export class VideoMetaCache {
                         fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                         return info;
                     } else {
-                        console.error("[niconicoUserInfoGet] nvapiは応答したが name/iconUrl が欠落: ", { nameNv, iconNv });
+                        console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] nvapiは応答したが name/iconUrl が欠落: `, { nameNv, iconNv });
                     }
                 } else {
-                    console.error(`[niconicoUserInfoGet] nvapi応答エラー: HTTP ${nv.status}`);
+                    console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] nvapi応答エラー: HTTP ${nv.status}`);
                 }
             } catch (e) {
-                console.error('[niconicoUserInfoGet] nvapi取得中に例外が発生:', e);
+                const ts = new Date().toISOString();
+                console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] nvapi取得中に例外が発生:`, e);
             }
 
             let response: Response;
             try {
                 response = await fetch(userUrl);
                 if (!response.ok) {
-                    console.error(`[niconicoUserInfoGet] ユーザーページの取得に失敗しました: HTTP ${response.status}`);
+                    const ts = new Date().toISOString();
+                    console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] ユーザーページの取得に失敗しました: HTTP ${response.status}`);
                     return undefined;
                 }
             } catch (e) {
-                console.error("[niconicoUserInfoGet] ユーザーページの取得中にエラーが発生しました:", e);
+                const ts = new Date().toISOString();
+                console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] ユーザーページの取得中にエラーが発生しました:`, e);
                 return undefined;
             }
             const html = await response.text();
@@ -824,7 +789,8 @@ export class VideoMetaCache {
             }
 
             if (!name || !iconUrl) {
-                console.error("[niconicoUserInfoGet] OGメタから name/iconUrl が取得できませんでした", { name, iconUrl });
+                const ts = new Date().toISOString();
+                console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] OGメタから name/iconUrl が取得できませんでした`, { name, iconUrl });
                 return undefined;
             }
 
@@ -839,7 +805,8 @@ export class VideoMetaCache {
             fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
             return info;
         } catch (e) {
-            console.error("[niconicoUserInfoGet] 処理中にエラーが発生しました:", e);
+            const ts = new Date().toISOString();
+            console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] 処理中にエラーが発生しました:`, e);
             return undefined;
         }
     }
@@ -858,7 +825,8 @@ export class VideoMetaCache {
                 if (m2) channelId = m2[0];
             }
             if (!channelId) {
-                console.error("[niconicoChannelInfoGet] チャンネルID/URLの解析に失敗しました:", channelIdOrUrl);
+                const ts = new Date().toISOString();
+                console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] チャンネルID/URLの解析に失敗しました:`, channelIdOrUrl);
                 return undefined;
             }
 
@@ -880,12 +848,14 @@ export class VideoMetaCache {
                     if (altRes.ok) {
                         response = altRes as any;
                     } else {
-                        console.error(`[niconicoChannelInfoGet] チャンネルページの取得に失敗しました: HTTP ${response.status} / ${altRes.status}`);
+                        const ts = new Date().toISOString();
+                        console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] チャンネルページの取得に失敗しました: HTTP ${response.status} / ${altRes.status}`);
                         return undefined;
                     }
                 }
             } catch (e) {
-                console.error("[niconicoChannelInfoGet] チャンネルページ取得中にエラーが発生しました:", e);
+                const ts = new Date().toISOString();
+                console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] チャンネルページ取得中にエラーが発生しました:`, e);
                 return undefined;
             }
 
@@ -908,7 +878,8 @@ export class VideoMetaCache {
             }
 
             if (!name || !iconUrl) {
-                console.error("[niconicoChannelInfoGet] OGメタから name/iconUrl が取得できませんでした", { name, iconUrl });
+                const ts = new Date().toISOString();
+                console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] OGメタから name/iconUrl が取得できませんでした`, { name, iconUrl });
                 return undefined;
             }
 
@@ -924,11 +895,11 @@ export class VideoMetaCache {
             fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
             return info;
         } catch (e) {
-            console.error("[niconicoChannelInfoGet] 処理中にエラーが発生しました:", e);
+            const ts = new Date().toISOString();
+            console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] 処理中にエラーが発生しました:`, e);
             return undefined;
         }
     }
-
     async twitterInfoGet(tweetId: string) {
         const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
         if (!json.twitter) json.twitter = [];
@@ -946,7 +917,803 @@ export class VideoMetaCache {
             }
         }
     }
+    /**
+     * videoId から「最も高解像度のサムネURL」を返す。
+     * - youtubei.js で取得できた thumbnails[] から最大解像度を選択（Cookie使用可）
+     * - 取得失敗時は i.ytimg.com の既知パスを高解像度順に返す（存在チェックはしないが実運用で十分）
+     * - 戻り: URL or undefined
+     */
+    async youtubeThumbnailGet(videoId: string) {
+        const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
+        if (!json.youtubeThumbnail) json.youtubeThumbnail = [];
+        const data = json.youtubeThumbnail.find(data => data && data.videoId === videoId);
+        if (data) return data.thumbnailUrl;
+        // 単関数に全部内包します
 
+        const isValidId = (id: string) => /^[A-Za-z0-9_-]{6,}$/.test(id);
+
+        // Chrome Cookie → header 生成
+        const buildCookieHeader = async () => {
+            const profile =
+                process.env.CHROME_USER_PROFILE_PATH?.trim() ||
+                (process.platform === "darwin"
+                    ? `${process.env.HOME}/Library/Application Support/Google/Chrome/Default`
+                    : process.platform === "win32"
+                        ? `${process.env.LOCALAPPDATA}\\Google\\Chrome\\User Data\\Default`
+                        : `${process.env.HOME}/.config/google-chrome/Default`);
+
+            const obj = await getCookiesPromised("https://www.youtube.com", "object", profile);
+            const objMusic = await getCookiesPromised("https://music.youtube.com", "object", profile);
+            const merged: Record<string, string> = { ...obj, ...objMusic };
+            const header = Object.entries(merged)
+                .filter(([k, v]) => k && typeof v === "string" && v.length > 0)
+                .map(([k, v]) => `${k}=${v}`)
+                .join("; ");
+            return header || "";
+        };
+
+        // 任意オブジェクトから thumbnails 配列を根こそぎ回収
+        const collectThumbnailsDeep = (root: any): { url: string; w?: number; h?: number }[] => {
+            const out: { url: string; w?: number; h?: number }[] = [];
+            const stack = [root];
+            while (stack.length) {
+                const cur = stack.pop();
+                if (!cur || typeof cur !== "object") continue;
+
+                // パターン1: { thumbnails: [{url,width,height}, ...] }
+                if (Array.isArray((cur as any).thumbnails)) {
+                    for (const t of (cur as any).thumbnails) {
+                        if (t?.url) out.push({ url: t.url, w: t.width, h: t.height });
+                    }
+                }
+                // パターン2: { thumbnail: { thumbnails: [...] } }
+                if ((cur as any).thumbnail?.thumbnails) {
+                    for (const t of (cur as any).thumbnail.thumbnails) {
+                        if (t?.url) out.push({ url: t.url, w: t.width, h: t.height });
+                    }
+                }
+                // パターン3: { url, width, height } が直置き
+                if (cur.url && typeof cur.url === "string") {
+                    out.push({ url: cur.url, w: (cur as any).width, h: (cur as any).height });
+                }
+
+                for (const k of Object.keys(cur)) {
+                    const v = (cur as any)[k];
+                    if (v && typeof v === "object") stack.push(v);
+                    if (Array.isArray(v)) for (const it of v) if (it && typeof it === "object") stack.push(it);
+                }
+            }
+            // 重複URL排除
+            const seen = new Set<string>();
+            return out.filter((t) => (seen.has(t.url) ? false : (seen.add(t.url), true)));
+        };
+
+        if (!isValidId(videoId)) return undefined;
+
+        // 1) youtubei.js で最大解像度を取りに行く
+        try {
+            const cookie = await buildCookieHeader().catch(() => "");
+            const yt = await youtubei.Innertube.create(cookie ? { cookie } : {});
+            // 複数Googleアカウント環境の安定化（任意）
+            const accountIndex = Number(process.env.GOOGLE_ACCOUNT_INDEX ?? "0") || 0;
+            if ((yt as any).session?.context) {
+                (yt as any).session.context = {
+                    ...(yt as any).session.context,
+                    client: { ...(yt as any).session.context?.client, hl: "ja", gl: "JP" },
+                    headers: {
+                        ...(yt as any).session.context?.headers,
+                        "X-Goog-AuthUser": String(accountIndex),
+                    },
+                };
+            }
+
+            const info: any = await (yt as any).getInfo(videoId);
+            const thumbs = [
+                ...collectThumbnailsDeep(info?.basic_info),
+                ...collectThumbnailsDeep(info?.video_details),
+                ...collectThumbnailsDeep(info?.microformat),
+                ...collectThumbnailsDeep(info),
+            ];
+
+            if (thumbs.length) {
+                // 面積（w*h）降順で最大を選ぶ（w/h欠損は末尾扱い）
+                thumbs.sort((a, b) => ((b.w || 0) * (b.h || 0)) - ((a.w || 0) * (a.h || 0)));
+                json.youtubeThumbnail.push({ videoId, thumbnailUrl: thumbs[0].url });
+                fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
+                return thumbs[0].url;
+            }
+        } catch {
+            // youtubei 失敗時はフォールバックへ
+        }
+
+        // 2) フォールバック：i.ytimg.com の既知パスを高解像度順に返す
+        // （存在チェックはしない。maxres が 404 の場合はクライアント側で次候補へ切替して使ってください）
+        const candidates = [
+            // webp 系（軽くて高画質が多い）
+            `https://i.ytimg.com/vi_webp/${videoId}/maxresdefault.webp`,
+            `https://i.ytimg.com/vi_webp/${videoId}/sddefault.webp`,
+            `https://i.ytimg.com/vi_webp/${videoId}/hqdefault.webp`,
+            `https://i.ytimg.com/vi_webp/${videoId}/mqdefault.webp`,
+            // jpg 系
+            `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`, // 1280x720（無い動画は404）
+            `https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,     // 640x480
+            `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,     // 480x360
+            `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,     // 320x180
+            `https://i.ytimg.com/vi/${videoId}/default.jpg`,       // 120x90
+            // 参考：フレーム0（古いが使えることあり・解像度はまちまち）
+            `https://i.ytimg.com/vi/${videoId}/0.jpg`,
+        ];
+        return candidates[0]; // まずは最上位を返す（クライアント側で順次フォールバックする設計にしておくのが実運用◎）
+    }
+    async spotifyToYouTubeId(spotifyUrlOrId: string): Promise<string | undefined> {
+        const t0 = Date.now();
+        const DEBUG = process.env.DEBUG_SPOTIFY === '1';
+        const info = (...a: any[]) => { if (DEBUG) console.log(...a); };
+        const warn = (...a: any[]) => { if (DEBUG) console.warn(...a); };
+        info(`[spotifyToYouTubeId] start:`, spotifyUrlOrId);
+        // ---------- 0) ID抽出 & URL正規化（/intl-xx/ を吸収） ----------
+        const extractTrackId = (s: string): string | undefined => {
+            try {
+                const u = new URL(s);
+                const m = u.pathname.match(/\/(?:intl-[a-z]{2}\/)?(?:embed\/)?track\/([A-Za-z0-9]+)/);
+                if (m) info(`[spotifyToYouTubeId] parsed id from path:`, m[1]);
+                if (m) return m[1];
+                // アルバム内ハイライトなど（?highlight=spotify:track:<id>）
+                const hi = u.search.match(/highlight=spotify:track:([A-Za-z0-9]+)/);
+                if (hi) info(`[spotifyToYouTubeId] parsed id from highlight:`, hi[1]);
+                if (hi) return hi[1];
+                // 生のIDが来たとき
+                return /^[A-Za-z0-9]{10,}$/.test(s) ? s : undefined;
+            } catch {
+                return /^[A-Za-z0-9]{10,}$/.test(s) ? s : undefined;
+            }
+        };
+        const trackId = extractTrackId(spotifyUrlOrId);
+        if (!trackId) { console.error(`[spotifyToYouTubeId] failed: trackId not found`); return undefined; }
+        info(`[spotifyToYouTubeId] trackId:`, trackId);
+
+        const canonical = (locale: "ja" | "en") =>
+            `https://open.spotify.com/${locale === "ja" ? "intl-ja/" : "intl-en/"}track/${trackId}`;
+
+        // ---------- 1) Spotifyメタデータ取得（トークン不要ルートのみ） ----------
+        const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+
+        const fetchText = async (url: string, acceptLang: string) => {
+            try {
+                const r = await fetchWithLog(url, { headers: { "User-Agent": UA, "Accept-Language": acceptLang }, __silent: !DEBUG } as any);
+                if (!r || !r.ok) {
+                    warn(`[spotifyToYouTubeId] fetchText not ok: ${url}`);
+                    return undefined;
+                }
+                const txt = await r.text().catch(() => undefined);
+                if (!txt) warn(`[spotifyToYouTubeId] fetchText body empty: ${url}`);
+                return txt;
+            } catch (e: any) {
+                warn(`[spotifyToYouTubeId] fetchText error: ${url} ${e?.message || e}`);
+                return undefined;
+            }
+        };
+
+        // oEmbed（タイトル/アーティスト文字列が取れる・ロケールは弱い）
+        const fetchOEmbed = async (url: string) => {
+            const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`;
+            try {
+                const r = await fetchWithLog(oembedUrl, { headers: { "User-Agent": UA }, __silent: !DEBUG } as any);
+                if (!r || !r.ok) {
+                    warn(`[spotifyToYouTubeId] oEmbed not ok: ${oembedUrl}`);
+                    return undefined;
+                }
+                const j = await r.json().catch(() => undefined);
+                if (!j) warn(`[spotifyToYouTubeId] oEmbed body empty`);
+                return j;
+            } catch (e: any) {
+                warn(`[spotifyToYouTubeId] oEmbed error: ${e?.message || e}`);
+                return undefined;
+            }
+        };
+
+        type Meta = { title?: string; artist?: string; album?: string; durationMs?: number; };
+
+        // Helpers: parse "title – artist" variants and duration from HTML
+        const splitTitleArtist = (s?: string): { title?: string; artist?: string } => {
+            if (!s) return {};
+            // handle en dash, em dash, hyphen, middle dot, bullet, pipe
+            const SEP = /\s*(?:–|—|-|·|•|\|)\s*/;
+            const parts = String(s).split(SEP);
+            if (parts.length >= 2) return { title: parts[0].trim(), artist: parts[1].trim() };
+            return { title: s };
+        };
+
+        const parseFromTitleTag = (html?: string): Partial<Meta> => {
+            if (!html) return {};
+            const m = html.match(/<title>([^<]+)<\/title>/i);
+            if (!m) return {};
+            const { title, artist } = splitTitleArtist(m[1]);
+            return { title, artist };
+        };
+
+        const sniffDurationMs = (html?: string): number | undefined => {
+            if (!html) return undefined;
+            // 1) direct numeric ms in JSON (durationMs or duration_ms)
+            const mNum = html.match(/\b(duration(?:Ms|_ms)?)\"?\s*:\s*(\d{3,})/i);
+            if (mNum && mNum[2]) {
+                const v = parseInt(mNum[2], 10);
+                if (Number.isFinite(v) && v > 0) return v;
+            }
+            // 2) ISO8601 duration (PT#M#S)
+            const mIso = html.match(/\b\"duration\"\s*:\s*\"PT(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?\"/i);
+            if (mIso) {
+                const mm = mIso[1] ? parseInt(mIso[1], 10) : 0;
+                const ss = mIso[2] ? parseFloat(mIso[2]) : 0;
+                const ms = Math.round((mm * 60 + ss) * 1000);
+                if (ms > 0) return ms;
+            }
+            // 3) human format like 3:45 or 03:45 inside JSON
+            const mClock = html.match(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b/);
+            if (mClock) {
+                const hh = mClock[3] ? parseInt(mClock[1], 10) : 0;
+                const mm = mClock[3] ? parseInt(mClock[2], 10) : parseInt(mClock[1], 10);
+                const ss = mClock[3] ? parseInt(mClock[3], 10) : parseInt(mClock[2], 10);
+                const total = (hh * 3600 + mm * 60 + ss) * 1000;
+                if (total > 0) return total;
+            }
+            return undefined;
+        };
+
+        const parseFromNextData = (html?: string): Partial<Meta> => {
+            if (!html) return {};
+            const m = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+            if (!m) return {};
+            let json: any;
+            try { json = JSON.parse(m[1]); } catch { return {}; }
+
+            // できるだけ堅牢にパスを試す
+            const candidates: any[] = [
+                json?.props?.pageProps?.state?.data?.entity,                  // 旧
+                json?.props?.pageProps?.state?.data?.trackUnion,              // 場合によって
+                json?.props?.pageProps?.state?.data?.pageData?.track,         // 変種
+            ].filter(Boolean);
+
+            const pick = candidates[0];
+            if (!pick) return {};
+
+            const title = pick.name || pick.title || pick.track?.name;
+            const artist =
+                (Array.isArray(pick.artists) && pick.artists[0]?.name) ||
+                (Array.isArray(pick.track?.artists) && pick.track.artists[0]?.name) ||
+                pick.artist?.name;
+            const album = pick.album?.name || pick.track?.album?.name;
+
+            // duration（ms）候補
+            let durationMs: number | undefined =
+                typeof pick.durationMs === "number" ? pick.durationMs :
+                    typeof pick.duration_ms === "number" ? pick.duration_ms :
+                        typeof pick.track?.durationMs === "number" ? pick.track.durationMs :
+                            typeof pick.track?.duration_ms === "number" ? pick.track.duration_ms : undefined;
+
+            return { title, artist, album, durationMs };
+        };
+
+        const parseFromLdJson = (html?: string): Partial<Meta> => {
+            if (!html) return {};
+            const scripts = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+            for (const s of scripts) {
+                try {
+                    const o = JSON.parse(s[1]);
+                    // 単体/配列どちらも考慮
+                    const arr = Array.isArray(o) ? o : [o];
+                    for (const item of arr) {
+                        if (item["@type"] === "MusicRecording" || item["@type"] === "MusicAlbum" || item.name) {
+                            const title = item.name;
+                            const artist =
+                                item.byArtist?.name ||
+                                (Array.isArray(item.byArtist) && item.byArtist[0]?.name);
+                            const album = item.inAlbum?.name;
+                            let durationMs: number | undefined;
+                            if (typeof item.duration === "string") {
+                                const m = item.duration.match(/PT(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?/);
+                                if (m) {
+                                    const mm = m[1] ? parseInt(m[1], 10) : 0;
+                                    const ss = m[2] ? parseFloat(m[2]) : 0;
+                                    durationMs = Math.round((mm * 60 + ss) * 1000);
+                                }
+                            }
+                            if (typeof (item as any).durationMs === 'number') durationMs = (item as any).durationMs;
+                            if (typeof (item as any).duration_ms === 'number') durationMs = (item as any).duration_ms;
+                            return { title, artist, album, durationMs };
+                        }
+                    }
+                } catch { /* continue */ }
+            }
+            return {};
+        };
+
+        const mergeMeta = (...m: Partial<Meta>[]): Meta => {
+            const out: Meta = {};
+            for (const x of m) {
+                out.title = out.title || x.title;
+                out.artist = out.artist || x.artist;
+                out.album = out.album || x.album;
+                out.durationMs = out.durationMs || x.durationMs;
+            }
+            return out;
+        };
+
+        // JP / EN ページを取ってみる（片方でもOK）
+        const [jpHtml, enHtml] = await Promise.all([
+            fetchText(canonical("ja"), "ja-JP,ja;q=0.9,en;q=0.6"),
+            fetchText(canonical("en"), "en-US,en;q=0.9,ja;q=0.6"),
+        ]);
+        info(`[spotifyToYouTubeId] html fetched: jp=${!!jpHtml} en=${!!enHtml}`);
+
+        const jpEmbed = await fetchOEmbed(canonical("ja")).catch(() => undefined);
+        const enEmbed = await fetchOEmbed(canonical("en")).catch(() => undefined);
+        info(`[spotifyToYouTubeId] oembed fetched: jp=${!!jpEmbed} en=${!!enEmbed}`);
+
+        // --- Fetch iframe (embed) HTML as additional metadata source ---
+        const iframeUrl = (jpEmbed?.iframe_url as string) || (enEmbed?.iframe_url as string);
+        let embedHtml: string | undefined;
+        if (iframeUrl) {
+            try {
+                const r = await fetchWithLog(iframeUrl, { headers: { "User-Agent": UA }, __silent: !DEBUG } as any);
+                if (r.ok) {
+                    embedHtml = await r.text().catch(() => undefined);
+                } else {
+                    warn(`[spotifyToYouTubeId] embed iframe fetch not ok: ${r.status}`);
+                }
+            } catch (e: any) {
+                warn(`[spotifyToYouTubeId] embed iframe fetch error: ${e?.message || e}`);
+            }
+        } else {
+            warn(`[spotifyToYouTubeId] no iframe_url in oEmbed`);
+        }
+
+        // ----- RAW LOGGING (Spotify only) -----
+        if (DEBUG) {
+        try {
+            // Title tags
+            const titleJP = jpHtml?.match(/<title>([^<]+)<\/title>/i)?.[1];
+            const titleEN = enHtml?.match(/<title>([^<]+)<\/title>/i)?.[1];
+            console.log("[spotifyToYouTubeId][raw] <title> JP:", titleJP);
+            console.log("[spotifyToYouTubeId][raw] <title> EN:", titleEN);
+
+            // __NEXT_DATA__ JSON
+            const nextJPMatch = jpHtml?.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+            const nextENMatch = enHtml?.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+            const nextJP = nextJPMatch?.[1];
+            const nextEN = nextENMatch?.[1];
+            console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ JP present:", !!nextJP, "len:", nextJP?.length);
+            if (nextJP) console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ JP JSON:", nextJP);
+            console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ EN present:", !!nextEN, "len:", nextEN?.length);
+            if (nextEN) console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ EN JSON:", nextEN);
+
+            // ld+json blocks
+            const ldJPMatches = [...(jpHtml?.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g) || [])].map(m => m[1]);
+            const ldENMatches = [...(enHtml?.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g) || [])].map(m => m[1]);
+            console.log("[spotifyToYouTubeId][raw] ld+json JP count:", ldJPMatches.length);
+            ldJPMatches.forEach((j, idx) => console.log(`[spotifyToYouTubeId][raw] ld+json JP[${idx}]:`, j));
+            console.log("[spotifyToYouTubeId][raw] ld+json EN count:", ldENMatches.length);
+            ldENMatches.forEach((j, idx) => console.log(`[spotifyToYouTubeId][raw] ld+json EN[${idx}]:`, j));
+
+            // EMBED page quick probes
+            const titleEM = embedHtml?.match(/&lt;title&gt;([^&]+)&lt;\/title&gt;|<title>([^<]+)<\/title>/i);
+            console.log("[spotifyToYouTubeId][raw] <title> EMBED:", titleEM ? (titleEM[1] || titleEM[2]) : undefined);
+
+            const nextEMMatch = embedHtml?.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+            const nextEM = nextEMMatch?.[1];
+            console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ EMBED present:", !!nextEM, "len:", nextEM?.length);
+            if (nextEM) console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ EMBED JSON:", nextEM);
+
+            const ldEMMatches = [...(embedHtml?.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g) || [])].map(m => m[1]);
+            console.log("[spotifyToYouTubeId][raw] ld+json EMBED count:", ldEMMatches.length);
+            ldEMMatches.forEach((j, idx) => console.log(`[spotifyToYouTubeId][raw] ld+json EMBED[${idx}]:`, j));
+
+            // oEmbed JSON full
+            console.log("[spotifyToYouTubeId][raw] oEmbed JP:", jpEmbed);
+            console.log("[spotifyToYouTubeId][raw] oEmbed EN:", enEmbed);
+        } catch (e) {
+            console.log("[spotifyToYouTubeId][raw] logging error:", (e as any)?.message || e);
+        }
+        }
+        // ----- RAW LOGGING END -----
+
+        // Helper to parse loosely from embed HTML (when JSON parsing is hard)
+        const parseFromEmbedLoose = (html?: string): Partial<Meta> => {
+            if (!html) return {};
+            // Try to find artists array and first name
+            let artist: string | undefined;
+            const artistsBlock = html.match(/"artists"\s*:\s*\[([\s\S]*?)\]/);
+            if (artistsBlock) {
+                const names = [...artistsBlock[1].matchAll(/"name"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+                if (names.length) artist = names[0];
+            }
+            // Title candidates (track name)
+            const titleMatch = html.match(/"name"\s*:\s*"([^"]+)"\s*,\s*"type"\s*:\s*"track"/);
+            const title = titleMatch ? titleMatch[1] : undefined;
+
+            // Album name, if present
+            const albumMatch = html.match(/"album"\s*:\s*{[\s\S]*?"name"\s*:\s*"([^"]+)"/);
+            const album = albumMatch ? albumMatch[1] : undefined;
+
+            // Duration: duration_ms or durationMs
+            let durationMs: number | undefined;
+            const mNum = html.match(/"duration_(?:ms|Ms)"\s*:\s*(\d{3,})/);
+            if (mNum?.[1]) {
+                const v = parseInt(mNum[1], 10);
+                if (Number.isFinite(v) && v > 0) durationMs = v;
+            }
+            if (!durationMs) {
+                const iso = html.match(/"duration"\s*:\s*"PT(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?"/);
+                if (iso) {
+                    const mm = iso[1] ? parseInt(iso[1], 10) : 0;
+                    const ss = iso[2] ? parseFloat(iso[2]) : 0;
+                    durationMs = Math.round((mm * 60 + ss) * 1000);
+                }
+            }
+            return { title, artist, album, durationMs };
+        };
+
+        const jp = mergeMeta(
+            parseFromNextData(jpHtml),
+            parseFromLdJson(jpHtml),
+            parseFromNextData(embedHtml),
+            parseFromLdJson(embedHtml),
+            parseFromEmbedLoose(embedHtml),
+            (() => {
+                const o = jpEmbed || {};
+                const bySplit = splitTitleArtist(o.title);
+                const artist = (o as any).author_name || bySplit.artist;
+                return { title: bySplit.title, artist };
+            })(),
+            parseFromTitleTag(jpHtml),
+            parseFromTitleTag(embedHtml),
+            { durationMs: sniffDurationMs(jpHtml) },
+            { durationMs: sniffDurationMs(embedHtml) }
+        );
+        const en = mergeMeta(
+            parseFromNextData(enHtml),
+            parseFromLdJson(enHtml),
+            parseFromNextData(embedHtml),
+            parseFromLdJson(embedHtml),
+            parseFromEmbedLoose(embedHtml),
+            (() => {
+                const o = enEmbed || {};
+                const bySplit = splitTitleArtist(o.title);
+                const artist = (o as any).author_name || bySplit.artist;
+                return { title: bySplit.title, artist };
+            })(),
+            parseFromTitleTag(enHtml),
+            parseFromTitleTag(embedHtml),
+            { durationMs: sniffDurationMs(enHtml) },
+            { durationMs: sniffDurationMs(embedHtml) }
+        );
+        info(`[spotifyToYouTubeId] meta JP:`, jp);
+        info(`[spotifyToYouTubeId] meta EN:`, en);
+
+        // JP を基準、欠けは EN で補完
+        const titleJP = jp.title || en.title;
+        const artistJP = jp.artist || en.artist;
+        const albumJP = jp.album || en.album;
+        const durationMs = jp.durationMs || en.durationMs;
+        const titleEN = en.title || jp.title;
+        const artistEN = en.artist || jp.artist;
+        const albumEN = en.album || jp.album;
+
+        if (!titleJP || !artistJP || !durationMs) {
+            if (DEBUG) warn(`[spotifyToYouTubeId] insufficient meta:`, { titleJP, artistJP, durationMs, note: 'checked nextData/ld+json/oEmbed(author_name)/<title>/duration sniff' });
+            console.error(`[spotifyToYouTubeId] failed: insufficient metadata`);
+            return undefined;
+        }
+
+        // ---------- 2) クエリ生成（ハイフンのみ除去：仕様準拠） ----------
+        const buildQuery = (title?: string, artist?: string, album?: string) =>
+            [title, artist, album].filter(Boolean).join(" ").replace(/-/g, " ").trim();
+
+        const jpQuery = buildQuery(titleJP, artistJP, albumJP);
+        const enQuery = buildQuery(titleEN, artistEN, albumEN);
+        info(`[spotifyToYouTubeId] JPQuery: ${jpQuery}`);
+        info(`[spotifyToYouTubeId] ENQuery: ${enQuery}`);
+
+        // ---------- 3) YouTube 検索（youtubei + yts） ----------
+        type YtItem = { videoId: string; title?: string; seconds?: number; channelTitle?: string };
+
+        const searchYoutubei = async (q: string): Promise<YtItem[]> => {
+            try {
+                const yt = await youtubei.Innertube.create({ lang: "ja", location: "JP" } as any);
+                const r: any = await (yt as any).search(q);
+                const items: any[] = (Array.isArray(r?.videos) ? r.videos : []) || (Array.isArray(r?.results) ? r.results : []);
+                return (items || []).map(it => {
+                    const id = it.id || it.videoId || it?.endpoint?.payload?.videoId;
+                    const seconds =
+                        typeof it.duration === "number" ? it.duration :
+                            it.duration?.seconds ?? it.duration_seconds;
+                    const channelTitle =
+                        it.author?.name || it.channel?.name || it.owner?.name ||
+                        it.short_byline_text?.text || it.owner_text?.text || "";
+                    return id ? {
+                        videoId: String(id),
+                        title: it.title?.text ?? it.title ?? it?.headline?.text,
+                        seconds: typeof seconds === "number" ? seconds : undefined,
+                        channelTitle
+                    } : undefined;
+                }).filter(Boolean) as YtItem[];
+            } catch {
+                return [];
+            }
+        };
+
+        const searchYts = async (q: string): Promise<YtItem[]> => {
+            try {
+                const r: any = await yts(q);
+                const vids: any[] = Array.isArray(r?.videos) ? r.videos : [];
+                return vids.map(v => ({
+                    videoId: v.videoId,
+                    title: v.title,
+                    seconds: typeof v.seconds === "number" ? v.seconds : undefined,
+                    channelTitle: v.author?.name
+                }));
+            } catch {
+                return [];
+            }
+        };
+
+        const mergeUnique = (a: YtItem[], b: YtItem[]) => {
+            const out: YtItem[] = [];
+            const seen = new Set<string>();
+            for (const it of [...a, ...b]) {
+                if (!it || !it.videoId) continue;
+                if (!seen.has(it.videoId)) {
+                    seen.add(it.videoId);
+                    out.push(it);
+                }
+            }
+            return out;
+        };
+
+        const jpList = mergeUnique(await searchYoutubei(jpQuery), await searchYts(jpQuery));
+        const enList = mergeUnique(await searchYoutubei(enQuery), await searchYts(enQuery));
+        info(`[spotifyToYouTubeId] jpList: ${jpList.length}, enList: ${enList.length}`);
+        if (!jpList.length && !enList.length) warn(`[spotifyToYouTubeId] no youtube results`);
+
+        // ---------- 4) スコア付け（配列長 - 要素番号）＋ JP/EN 重複加算 ----------
+        const scoreMapJP = new Map<string, number>();
+        for (let i = 0; i < jpList.length; i++) scoreMapJP.set(jpList[i].videoId, jpList.length - i);
+
+        const scoreMapEN = new Map<string, number>();
+        for (let i = 0; i < enList.length; i++) scoreMapEN.set(enList[i].videoId, enList.length - i);
+
+        for (const vid of scoreMapJP.keys()) {
+            const enScore = scoreMapEN.get(vid);
+            if (enScore) scoreMapJP.set(vid, (scoreMapJP.get(vid) || 0) + enScore);
+        }
+
+        // ---------- 5) 長さフィルタ（±3秒未満のみ） ----------
+        const filtered = jpList.filter(it => typeof it.seconds === "number" && Math.abs(it.seconds! * 1000 - durationMs) < 3000);
+        info(`[spotifyToYouTubeId] durationMs=${durationMs} filtered=${filtered.length} (±3s)`);
+        if (!filtered.length) { if (DEBUG) warn(`[spotifyToYouTubeId] filtered empty`); console.error(`[spotifyToYouTubeId] failed: no candidates matched duration`); return undefined; }
+
+        // ---------- 6) スコア降順で先頭 ----------
+        filtered.sort((a, b) => (scoreMapJP.get(b.videoId) || 0) - (scoreMapJP.get(a.videoId) || 0));
+
+        // ログ（Appleと同等の粒度）
+        if (DEBUG) {
+        try {
+            const top5 = filtered.slice(0, 5).map(v => {
+                const base = scoreMapJP.get(v.videoId) || 0;
+                const diff = Math.abs((v.seconds ?? 0) * 1000 - durationMs);
+                return `${v.title ?? ""} (${v.videoId})  score:${base}  diff:${diff}ms`;
+            }).join("\n");
+            console.log(`[spotifyToYouTubeId] Track:${trackId}\nJPQuery: ${jpQuery}\nENQuery: ${enQuery}\nTop5:\n${top5}`);
+        } catch { /* noop */ }
+        }
+
+        const took = Date.now() - t0;
+        info(`[spotifyToYouTubeId] selected:`, filtered[0]?.videoId, `took=${took}ms`);
+        return filtered[0]?.videoId;
+    }
+    async appleMusicToYouTubeId(appleUrlOrId: string): Promise<string | undefined> {
+        const DEBUG_APPLE = process.env.DEBUG_APPLE === '1';
+        const infoA = (...a: any[]) => { if (DEBUG_APPLE) console.log(...a); };
+        const warnA = (...a: any[]) => { if (DEBUG_APPLE) console.warn(...a); };
+        // --- 1) Apple Music から日本語/英語メタデータ取得（JP/US を利用） ---
+        const extractTrackId = (s: string): string | undefined => {
+            try {
+                const u = new URL(s);
+                const i = u.searchParams.get("i");
+                if (i && /^\d+$/.test(i)) return i;
+                const nums = u.pathname.split("/").filter(Boolean).filter(x => /^\d+$/.test(x));
+                if (nums.length) return nums[nums.length - 1];
+                return undefined;
+            } catch {
+                return /^\d+$/.test(s) ? s : undefined;
+            }
+        };
+
+        const trackId = extractTrackId(appleUrlOrId);
+        if (!trackId) { console.error(`[appleMusicToYouTubeId] failed: trackId not found`); return undefined; }
+
+        const fetchLookup = async (country: string) => {
+            const url = `https://itunes.apple.com/lookup?id=${trackId}&entity=song&country=${country}`;
+            const res = await fetch(url);
+            if (!res.ok) return undefined;
+            const data = await res.json().catch(() => undefined);
+            const items = Array.isArray(data?.results) ? data.results : [];
+            return items.find((r: any) => r.kind === "song") || items[0];
+        };
+
+        const jpMeta = await fetchLookup("jp");
+        const usMeta = await fetchLookup("us");
+        if (!jpMeta && !usMeta) { console.error(`[appleMusicToYouTubeId] failed: lookup metadata not found`); return undefined; }
+
+        // 日本語メタ（必須: タイトル/アーティスト/アルバム、長さms）
+        const jpTitle: string | undefined = jpMeta?.trackName;
+        const jpArtist: string | undefined = jpMeta?.artistName;
+        const jpAlbum: string | undefined = jpMeta?.collectionName;
+        const jpDurationMs: number | undefined = jpMeta?.trackTimeMillis;
+
+        // 英語メタ（USから）
+        const enTitle: string | undefined = usMeta?.trackName || jpTitle;
+        const enArtist: string | undefined = usMeta?.artistName || jpArtist;
+        const enAlbum: string | undefined = usMeta?.collectionName || jpAlbum;
+
+        if (!jpTitle || !jpArtist) { console.error(`[appleMusicToYouTubeId] failed: missing title/artist`); return undefined; }
+        if (!jpDurationMs) { console.error(`[appleMusicToYouTubeId] failed: missing duration`); return undefined; } // 長さ必須（仕様どおり日本語メタの長さ基準）
+
+        // --- 2) クエリ生成（ハイフンのみ除去） ---
+        const buildQuery = (title?: string, artist?: string, album?: string) => {
+            const raw = [title, artist, album].filter(Boolean).join(" ");
+            // 当面はハイフンのみ除去（他は触らない）
+            return raw.replace(/-/g, " ").trim();
+        };
+        const jpQuery = buildQuery(jpTitle, jpArtist, jpAlbum);
+        const enQuery = buildQuery(enTitle, enArtist, enAlbum);
+
+        // --- 3) YouTube 検索（youtubei と yts の両方で試す） ---
+        type YtItem = { videoId: string; title?: string; seconds?: number; channelTitle?: string; };
+
+        const searchYoutubei = async (q: string): Promise<YtItem[]> => {
+            try {
+                const yt = await youtubei.Innertube.create({ lang: "ja", location: "JP" } as any);
+                const r: any = await (yt as any).search(q);
+
+                const items: any[] =
+                    (Array.isArray(r?.videos) ? r.videos : []) ||
+                    (Array.isArray(r?.results) ? r.results : []);
+
+                const mapped: YtItem[] = (items || [])
+                    .map((it) => {
+                        const id = it.id || it.videoId || it?.endpoint?.payload?.videoId;
+                        const title =
+                            it.title?.text ?? it.title ?? it?.headline?.text;
+                        const seconds =
+                            typeof it.duration === "number"
+                                ? it.duration
+                                : it.duration?.seconds ?? it.duration_seconds;
+                        const channelTitle =
+                            it.author?.name ||
+                            it.channel?.name ||
+                            it.owner?.name ||
+                            it.short_byline_text?.text ||
+                            it.owner_text?.text ||
+                            "";
+
+                        return id
+                            ? {
+                                videoId: String(id),
+                                title,
+                                seconds: typeof seconds === "number" ? seconds : undefined,
+                                channelTitle, // ← 追加
+                            }
+                            : undefined;
+                    })
+                    .filter(Boolean) as YtItem[];
+
+                return mapped;
+            } catch {
+                return [];
+            }
+        };
+
+        const searchYts = async (q: string): Promise<YtItem[]> => {
+            try {
+                const r: any = await yts(q);
+                const vids: any[] = Array.isArray(r?.videos) ? r.videos : [];
+                return vids.map(v => ({
+                    videoId: v.videoId,
+                    title: v.title,
+                    seconds: typeof v.seconds === "number" ? v.seconds : undefined
+                }));
+            } catch {
+                return [];
+            }
+        };
+
+        const mergeUnique = (a: YtItem[], b: YtItem[]) => {
+            const out: YtItem[] = [];
+            const seen = new Set<string>();
+            for (const it of [...a, ...b]) {
+                if (!it || !it.videoId) continue;
+                if (!seen.has(it.videoId)) {
+                    seen.add(it.videoId);
+                    out.push(it);
+                }
+            }
+            return out;
+        };
+
+        const jpList = mergeUnique(await searchYoutubei(jpQuery), await searchYts(jpQuery));
+        const enList = mergeUnique(await searchYoutubei(enQuery), await searchYts(enQuery));
+
+        // --- 4) スコア付け ---
+        // スコア = 配列長 - 要素番号 + もしユーザー名がアーティスト名と同じなら50、でないと0
+        const scoreMapJP = new Map<string, number>();
+        for (let i = 0; i < jpList.length; i++) {
+            scoreMapJP.set(jpList[i].videoId, jpList.length - i + ((() => {
+                const splitedArtistName = [...jpArtist.split(" "), ...(enArtist?.split(" ") || [])];
+                let matched = 0;
+                const chname = jpList[i].channelTitle;
+                splitedArtistName.forEach(name => {
+                    if (name.length > 1 && chname && chname.match(name)) matched += 10;
+                });
+                return matched;
+            })()));
+        }
+        const scoreMapEN = new Map<string, number>();
+        for (let i = 0; i < enList.length; i++) {
+            scoreMapEN.set(enList[i].videoId, enList.length - i + ((() => {
+                const splitedArtistName = [...jpArtist.split(" "), ...(enArtist?.split(" ") || [])];
+                let matched = 0;
+                const chname = enList[i].channelTitle;
+                splitedArtistName.forEach(name => {
+                    if (name.length > 1 && chname && chname.match(name)) matched += 10;
+                });
+                return matched;
+            })()));
+        }
+
+        // 日本語と英語の結果を照合し、同一 videoId があれば EN のスコアを日本語側に加算
+        for (const vid of scoreMapJP.keys()) {
+            const enScore = scoreMapEN.get(vid);
+            if (enScore) {
+                scoreMapJP.set(vid, (scoreMapJP.get(vid) || 0) + enScore);
+            }
+        }
+        // 以後は日本語結果のみ使用
+
+        // --- 5) 日本語結果を日本語メタの長さでフィルタ（±3秒未満のみ残す） ---
+        const filteredJP = jpList.filter(it => {
+            if (typeof it.seconds !== "number") return false;
+            const diffMs = Math.abs(it.seconds * 1000 - jpDurationMs);
+            return diffMs < 3000;
+        });
+
+        if (filteredJP.length === 0) { console.error(`[appleMusicToYouTubeId] failed: no candidates matched duration`); return undefined; }
+
+        // --- 6) スコアで降順ソートし、先頭を採用 ---
+        filteredJP.sort((a, b) => {
+            const sa = scoreMapJP.get(a.videoId) || 0;
+            const sb = scoreMapJP.get(b.videoId) || 0;
+            return sb - sa;
+        });
+
+        const info: {
+            seconds?: number;
+            title?: string;
+            videoId?: string;
+            score?: number;
+        }[] = [];
+        filteredJP.forEach(a => {
+            const score = scoreMapJP.get(a.videoId) || 0;
+            info.push({
+                ...a,
+                score
+            });
+        })
+
+        if (DEBUG_APPLE) console.log("実行結果は次です。クエリ: ", jpQuery, enQuery, "リスト: ", info);
+
+        return filteredJP[0]?.videoId;
+    }
     async cacheGet(data: Playlist): Promise<CacheGetReturn | undefined> {
         if (data.type === "videoId") {
             const body = await this.youtubeInfoGet(data.body);
@@ -979,6 +1746,7 @@ export class VideoMetaCache {
         }
     }
 }
+
 export type CacheGetReturn = {
     type: "videoId";
     body: yts.VideoMetadataResult | undefined;
