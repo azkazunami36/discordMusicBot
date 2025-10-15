@@ -27,7 +27,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const playlist = await variableExistCheck.playlist();
         if (!playlist) return;
         serverData.discord.calledChannel = interaction.channelId;
-        const metaEmbed = await videoInfoEmbedGet(playlist[0], "再生準備中...\n0%`" + progressBar(0, 35) + "`");
+        const metaEmbed = await videoInfoEmbedGet([playlist[0]], "再生準備中...\n0%`" + progressBar(0, 35) + "`", interaction.client);
         await interaction.editReply({ embeds: [metaEmbed] });
         const envData = new EnvData(guildData.guildId);
         let statusTemp: {

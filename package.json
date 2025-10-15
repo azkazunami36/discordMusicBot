@@ -11,6 +11,7 @@
     "@types/fluent-ffmpeg": "^2.1.27",
     "@types/node": "^24.7.2",
     "@types/yt-search": "^2.10.3",
+    "chrome-cookies-secure": "^3.0.0",
     "discord.js": "^14.23.2",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
@@ -19,7 +20,9 @@
     "googleapis": "^162.0.0",
     "log4js": "^6.9.1",
     "twitter-api-v2": "^1.27.0",
+    "youtubei.js": "^16.0.0",
     "yt-search": "^2.13.1",
-    "ytdl-core": "^4.11.5"
+    "ytdl-core": "^4.11.5",
+    "ytpl": "^2.3.0"
   }
 }

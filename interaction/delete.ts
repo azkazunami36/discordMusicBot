@@ -31,7 +31,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             envData.playlistSave(playlist);
             const videoMetaCache = new VideoMetaCache();
             const meta = await videoMetaCache.cacheGet(playlistData);
-            await interaction.editReply({ embeds: [await videoInfoEmbedGet(playlistData, "曲を削除しました。")] });
+            await interaction.editReply({ embeds: [await videoInfoEmbedGet([playlistData], "曲を削除しました。", interaction.client)] });
         } else {
             await interaction.editReply({ embeds: [messageEmbedGet("番号が無効です。`/status`を利用してどの番号にどの曲が入っているかを確認してください。", interaction.client)] });
         }

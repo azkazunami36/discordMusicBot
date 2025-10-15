@@ -20,6 +20,9 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
+        // vcidは使わないが、VCに参加していないことをはっきりするために用意。
+        const vchannelId = await variableExistCheck.voiceChannelId();
+        if (!vchannelId) return;
         if (await variableExistCheck.playlistIsEmpty()) return;
         const envData = new EnvData(guildData.guildId);
         const playlist = envData.playlistGet();
@@ -31,7 +34,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             if (startPlaylistData) playlist.push(startPlaylistData);
         }
         envData.playlistSave(playlist);
-        const metaEmbed = await videoInfoEmbedGet(playlist[0], "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`");
+        const metaEmbed = await videoInfoEmbedGet([playlist[0]], "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`", interaction.client);
         await interaction.editReply({ embeds: [metaEmbed] });
         let statusTemp: {
             status: "loading" | "downloading" | "formatchoosing" | "converting" | "done",

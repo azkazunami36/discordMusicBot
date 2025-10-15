@@ -77,7 +77,7 @@ player.on("playAutoEnd", async (guildId) => {
         const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
         try {
             if (channel && channel.isTextBased()) {
-                const metaEmbed = await videoInfoEmbedGet(playlistData, "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`");
+                const metaEmbed = await videoInfoEmbedGet([playlistData], "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`", client);
                 const message = await channel.send({ embeds: [metaEmbed] });
                 try {
                     let statusTemp: {
