@@ -1,33 +1,11 @@
 import fs from "fs";
 import yts from "yt-search";
 import { NicoSnapshotItem, searchNicoVideo } from "./niconico.js";
+// ↑ 依存はそのまま。以下、挙動改善・バグ修正の差分のみ
 import { google, youtube_v3 } from "googleapis";
 import { searchTweet, XPostInfo } from "./twitter.js";
 import * as youtubei from "youtubei.js";
 import { getCookiesPromised } from "chrome-cookies-secure";
-
-// --- Shared lightweight fetch logger ---
-async function fetchWithLog(url: string, init?: any): Promise<Response> {
-    const method = (init?.method || 'GET').toUpperCase();
-    try {
-        const res = await fetch(url, init);
-        const loc = res.headers?.get?.('location');
-        const ct = res.headers?.get?.('content-type');
-        const line = `[HTTP] ${method} ${res.status} ${res.statusText} - ${url}`;
-        console.log(line);
-        if (res.status >= 300 && res.status < 400 && loc) {
-            console.log(`[HTTP] Redirect: ${loc}`);
-        }
-        if (res.status >= 400) {
-            if (ct) console.log(`[HTTP] Content-Type: ${ct}`);
-            if (loc) console.log(`[HTTP] Location: ${loc}`);
-        }
-        return res;
-    } catch (e: any) {
-        console.log(`[HTTP] ${method} FETCH ERROR - ${url} ${e?.message || e}`);
-        throw e;
-    }
-}
 
 export interface Playlist {
     type: "videoId" | "originalFileId" | "nicovideoId" | "twitterId";
@@ -295,7 +273,7 @@ export class VideoMetaCache {
                     else url = `https://www.youtube.com/${url}`;
                 }
                 url = url.replace(/^https?:\/\/youtube\.com\//i, 'https://www.youtube.com/');
-                const res = await fetchWithLog(url, {
+                const res = await fetch(url, {
                     headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ja,en;q=0.8' },
                     redirect: 'follow' as any
                 });
@@ -324,7 +302,7 @@ export class VideoMetaCache {
         async function resolveChannelSnippetFromPageById(id: string): Promise<{ title?: string; thumbnail?: string; customUrl?: string } | undefined> {
             try {
                 const url = `https://www.youtube.com/channel/${id}`;
-                const res = await fetchWithLog(url, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ja,en;q=0.8' } });
+                const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ja,en;q=0.8' } });
                 if (!res.ok) return undefined;
                 const html = await res.text();
                 const mTitle = html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["'][^>]*>/i) || html.match(/\"title\"\s*:\s*\"([^\"]+)\"/);
@@ -1046,10 +1024,19 @@ export class VideoMetaCache {
         return candidates[0]; // まずは最上位を返す（クライアント側で順次フォールバックする設計にしておくのが実運用◎）
     }
     async spotifyToYouTubeId(spotifyUrlOrId: string): Promise<string | undefined> {
+        // --- scoped log collector (only prints on final failure) ---
+        const log: { type: "info" | "warn" | "error"; body: any[] }[] = [];
+        const push = (type: "info" | "warn" | "error", ...body: any[]) => { log.push({ type, body }); };
+        const info = (...a: any[]) => push("info", ...a);
+        const warn = (...a: any[]) => push("warn", ...a);
+        const err = (...a: any[]) => push("error", ...a);
+        const fail = (message: string) => {
+            err(message);
+            // 出力はここで一回だけ
+            console.error(`[spotifyToYouTubeId] 検索に失敗しました。詳細:`, log);
+            return undefined;
+        };
         const t0 = Date.now();
-        const DEBUG = process.env.DEBUG_SPOTIFY === '1';
-        const info = (...a: any[]) => { if (DEBUG) console.log(...a); };
-        const warn = (...a: any[]) => { if (DEBUG) console.warn(...a); };
         info(`[spotifyToYouTubeId] start:`, spotifyUrlOrId);
         // ---------- 0) ID抽出 & URL正規化（/intl-xx/ を吸収） ----------
         const extractTrackId = (s: string): string | undefined => {
@@ -1069,7 +1056,7 @@ export class VideoMetaCache {
             }
         };
         const trackId = extractTrackId(spotifyUrlOrId);
-        if (!trackId) { console.error(`[spotifyToYouTubeId] failed: trackId not found`); return undefined; }
+        if (!trackId) { return fail('trackId not found'); }
         info(`[spotifyToYouTubeId] trackId:`, trackId);
 
         const canonical = (locale: "ja" | "en") =>
@@ -1080,7 +1067,7 @@ export class VideoMetaCache {
 
         const fetchText = async (url: string, acceptLang: string) => {
             try {
-                const r = await fetchWithLog(url, { headers: { "User-Agent": UA, "Accept-Language": acceptLang }, __silent: !DEBUG } as any);
+                const r = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": acceptLang } as any });
                 if (!r || !r.ok) {
                     warn(`[spotifyToYouTubeId] fetchText not ok: ${url}`);
                     return undefined;
@@ -1098,7 +1085,7 @@ export class VideoMetaCache {
         const fetchOEmbed = async (url: string) => {
             const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`;
             try {
-                const r = await fetchWithLog(oembedUrl, { headers: { "User-Agent": UA }, __silent: !DEBUG } as any);
+                const r = await fetch(oembedUrl, { headers: { "User-Agent": UA } as any });
                 if (!r || !r.ok) {
                     warn(`[spotifyToYouTubeId] oEmbed not ok: ${oembedUrl}`);
                     return undefined;
@@ -1255,7 +1242,7 @@ export class VideoMetaCache {
         let embedHtml: string | undefined;
         if (iframeUrl) {
             try {
-                const r = await fetchWithLog(iframeUrl, { headers: { "User-Agent": UA }, __silent: !DEBUG } as any);
+                const r = await fetch(iframeUrl, { headers: { "User-Agent": UA } as any });
                 if (r.ok) {
                     embedHtml = await r.text().catch(() => undefined);
                 } else {
@@ -1269,51 +1256,49 @@ export class VideoMetaCache {
         }
 
         // ----- RAW LOGGING (Spotify only) -----
-        if (DEBUG) {
         try {
             // Title tags
             const titleJP = jpHtml?.match(/<title>([^<]+)<\/title>/i)?.[1];
             const titleEN = enHtml?.match(/<title>([^<]+)<\/title>/i)?.[1];
-            console.log("[spotifyToYouTubeId][raw] <title> JP:", titleJP);
-            console.log("[spotifyToYouTubeId][raw] <title> EN:", titleEN);
+            info("[spotifyToYouTubeId][raw] <title> JP:", titleJP);
+            info("[spotifyToYouTubeId][raw] <title> EN:", titleEN);
 
             // __NEXT_DATA__ JSON
             const nextJPMatch = jpHtml?.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
             const nextENMatch = enHtml?.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
             const nextJP = nextJPMatch?.[1];
             const nextEN = nextENMatch?.[1];
-            console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ JP present:", !!nextJP, "len:", nextJP?.length);
-            if (nextJP) console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ JP JSON:", nextJP);
-            console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ EN present:", !!nextEN, "len:", nextEN?.length);
-            if (nextEN) console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ EN JSON:", nextEN);
+            info("[spotifyToYouTubeId][raw] __NEXT_DATA__ JP present:", !!nextJP, "len:", nextJP?.length);
+            if (nextJP) info("[spotifyToYouTubeId][raw] __NEXT_DATA__ JP JSON:", nextJP);
+            info("[spotifyToYouTubeId][raw] __NEXT_DATA__ EN present:", !!nextEN, "len:", nextEN?.length);
+            if (nextEN) info("[spotifyToYouTubeId][raw] __NEXT_DATA__ EN JSON:", nextEN);
 
             // ld+json blocks
             const ldJPMatches = [...(jpHtml?.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g) || [])].map(m => m[1]);
             const ldENMatches = [...(enHtml?.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g) || [])].map(m => m[1]);
-            console.log("[spotifyToYouTubeId][raw] ld+json JP count:", ldJPMatches.length);
-            ldJPMatches.forEach((j, idx) => console.log(`[spotifyToYouTubeId][raw] ld+json JP[${idx}]:`, j));
-            console.log("[spotifyToYouTubeId][raw] ld+json EN count:", ldENMatches.length);
-            ldENMatches.forEach((j, idx) => console.log(`[spotifyToYouTubeId][raw] ld+json EN[${idx}]:`, j));
+            info("[spotifyToYouTubeId][raw] ld+json JP count:", ldJPMatches.length);
+            ldJPMatches.forEach((j, idx) => info(`[spotifyToYouTubeId][raw] ld+json JP[${idx}]:`, j));
+            info("[spotifyToYouTubeId][raw] ld+json EN count:", ldENMatches.length);
+            ldENMatches.forEach((j, idx) => info(`[spotifyToYouTubeId][raw] ld+json EN[${idx}]:`, j));
 
             // EMBED page quick probes
             const titleEM = embedHtml?.match(/&lt;title&gt;([^&]+)&lt;\/title&gt;|<title>([^<]+)<\/title>/i);
-            console.log("[spotifyToYouTubeId][raw] <title> EMBED:", titleEM ? (titleEM[1] || titleEM[2]) : undefined);
+            info("[spotifyToYouTubeId][raw] <title> EMBED:", titleEM ? (titleEM[1] || titleEM[2]) : undefined);
 
             const nextEMMatch = embedHtml?.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
             const nextEM = nextEMMatch?.[1];
-            console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ EMBED present:", !!nextEM, "len:", nextEM?.length);
-            if (nextEM) console.log("[spotifyToYouTubeId][raw] __NEXT_DATA__ EMBED JSON:", nextEM);
+            info("[spotifyToYouTubeId][raw] __NEXT_DATA__ EMBED present:", !!nextEM, "len:", nextEM?.length);
+            if (nextEM) info("[spotifyToYouTubeId][raw] __NEXT_DATA__ EMBED JSON:", nextEM);
 
             const ldEMMatches = [...(embedHtml?.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g) || [])].map(m => m[1]);
-            console.log("[spotifyToYouTubeId][raw] ld+json EMBED count:", ldEMMatches.length);
-            ldEMMatches.forEach((j, idx) => console.log(`[spotifyToYouTubeId][raw] ld+json EMBED[${idx}]:`, j));
+            info("[spotifyToYouTubeId][raw] ld+json EMBED count:", ldEMMatches.length);
+            ldEMMatches.forEach((j, idx) => info(`[spotifyToYouTubeId][raw] ld+json EMBED[${idx}]:`, j));
 
             // oEmbed JSON full
-            console.log("[spotifyToYouTubeId][raw] oEmbed JP:", jpEmbed);
-            console.log("[spotifyToYouTubeId][raw] oEmbed EN:", enEmbed);
+            info("[spotifyToYouTubeId][raw] oEmbed JP:", jpEmbed);
+            info("[spotifyToYouTubeId][raw] oEmbed EN:", enEmbed);
         } catch (e) {
-            console.log("[spotifyToYouTubeId][raw] logging error:", (e as any)?.message || e);
-        }
+            info("[spotifyToYouTubeId][raw] logging error:", (e as any)?.message || e);
         }
         // ----- RAW LOGGING END -----
 
@@ -1400,9 +1385,8 @@ export class VideoMetaCache {
         const albumEN = en.album || jp.album;
 
         if (!titleJP || !artistJP || !durationMs) {
-            if (DEBUG) warn(`[spotifyToYouTubeId] insufficient meta:`, { titleJP, artistJP, durationMs, note: 'checked nextData/ld+json/oEmbed(author_name)/<title>/duration sniff' });
-            console.error(`[spotifyToYouTubeId] failed: insufficient metadata`);
-            return undefined;
+            warn(`[spotifyToYouTubeId] insufficient meta:`, { titleJP, artistJP, durationMs, note: 'checked nextData/ld+json/oEmbed(author_name)/<title>/duration sniff' });
+            return fail('insufficient metadata');
         }
 
         // ---------- 2) クエリ生成（ハイフンのみ除去：仕様準拠） ----------
@@ -1419,8 +1403,8 @@ export class VideoMetaCache {
 
         const searchYoutubei = async (q: string): Promise<YtItem[]> => {
             try {
-                const yt = await youtubei.Innertube.create({ lang: "ja", location: "JP" } as any);
-                const r: any = await (yt as any).search(q);
+                const yt = await (youtubei.Innertube.create({ lang: "ja", location: "JP" } as any).catch(e => { err("youtubei.create", e); }));
+                const r = await (yt?.search(q).catch(e => { err("youtubei.search", e); }));
                 const items: any[] = (Array.isArray(r?.videos) ? r.videos : []) || (Array.isArray(r?.results) ? r.results : []);
                 return (items || []).map(it => {
                     const id = it.id || it.videoId || it?.endpoint?.payload?.videoId;
@@ -1444,7 +1428,7 @@ export class VideoMetaCache {
 
         const searchYts = async (q: string): Promise<YtItem[]> => {
             try {
-                const r: any = await yts(q);
+                const r: any = await yts(q).catch(e => { err("searchYtsError:", e); });
                 const vids: any[] = Array.isArray(r?.videos) ? r.videos : [];
                 return vids.map(v => ({
                     videoId: v.videoId,
@@ -1477,44 +1461,74 @@ export class VideoMetaCache {
 
         // ---------- 4) スコア付け（配列長 - 要素番号）＋ JP/EN 重複加算 ----------
         const scoreMapJP = new Map<string, number>();
-        for (let i = 0; i < jpList.length; i++) scoreMapJP.set(jpList[i].videoId, jpList.length - i);
+        for (let i = 0; i < jpList.length; i++) scoreMapJP.set(jpList[i].videoId, jpList.length - i + ((() => {
+            const splitedArtistName = [...artistJP.replace(/[\/:;¥*]/g, "").split(" "), ...(artistEN?.replace(/[\/:;¥*]/g, "").split(" ") || [])];
+            let matched = 0;
+            const chname = jpList[i].channelTitle;
+            splitedArtistName.forEach(name => {
+                if (name.length > 1 && chname && chname.includes(name)) matched += 10;
+            });
+            return matched;
+        })()));
 
         const scoreMapEN = new Map<string, number>();
-        for (let i = 0; i < enList.length; i++) scoreMapEN.set(enList[i].videoId, enList.length - i);
+        for (let i = 0; i < enList.length; i++) scoreMapEN.set(enList[i].videoId, enList.length - i + ((() => {
+            const splitedArtistName = [...artistJP.replace(/[\/:;¥*]/g, "").split(" "), ...(artistEN?.replace(/[\/:;¥*]/g, "").split(" ") || [])];
+            let matched = 0;
+            const chname = enList[i].channelTitle;
+            splitedArtistName.forEach(name => {
+                if (name.length > 1 && chname && chname.includes(name)) matched += 10;
+            });
+            return matched;
+        })()));
 
         for (const vid of scoreMapJP.keys()) {
             const enScore = scoreMapEN.get(vid);
             if (enScore) scoreMapJP.set(vid, (scoreMapJP.get(vid) || 0) + enScore);
         }
 
-        // ---------- 5) 長さフィルタ（±3秒未満のみ） ----------
-        const filtered = jpList.filter(it => typeof it.seconds === "number" && Math.abs(it.seconds! * 1000 - durationMs) < 3000);
-        info(`[spotifyToYouTubeId] durationMs=${durationMs} filtered=${filtered.length} (±3s)`);
-        if (!filtered.length) { if (DEBUG) warn(`[spotifyToYouTubeId] filtered empty`); console.error(`[spotifyToYouTubeId] failed: no candidates matched duration`); return undefined; }
+        // ---------- 5) 長さフィルタ（±6秒未満のみ） ----------
+        const filtered = jpList.filter(it => typeof it.seconds === "number" && Math.abs(it.seconds! * 1000 - durationMs) < 6000);
+        info(`[spotifyToYouTubeId] durationMs=${durationMs} filtered=${filtered.length} (±6s)`);
+        if (!filtered.length) { warn(`[spotifyToYouTubeId] filtered empty`); return fail('no candidates matched duration'); }
 
         // ---------- 6) スコア降順で先頭 ----------
         filtered.sort((a, b) => (scoreMapJP.get(b.videoId) || 0) - (scoreMapJP.get(a.videoId) || 0));
 
+        // Safety check for empty or missing top element
+        if (!filtered.length || !filtered[0]?.videoId) {
+            return fail('no selected candidate');
+        }
+
         // ログ（Appleと同等の粒度）
-        if (DEBUG) {
         try {
             const top5 = filtered.slice(0, 5).map(v => {
                 const base = scoreMapJP.get(v.videoId) || 0;
                 const diff = Math.abs((v.seconds ?? 0) * 1000 - durationMs);
                 return `${v.title ?? ""} (${v.videoId})  score:${base}  diff:${diff}ms`;
             }).join("\n");
-            console.log(`[spotifyToYouTubeId] Track:${trackId}\nJPQuery: ${jpQuery}\nENQuery: ${enQuery}\nTop5:\n${top5}`);
+            info(`[spotifyToYouTubeId] Track:${trackId}\nJPQuery: ${jpQuery}\nENQuery: ${enQuery}\nTop5:\n${top5}`);
         } catch { /* noop */ }
-        }
+
 
         const took = Date.now() - t0;
         info(`[spotifyToYouTubeId] selected:`, filtered[0]?.videoId, `took=${took}ms`);
-        return filtered[0]?.videoId;
+        return filtered[0].videoId;
     }
     async appleMusicToYouTubeId(appleUrlOrId: string): Promise<string | undefined> {
-        const DEBUG_APPLE = process.env.DEBUG_APPLE === '1';
-        const infoA = (...a: any[]) => { if (DEBUG_APPLE) console.log(...a); };
-        const warnA = (...a: any[]) => { if (DEBUG_APPLE) console.warn(...a); };
+        // --- scoped log collector (only prints on final failure) ---
+        const log: { type: "info" | "warn" | "error"; body: any[] }[] = [];
+        const push = (type: "info" | "warn" | "error", ...body: any[]) => { log.push({ type, body }); };
+        const info = (...a: any[]) => push("info", ...a);
+        const warn = (...a: any[]) => push("warn", ...a);
+        const err = (...a: any[]) => push("error", ...a);
+        const fail = (message: string) => {
+            err(message);
+            // 出力はここで一回だけ
+            console.error(`[appleMusicToYouTubeId] 検索に失敗しました。詳細:`, log);
+            return undefined;
+        };
+        // const DEBUG_APPLE = process.env.DEBUG_APPLE === '1';
         // --- 1) Apple Music から日本語/英語メタデータ取得（JP/US を利用） ---
         const extractTrackId = (s: string): string | undefined => {
             try {
@@ -1530,7 +1544,7 @@ export class VideoMetaCache {
         };
 
         const trackId = extractTrackId(appleUrlOrId);
-        if (!trackId) { console.error(`[appleMusicToYouTubeId] failed: trackId not found`); return undefined; }
+        if (!trackId) { return fail('trackId not found'); }
 
         const fetchLookup = async (country: string) => {
             const url = `https://itunes.apple.com/lookup?id=${trackId}&entity=song&country=${country}`;
@@ -1543,7 +1557,7 @@ export class VideoMetaCache {
 
         const jpMeta = await fetchLookup("jp");
         const usMeta = await fetchLookup("us");
-        if (!jpMeta && !usMeta) { console.error(`[appleMusicToYouTubeId] failed: lookup metadata not found`); return undefined; }
+        if (!jpMeta && !usMeta) { return fail('lookup metadata not found'); }
 
         // 日本語メタ（必須: タイトル/アーティスト/アルバム、長さms）
         const jpTitle: string | undefined = jpMeta?.trackName;
@@ -1556,8 +1570,8 @@ export class VideoMetaCache {
         const enArtist: string | undefined = usMeta?.artistName || jpArtist;
         const enAlbum: string | undefined = usMeta?.collectionName || jpAlbum;
 
-        if (!jpTitle || !jpArtist) { console.error(`[appleMusicToYouTubeId] failed: missing title/artist`); return undefined; }
-        if (!jpDurationMs) { console.error(`[appleMusicToYouTubeId] failed: missing duration`); return undefined; } // 長さ必須（仕様どおり日本語メタの長さ基準）
+        if (!jpTitle || !jpArtist) { return fail('missing title/artist'); }
+        if (!jpDurationMs) { return fail('missing duration'); } // 長さ必須（仕様どおり日本語メタの長さ基準）
 
         // --- 2) クエリ生成（ハイフンのみ除去） ---
         const buildQuery = (title?: string, artist?: string, album?: string) => {
@@ -1573,8 +1587,8 @@ export class VideoMetaCache {
 
         const searchYoutubei = async (q: string): Promise<YtItem[]> => {
             try {
-                const yt = await youtubei.Innertube.create({ lang: "ja", location: "JP" } as any);
-                const r: any = await (yt as any).search(q);
+                const yt = await (youtubei.Innertube.create({ lang: "ja", location: "JP" } as any).catch(e => { err("youtubei.create", e); }));
+                const r = await (yt?.search(q).catch(e => { err("youtubei.search", e); }));
 
                 const items: any[] =
                     (Array.isArray(r?.videos) ? r.videos : []) ||
@@ -1616,7 +1630,7 @@ export class VideoMetaCache {
 
         const searchYts = async (q: string): Promise<YtItem[]> => {
             try {
-                const r: any = await yts(q);
+                const r: any = await yts(q).catch(e => { err("searchYtsError:", e); });
                 const vids: any[] = Array.isArray(r?.videos) ? r.videos : [];
                 return vids.map(v => ({
                     videoId: v.videoId,
@@ -1649,11 +1663,11 @@ export class VideoMetaCache {
         const scoreMapJP = new Map<string, number>();
         for (let i = 0; i < jpList.length; i++) {
             scoreMapJP.set(jpList[i].videoId, jpList.length - i + ((() => {
-                const splitedArtistName = [...jpArtist.split(" "), ...(enArtist?.split(" ") || [])];
+                const splitedArtistName = [...jpArtist.replace(/[\/:;¥*]/g, "").split(" "), ...(enArtist?.replace(/[\/:;¥*]/g, "").split(" ") || [])];
                 let matched = 0;
                 const chname = jpList[i].channelTitle;
                 splitedArtistName.forEach(name => {
-                    if (name.length > 1 && chname && chname.match(name)) matched += 10;
+                    if (name.length > 1 && chname && chname.includes(name)) matched += 10;
                 });
                 return matched;
             })()));
@@ -1661,11 +1675,11 @@ export class VideoMetaCache {
         const scoreMapEN = new Map<string, number>();
         for (let i = 0; i < enList.length; i++) {
             scoreMapEN.set(enList[i].videoId, enList.length - i + ((() => {
-                const splitedArtistName = [...jpArtist.split(" "), ...(enArtist?.split(" ") || [])];
+                const splitedArtistName = [...jpArtist.replace(/[\/:;¥*]/g, "").split(" "), ...(enArtist?.replace(/[\/:;¥*]/g, "").split(" ") || [])];
                 let matched = 0;
                 const chname = enList[i].channelTitle;
                 splitedArtistName.forEach(name => {
-                    if (name.length > 1 && chname && chname.match(name)) matched += 10;
+                    if (name.length > 1 && chname && chname.includes(name)) matched += 10;
                 });
                 return matched;
             })()));
@@ -1680,14 +1694,16 @@ export class VideoMetaCache {
         }
         // 以後は日本語結果のみ使用
 
-        // --- 5) 日本語結果を日本語メタの長さでフィルタ（±3秒未満のみ残す） ---
+        // --- 5) 日本語結果を日本語メタの長さでフィルタ（±6秒未満のみ残す） ---
         const filteredJP = jpList.filter(it => {
             if (typeof it.seconds !== "number") return false;
             const diffMs = Math.abs(it.seconds * 1000 - jpDurationMs);
-            return diffMs < 3000;
+            return diffMs < 6000;
         });
 
-        if (filteredJP.length === 0) { console.error(`[appleMusicToYouTubeId] failed: no candidates matched duration`); return undefined; }
+        if (filteredJP.length === 0) {
+            return fail('no candidates matched duration');
+        }
 
         // --- 6) スコアで降順ソートし、先頭を採用 ---
         filteredJP.sort((a, b) => {
@@ -1696,7 +1712,7 @@ export class VideoMetaCache {
             return sb - sa;
         });
 
-        const info: {
+        const infoData: {
             seconds?: number;
             title?: string;
             videoId?: string;
@@ -1704,15 +1720,20 @@ export class VideoMetaCache {
         }[] = [];
         filteredJP.forEach(a => {
             const score = scoreMapJP.get(a.videoId) || 0;
-            info.push({
+            infoData.push({
                 ...a,
                 score
             });
         })
 
-        if (DEBUG_APPLE) console.log("実行結果は次です。クエリ: ", jpQuery, enQuery, "リスト: ", info);
+        info("実行結果（appleMusicToYouTubeId）:", { jpQuery, enQuery, list: infoData });
 
-        return filteredJP[0]?.videoId;
+        // Safety check for empty or missing top element
+        if (!filteredJP.length || !filteredJP[0]?.videoId) {
+            return fail('no selected candidate');
+        }
+
+        return filteredJP[0].videoId;
     }
     async cacheGet(data: Playlist): Promise<CacheGetReturn | undefined> {
         if (data.type === "videoId") {

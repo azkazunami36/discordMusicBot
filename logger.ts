@@ -75,7 +75,11 @@ if (!g.__CONSOLE_BRIDGED__) {
   };
 
   console.warn = (...args: any[]) => {
-    logger.warn(toLine(args));
+    const line = toLine(args);
+    if (line.startsWith("[YOUTUBEJS][Text]: Unable to find matching run for command run")) {
+      return;
+    }
+    logger.warn(line);
   };
 
   console.error = (...args: any[]) => {
