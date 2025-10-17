@@ -71,10 +71,7 @@ export class Player extends EventEmitter {
         this.sourcePathManager = new SourcePathManager();
     }
     /** ファイルパスやメタデータを取得します。undefinedだとファイルが存在しないか正しい内容でないか、壊れたファイルです。 */
-    async #fileMetaGet(source: Playlist, statusCallback: (status: "loading" | "downloading" | "converting" | "formatchoosing" | "done", body: {
-        percent?: number;
-        type?: "niconico" | "youtube" | "twitter";
-    }) => void) {
+    async #fileMetaGet(source: Playlist, statusCallback: (status: "loading" | "queue" | "formatchoosing" | "downloading" | "converting" | "done", percent: number) => void) {
         // 1. 音声ファイルを取得する。
         const filePath = await this.sourcePathManager.getAudioPath(source, statusCallback);
         if (!filePath) return console.warn("Player.fileMetaGet: filePathが取得できませんでした。"); // ファイルが取得できずエラーが起きたときは何もしない。
@@ -393,14 +390,11 @@ export class Player extends EventEmitter {
         voiceVolume?: number;
         /** 音量を決められます。100%にしたいときは100と入力します。0以上であれば無制限です。0以下は自動で補正されます。 */
         volume: number;
-    }, statusCallback?: (status: "loading" | "downloading" | "converting" | "formatchoosing" | "done", body: {
-        percent?: number;
-        type?: "niconico" | "youtube" | "twitter";
-    }) => void) {
+    }, statusCallback?: (status: "loading" | "queue" | "formatchoosing" | "downloading" | "converting" | "done", percent: number) => void) {
         const meta = await this.#fileMetaGet(data.source, statusCallback || (() => { }));
         if (!meta) {
             console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
-            throw new Error("音声ファイルが無効または音声ファイルのダウンロードに失敗しています。このエラーは管理者が気づき次第エラーを特定し修正されます。他の曲をお試しください。")
+            throw new Error("音声データを取得できませんでした。再度試すか、`/delete range:1`で削除し、他の曲を再生してください。")
         }
         const player = await this.#playerGet(data.guildId, data.channelId, data.adapterCreator);
         if (!player) {
@@ -458,10 +452,7 @@ export class Player extends EventEmitter {
         })
     }
     /** 再生するファイルを変更します。FFmpeg依存のため、複雑なコードになっています。 */
-    async sourceSet(guildId: string, source: Playlist, statusCallback?: (status: "loading" | "downloading" | "converting" | "formatchoosing" | "done", body: {
-        percent?: number;
-        type?: "niconico" | "youtube" | "twitter";
-    }) => void) {
+    async sourceSet(guildId: string, source: Playlist, statusCallback?: (status: "loading" | "queue" | "formatchoosing" | "downloading" | "converting" | "done", percent: number) => void) {
         if (!this.status[guildId]) return;
         this.status[guildId].playing = source;
         this.status[guildId].playtimeMargin = 0;

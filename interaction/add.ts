@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
 import ytdl from "ytdl-core";
 import yts from "yt-search";
 
@@ -9,6 +9,7 @@ import { parseNicoVideo, searchNicoVideo } from "../niconico.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
 import { parseTweetId } from "../twitter.js";
 import { fetchPlaylistVideoIdsFromUrl } from "../youtube.js";
+import { sourcePathManager } from "../sourcePathManager.js";
 
 export const command = new SlashCommandBuilder()
     .setName("add")
@@ -51,7 +52,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         let playlistCheckingStatusSendedIs = false;
         const videoMetaCache = new VideoMetaCache();
         let wordCheckProcessed = 0;
-        let sendTime = 0;
+        let sendTime = Date.now();
         for (const word of words) {
             wordCheckProcessed++;
             if (word === "") continue;
@@ -186,9 +187,12 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             const nowTime = Date.now();
             if (nowTime - sendTime > 2000) {
                 sendTime = nowTime;
-                await interaction.editReply({ embeds: [messageEmbedGet("ステップ３/４: 取得した動画の有効性をチェック中...(" + trueCheckProcessed + "/" + words.length + ")", interaction.client)] });
+                await interaction.editReply({ embeds: [messageEmbedGet("ステップ３/４: 取得した動画の有効性をチェック中...(" + trueCheckProcessed + "/" + getContents.length + ")", interaction.client)] });
             }
-            if (await videoMetaCache.cacheGet(playlistData)) truePlaylist.push(playlistData);
+            sourcePathManager.getAudioPath(playlistData).catch(e => console.error("addコマンドで次の動画のダウンロードができませんでした。", playlistData, e))
+            if (await videoMetaCache.cacheGet(playlistData)) {
+                truePlaylist.push(playlistData);
+            }
         }
         playlist.push(...truePlaylist);
         const envData = new EnvData(guildData.guildId);

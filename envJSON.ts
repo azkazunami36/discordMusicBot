@@ -157,6 +157,104 @@ export class EnvData {
     }
 }
 
+export class AlbumInfo {
+    youtubeLink = new (class YouTubeLink {
+        albumInfo: AlbumInfo;
+        constructor(albumInfo: AlbumInfo) {
+            this.albumInfo = albumInfo;
+        }
+        #readJSON(): {
+            /** MusicBrainz用に予約しています。 */
+            release?: {};
+            /** MusicBrainz用に予約しています。 */
+            artist?: {};
+            /** MusicBrainz用に予約しています。 */
+            recording?: {};
+            /** 
+             * 曲に対しての情報です。関連性を保証します。  
+             * Mainとそうでないものの違いは、優先度や置換時に選ばれるかどうかです。Mainにあるものが圧倒的に優先されて返されます。
+             * 
+             * また、MainではないほうにたくさんIDを入れると、間違ったIDを修正する役割にもなります。例えば、YouTubeの検索で似たような別の作者が用意した動画などはここで補正することができます。
+             */
+            musics?: {
+                /**
+                 * ここにはこの曲と全く同じである動画を入れます。非公式でも構いません。
+                 */
+                videoIds?: string[];
+                /** 
+                 * ここには公式の曲を入れます。
+                 */
+                mainVideoId?: string;
+                /**
+                 * ここにはこの曲と全く同じである動画を入れます。非公式でも構いません。
+                 */
+                nicovideoIds?: string[];
+                /** 
+                 * ここには公式の曲を入れます。
+                 */
+                mainNicovideoId: string;
+                /**
+                 * ここには関連するMusicBrainzのRecording IDを入れます。関連するならどれでも構いません。
+                 */
+                recordings?: string[];
+                /**
+                 * ここにはメインで使いたいMusicBrainzのRecording IDを入れます。Main Recording IDと合わせてください。
+                 */
+                mainRecording?: string;
+                /** 
+                 * ここには関連するMusicBrainzのRelease IDを入れます。関連するならどれでもかまいません。
+                 */
+                releases?: string[];
+                /**
+                 * ここにはメインで使いたいMusicBrainzのRelease IDを入れます。Main Recording IDと合わせてください。
+                 */
+                mainRelease?: string;
+                /**
+                 * ここには関連する曲のIDを入れます。関連するならどれでも構いません。
+                 */
+                appleMusicIds?: string[];
+                /**
+                 * ここにはメインで使いたい曲のIDを入れます。
+                 */
+                mainAppleMusicId?: string;
+                /**
+                 * ここには関連する曲のIDを入れます。関連するならどれでも構いません。
+                 */
+                spotifyIds?: string[];
+                /**
+                 * ここにはメインで使いたい曲のIDを入れます。
+                 */
+                mainSpotifyId?: string;
+            }[];
+            /** 非推奨。これは消します。この内容をmusicsにコピーします。 */
+            youtubeLink?: {
+                videoId?: {
+                    [videoId: string]: {
+                        recording?: string;
+                        release?: string;
+                        appleMusicId?: string;
+                        spotifyId?: string;
+                    } | undefined;
+                }
+            }
+        } | undefined {
+            if (!fs.existsSync("./albumInfo.json")) fs.writeFileSync("./albumInfo.json", "{}");
+            try {
+                return JSON.parse(String(fs.readFileSync("./albumInfo.json")));
+            } catch {
+                fs.writeFileSync("./albumInfo.json", "{}");
+                console.warn("albumInfo.jsonが破損していたため、内容を削除し1から生成しました。");
+                try {
+                    return JSON.parse(String(fs.readFileSync("./albumInfo.json")));
+                } catch (e) {
+                    console.error("albumInfo.jsonが読み込めません。", e);
+                    return undefined;
+                }
+            }
+        }
+    })(this);
+}
+
 interface VideoInfoCache {
     youtube?: (yts.VideoMetadataResult | undefined)[];
     youtubeThumbnail?: { videoId: string; thumbnailUrl: string; }[];
@@ -1581,6 +1679,199 @@ export class VideoMetaCache {
         };
         const jpQuery = buildQuery(jpTitle, jpArtist, jpAlbum);
         const enQuery = buildQuery(enTitle, enArtist, enAlbum);
+
+        const stripAlbumSuffixes = (s?: string) =>
+            (s || "").replace(/\s*-\s*(EP|Single)\s*$/i, "").trim();
+
+        const albumNormJP = stripAlbumSuffixes(jpAlbum);
+        const albumNormEN = stripAlbumSuffixes(enAlbum);
+
+        const qJP_full = [jpTitle, jpArtist, albumNormJP].filter(Boolean).join(" ").trim();
+        const qEN_full = [enTitle, enArtist, albumNormEN].filter(Boolean).join(" ").trim();
+
+        const safeSearch = async (q: string, lang: "ja" | "en") => {
+            try {
+                const res = await (await youtubei.Innertube.create({
+                    timezone: "Asia/Tokyo",
+                    lang: lang,
+                    location: "JP",
+                    device_category: "desktop",
+                })).search(q);
+                const result: {
+                    title: string;
+                    authorName: string;
+                    videoId: string
+                }[] = []
+                for (const resu of res.results)
+                    if (resu.is(youtubei.YTNodes.Video) && resu.title.text)
+                        result.push({ title: resu.title.text, authorName: resu.author.name, videoId: resu.video_id })
+                return result;
+            } catch (e) {
+                console.error("er", e);
+            }
+        };
+        async function inspectResults(searchResult: {
+            title: string;
+            authorName: string;
+            videoId: string
+        }[]) {
+            const yt = await youtubei.Innertube.create({
+                client_type: youtubei.ClientType.MUSIC,
+                lang: 'ja',
+                location: 'JP'
+            });
+            interface TrackMeta {
+                title?: string;
+                albumTitle?: string;
+                artistName?: string;
+                videoId: string;
+            }
+            const musicInfoResult: TrackMeta[] = [];
+
+            for (const item of searchResult) {
+                const videoId = item.videoId;
+                if (!videoId) continue;
+                try {
+                    const info = await yt.music.getInfo(videoId);
+
+                    /**
+                     * TrackInfo から title / albumTitle / artistName を抽出
+                     * @param track YouTube.js の TrackInfo
+                     * @returns TrackMeta
+                     */
+                    async function extractTrackMeta(track: youtubei.YTMusic.TrackInfo): Promise<TrackMeta> {
+                        const meta: TrackMeta = { videoId };
+                        const basic = track.basic_info;
+
+                        // --- 1) basic_info ---
+                        if (basic?.title) meta.title = basic.title;
+                        if (basic?.channel?.name) meta.artistName = basic.channel.name;
+
+                        // 再帰的に text / runs を集める内部関数
+                        const collectTexts = (node: unknown, depth = 0): string[] => {
+                            if (depth > 6 || typeof node !== "object" || node === null) return [];
+                            const texts: string[] = [];
+
+                            const n = node as Record<string, unknown>;
+                            const value = n["text"];
+                            if (typeof value === "string") {
+                                texts.push(value);
+                            } else if (value && typeof value === "object" && Array.isArray((value as any).runs)) {
+                                const runs = (value as { runs: { text?: string }[] }).runs;
+                                texts.push(runs.map(r => r.text ?? "").join(""));
+                            }
+
+                            if (Array.isArray(n["runs"])) {
+                                const runs = n["runs"] as { text?: string }[];
+                                texts.push(runs.map(r => r.text ?? "").join(""));
+                            }
+
+                            for (const val of Object.values(n)) {
+                                if (Array.isArray(val)) for (const v of val) texts.push(...collectTexts(v, depth + 1));
+                                else if (typeof val === "object" && val !== null) texts.push(...collectTexts(val, depth + 1));
+                            }
+
+                            return texts;
+                        };
+
+                        // 指定ラベルに基づき値を拾う
+                        const findByLabel = (texts: string[], labels: string[]): string | undefined => {
+                            for (let i = 0; i < texts.length; i++) {
+                                const t = texts[i].trim();
+                                for (const label of labels) {
+                                    const pattern = new RegExp(`^${label}\\s*[•:\\-]\\s*(.+)$`, "i");
+                                    const match = t.match(pattern);
+                                    if (match) return match[1].trim();
+                                    if (t.toLowerCase() === label.toLowerCase() && texts[i + 1])
+                                        return texts[i + 1].trim();
+                                }
+                            }
+                            return undefined;
+                        };
+
+                        // --- 2) getRelated() から ---
+                        const related = await track.getRelated().catch(() => undefined);
+                        if (related && Array.isArray(related)) {
+                            for (const node of related) {
+                                if (
+                                    node instanceof youtubei.YTNodes.MusicDescriptionShelf ||
+                                    node instanceof youtubei.YTNodes.MusicCarouselShelf
+                                ) {
+                                    const texts = collectTexts(node);
+                                    const album = findByLabel(texts, ["album", "アルバム"]);
+                                    const artist = findByLabel(texts, ["artist", "アーティスト"]);
+                                    if (album && !meta.albumTitle) meta.albumTitle = album;
+                                    if (artist && !meta.artistName) meta.artistName = artist;
+                                }
+                            }
+                        }
+
+                        // --- 3) getTab() 経由で補完 ---
+                        if (!meta.albumTitle || !meta.artistName) {
+                            for (const tabName of track.available_tabs) {
+                                if (!/desc|概要|about|information|詳細/i.test(tabName)) continue;
+                                const tab = await track.getTab(tabName).catch(() => undefined);
+                                if (!tab) continue;
+
+                                const texts = collectTexts(tab);
+                                const album = findByLabel(texts, ["album", "アルバム"]);
+                                const artist = findByLabel(texts, ["artist", "アーティスト"]);
+                                if (album && !meta.albumTitle) meta.albumTitle = album;
+                                if (artist && !meta.artistName) meta.artistName = artist;
+                                if (meta.albumTitle && meta.artistName) break;
+                            }
+                        }
+
+                        // --- 4) 最後のフォールバック ---
+                        if (!meta.artistName && basic?.author) meta.artistName = basic.author;
+
+                        return meta;
+                    }
+                    musicInfoResult.push((await extractTrackMeta(info)));
+                } catch (err) {
+                    console.warn('Failed to fetch video info for', videoId, err);
+                }
+            }
+            return musicInfoResult;
+        }
+
+        const jpResult = await safeSearch(qJP_full, "ja");
+        const enResult = await safeSearch(qEN_full, "en");
+        if (jpResult && enResult) {
+            type VideoObject = { videoId: string;[key: string]: unknown };
+
+            /**
+             * 2つの配列を videoId で照合し、共通するものを { one: [], two: [] } にまとめて返す
+             * どちらの配列にも存在する videoId がない場合は空の配列を返す
+             */
+            function matchByVideoId<
+                T extends VideoObject,
+                U extends VideoObject
+            >(one: T[], two: U[]): { one: T[]; two: U[] } {
+                const result: { one: T[]; two: U[] } = { one: [], two: [] };
+
+                // Map化して高速照合
+                const mapTwo = new Map<string, U>();
+                for (const t of two) {
+                    mapTwo.set(t.videoId, t);
+                }
+
+                for (const o of one) {
+                    const match = mapTwo.get(o.videoId);
+                    if (match) {
+                        result.one.push(o);
+                        result.two.push(match);
+                    }
+                }
+
+                return result;
+            }
+            const { one, two } = matchByVideoId(jpResult, enResult);
+            const jpInfo = await inspectResults(one);
+            const enInfo = await inspectResults(two);
+
+        }
+
 
         // --- 3) YouTube 検索（youtubei と yts の両方で試す） ---
         type YtItem = { videoId: string; title?: string; seconds?: number; channelTitle?: string; };
