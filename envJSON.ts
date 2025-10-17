@@ -158,101 +158,118 @@ export class EnvData {
 }
 
 export class AlbumInfo {
-    youtubeLink = new (class YouTubeLink {
-        albumInfo: AlbumInfo;
-        constructor(albumInfo: AlbumInfo) {
-            this.albumInfo = albumInfo;
-        }
-        #readJSON(): {
-            /** MusicBrainz用に予約しています。 */
-            release?: {};
-            /** MusicBrainz用に予約しています。 */
-            artist?: {};
-            /** MusicBrainz用に予約しています。 */
-            recording?: {};
-            /** 
-             * 曲に対しての情報です。関連性を保証します。  
-             * Mainとそうでないものの違いは、優先度や置換時に選ばれるかどうかです。Mainにあるものが圧倒的に優先されて返されます。
-             * 
-             * また、MainではないほうにたくさんIDを入れると、間違ったIDを修正する役割にもなります。例えば、YouTubeの検索で似たような別の作者が用意した動画などはここで補正することができます。
+    constructor() { }
+    #readJSON(): {
+        /** MusicBrainz用に予約しています。 */
+        release?: {};
+        /** MusicBrainz用に予約しています。 */
+        artist?: {};
+        /** MusicBrainz用に予約しています。 */
+        recording?: {};
+        /** 
+         * 曲に対しての情報です。関連性を保証します。  
+         * Mainとそうでないものの違いは、優先度や置換時に選ばれるかどうかです。Mainにあるものが圧倒的に優先されて返されます。
+         * 
+         * また、MainではないほうにたくさんIDを入れると、間違ったIDを修正する役割にもなります。例えば、YouTubeの検索で似たような別の作者が用意した動画などはここで補正することができます。
+         */
+        musics?: {
+            /**
+             * ここにはこの曲と全く同じである動画を入れます。非公式でも構いません。
              */
-            musics?: {
-                /**
-                 * ここにはこの曲と全く同じである動画を入れます。非公式でも構いません。
-                 */
-                videoIds?: string[];
-                /** 
-                 * ここには公式の曲を入れます。
-                 */
-                mainVideoId?: string;
-                /**
-                 * ここにはこの曲と全く同じである動画を入れます。非公式でも構いません。
-                 */
-                nicovideoIds?: string[];
-                /** 
-                 * ここには公式の曲を入れます。
-                 */
-                mainNicovideoId: string;
-                /**
-                 * ここには関連するMusicBrainzのRecording IDを入れます。関連するならどれでも構いません。
-                 */
-                recordings?: string[];
-                /**
-                 * ここにはメインで使いたいMusicBrainzのRecording IDを入れます。Main Recording IDと合わせてください。
-                 */
-                mainRecording?: string;
-                /** 
-                 * ここには関連するMusicBrainzのRelease IDを入れます。関連するならどれでもかまいません。
-                 */
-                releases?: string[];
-                /**
-                 * ここにはメインで使いたいMusicBrainzのRelease IDを入れます。Main Recording IDと合わせてください。
-                 */
-                mainRelease?: string;
-                /**
-                 * ここには関連する曲のIDを入れます。関連するならどれでも構いません。
-                 */
-                appleMusicIds?: string[];
-                /**
-                 * ここにはメインで使いたい曲のIDを入れます。
-                 */
-                mainAppleMusicId?: string;
-                /**
-                 * ここには関連する曲のIDを入れます。関連するならどれでも構いません。
-                 */
-                spotifyIds?: string[];
-                /**
-                 * ここにはメインで使いたい曲のIDを入れます。
-                 */
-                mainSpotifyId?: string;
-            }[];
-            /** 非推奨。これは消します。この内容をmusicsにコピーします。 */
-            youtubeLink?: {
-                videoId?: {
-                    [videoId: string]: {
-                        recording?: string;
-                        release?: string;
-                        appleMusicId?: string;
-                        spotifyId?: string;
-                    } | undefined;
-                }
-            }
-        } | undefined {
-            if (!fs.existsSync("./albumInfo.json")) fs.writeFileSync("./albumInfo.json", "{}");
-            try {
-                return JSON.parse(String(fs.readFileSync("./albumInfo.json")));
-            } catch {
-                fs.writeFileSync("./albumInfo.json", "{}");
-                console.warn("albumInfo.jsonが破損していたため、内容を削除し1から生成しました。");
-                try {
-                    return JSON.parse(String(fs.readFileSync("./albumInfo.json")));
-                } catch (e) {
-                    console.error("albumInfo.jsonが読み込めません。", e);
-                    return undefined;
-                }
+            videoIds?: string[];
+            /** 
+             * ここには公式の曲を入れます。
+             */
+            mainVideoId?: string;
+            /**
+             * ここにはこの曲と全く同じである動画を入れます。非公式でも構いません。
+             */
+            nicovideoIds?: string[];
+            /** 
+             * ここには公式の曲を入れます。
+             */
+            mainNicovideoId: string;
+            /**
+             * ここには関連するMusicBrainzのRecording IDを入れます。関連するならどれでも構いません。
+             */
+            recordings?: string[];
+            /**
+             * ここにはメインで使いたいMusicBrainzのRecording IDを入れます。Main Recording IDと合わせてください。
+             */
+            mainRecording?: string;
+            /** 
+             * ここには関連するMusicBrainzのRelease IDを入れます。関連するならどれでもかまいません。
+             */
+            releases?: string[];
+            /**
+             * ここにはメインで使いたいMusicBrainzのRelease IDを入れます。Main Recording IDと合わせてください。
+             */
+            mainRelease?: string;
+            /**
+             * ここには関連する曲のIDを入れます。関連するならどれでも構いません。
+             */
+            appleMusicIds?: string[];
+            /**
+             * ここにはメインで使いたい曲のIDを入れます。
+             */
+            mainAppleMusicId?: string;
+            /**
+             * ここには関連する曲のIDを入れます。関連するならどれでも構いません。
+             */
+            spotifyIds?: string[];
+            /**
+             * ここにはメインで使いたい曲のIDを入れます。
+             */
+            mainSpotifyId?: string;
+        }[];
+        /** 非推奨。これは消します。この内容をmusicsにコピーします。 */
+        youtubeLink?: {
+            videoId?: {
+                [videoId: string]: {
+                    recording?: string;
+                    release?: string;
+                    appleMusicId?: string;
+                    spotifyId?: string;
+                } | undefined;
             }
         }
-    })(this);
+    } {
+        if (!fs.existsSync("./albumInfo.json")) fs.writeFileSync("./albumInfo.json", "{}");
+        try {
+            return JSON.parse(String(fs.readFileSync("./albumInfo.json")));
+        } catch {
+            fs.writeFileSync("./albumInfo.json", "{}");
+            console.warn("albumInfo.jsonが破損していたため、内容を削除し1から生成しました。");
+            return {};
+        }
+    }
+    /** IDをリンクします。入力されたIDが存在するものだったりすると、結合されたりします。 */
+    linkId(data: {
+        /**
+         * ここにはこの曲と全く同じである動画を入れます。非公式でも構いません。
+         */
+        videoIds?: string[];
+        /**
+         * ここにはこの曲と全く同じである動画を入れます。非公式でも構いません。
+         */
+        nicovideoIds?: string[];
+        /**
+         * ここには関連するMusicBrainzのRecording IDを入れます。関連するならどれでも構いません。
+         */
+        recordings?: string[];
+        /** 
+         * ここには関連するMusicBrainzのRelease IDを入れます。関連するならどれでもかまいません。
+         */
+        releases?: string[];
+        /**
+         * ここには関連する曲のIDを入れます。関連するならどれでも構いません。
+         */
+        appleMusicIds?: string[];
+        /**
+         * ここには関連する曲のIDを入れます。関連するならどれでも構いません。
+         */
+        spotifyIds?: string[];
+    }) { }
 }
 
 interface VideoInfoCache {
@@ -2017,7 +2034,7 @@ export class VideoMetaCache {
             });
         })
 
-        info("実行結果（appleMusicToYouTubeId）:", { jpQuery, enQuery, list: infoData });
+        console.log("実行結果（appleMusicToYouTubeId）:", { jpQuery, enQuery, list: infoData });
 
         // Safety check for empty or missing top element
         if (!filteredJP.length || !filteredJP[0]?.videoId) {

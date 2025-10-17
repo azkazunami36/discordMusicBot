@@ -120,8 +120,8 @@ export class SourcePathManager {
                     tbr?: number | null;  // total bitrate (kbps)
                 }
                 const formats: Format[] = await new Promise((resolve, reject) => {
-                    function retry() {
-                        console.log("SourcePathManager: 通常のyt-dlpではメタデータを取得できませんでした。別のパターンで検証します。");
+                    function retry(err: any, olderrt: string) {
+                        console.log("SourcePathManager: 通常のyt-dlpではメタデータを取得できませんでした。別のパターンで検証します。", err, olderrt);
                         const candidates = [
                             "/opt/homebrew/bin/yt-dlp",
                             "/usr/local/bin/yt-dlp",
@@ -142,13 +142,13 @@ export class SourcePathManager {
                         proc.on("close", () => {
                             try { resolve(JSON.parse(text)) }
                             catch (e) {
-                                console.log("次の動画のJSONをパースしようとしたらエラーが発生しました。", downloadingId, text, "ここからはエラーです。", errt);
-                                reject(new Error("この動画(" + downloadingId + ")のフォーマットリストを解析しようとした時にエラーが発生しました。: " + e));
+                                console.log("次の動画のJSONをパースしようとしたらエラーが発生しました。", downloadingId, text, "ここからはエラーです。", errt, e);
+                                reject(new Error("この動画(" + downloadingId + ")のフォーマットリストを解析しようとした時にエラーが発生しました。: " + err + e));
                             }
                         });
                         proc.on("error", e => {
-                            console.log("次の動画のJSONを取得しようとしたらエラーが発生しました。", downloadingId, text, "ここからはエラーです。", errt);
-                            reject(new Error("この動画(" + downloadingId + ")の解析を行うためにフォーマットリストを取得しようとした時にエラーが発生しました。: " + e));
+                            console.log("次の動画のJSONを取得しようとしたらエラーが発生しました。", downloadingId, text, "ここからはエラーです。", errt, e);
+                            reject(new Error("この動画(" + downloadingId + ")の解析を行うためにフォーマットリストを取得しようとした時にエラーが発生しました。: " + err + e));
                         });
                     }
                     let text = "";
@@ -163,10 +163,10 @@ export class SourcePathManager {
                     proc.on("close", () => {
                         try { resolve(JSON.parse(text)) }
                         catch (e) {
-                            retry();
+                            retry(e, errt);
                         }
                     });
-                    proc.on("error", e => { retry() });
+                    proc.on("error", e => { retry(e, errt) });
                 });
                 /** Created by ChatGPT. */
                 function pickBestFormat(formats: Format[]): Format | undefined {
@@ -222,7 +222,7 @@ export class SourcePathManager {
                 if (audioformat) {
                     status("downloading", 40);
                     await new Promise<void>((resolve, reject) => {
-                        const retry = () => {
+                        const retry = (err?: any) => {
                             const candidates = [
                                 "/opt/homebrew/bin/yt-dlp",
                                 "/usr/local/bin/yt-dlp",
@@ -262,7 +262,7 @@ export class SourcePathManager {
                                 else reject(new Error(`yt-dlp exited with code ${code}`));
                             });
 
-                            cp.on("error", e => reject(e));
+                            cp.on("error", e => reject({ one: err, two: e }));
                         }
                         const cp = spawn("yt-dlp", [
                             "--progress", "--newline",
@@ -287,7 +287,7 @@ export class SourcePathManager {
                         });
 
                         cp.stderr.on("data", message => {
-                            console.log(String(message));
+                            console.error(String(message));
                         });
 
                         cp.on("close", code => {
@@ -295,7 +295,7 @@ export class SourcePathManager {
                             else retry();
                         });
 
-                        cp.on("error", e => { retry() });
+                        cp.on("error", e => { retry(e) });
                     });
                     const files = await fsPromise.readdir("./" + folderPath);
                     const cacheFilename = files.find(file => file.startsWith(downloadingId + "-cache."));

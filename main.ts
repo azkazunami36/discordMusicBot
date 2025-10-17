@@ -482,8 +482,8 @@ const bt = [
 ]
 let joubutuNumber = Math.floor(Math.random() * bt.length);
 client.on(Discord.Events.GuildCreate, guild => {
-    console.log("音楽botが新しいサーバーに参加。参加したサーバー名: " + guild.name + " 現在の参加数: " + client.guilds.cache.size)
-})
+    console.log("音楽botが新しいサーバーに参加。参加したサーバー名: " + guild.name + " 現在の参加数: " + client.guilds.cache.size);
+});
 client.on(Discord.Events.MessageCreate, async message => {
     if (!message.author.bot) {
         if (fs.existsSync("./log/usermessage.log")) {
@@ -557,7 +557,7 @@ client.on(Discord.Events.MessageCreate, async message => {
             }
             const botmessage = await message.reply("処理を開始します...");
             const token = process.env.DISCORD_TOKEN;
-            const clientId = client.user?.id || "";
+            const clientId = client.user?.id;
 
             if (!token || !clientId) return await botmessage.edit("トークンまたはクライアントIDが無効だったよ。");
             const commands = interactionFuncs.map(func => func.command).filter((cmd): cmd is Discord.SlashCommandOptionsOnlyBuilder => cmd !== undefined);
