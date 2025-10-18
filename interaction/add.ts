@@ -12,6 +12,8 @@ import { fetchPlaylistVideoIdsFromUrl } from "../youtube.js";
 import { sourcePathManager } from "../sourcePathManager.js";
 import { SumLog } from "../sumLog.js";
 import { numberToTimeString } from "../numberToTimeString.js";
+import { appleChunkHelper } from "../worker/helper/appleChunkHelper.js";
+import { spotifyChunkHelper } from "../worker/helper/spotifyChunkHelper.js";
 
 export const command = new SlashCommandBuilder()
     .setName("add")
@@ -52,6 +54,8 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const getContents: Playlist[] = [];
         await interaction.editReply({ embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(1/" + words.length + ")", interaction.client)] });
         let playlistCheckingStatusSendedIs = false;
+        const addedPlaylist: Playlist[] = [];
+        const envData = new EnvData(guildData.guildId);
         const videoMetaCache = new VideoMetaCache();
         let wordCheckProcessed = 0;
         let sendTime = Date.now();
@@ -102,44 +106,37 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 SumLog.log(word + "はニコニコ動画のIDとしてキューに追加されました。", suminfo);
                 continue;
             }
+            const parallelProcess = 5;
             const spotifyUrls = await parseSpotifyUrl(word);
             if (spotifyUrls) {
                 const startTime = Date.now();
-                SumLog.log(word + "はSpotifyのURLです。解析を開始します。リストは次です。\n" + spotifyUrls, suminfo);
+                SumLog.log(word + "はSpotifyのURLです。解析を開始します。リスト(" + spotifyUrls.length + "個)は次です。\n" + spotifyUrls, suminfo);
                 let spotifyCheckProcessed = 0;
-                const result: { type: "videoId", body: string }[] = [];
                 const processTimes: number[] = [];
-                for (const spotifyUrl of spotifyUrls) {
-                    spotifyCheckProcessed++;
+                for (let i = 0; i < spotifyUrls.length; i += parallelProcess) {
                     const nowTime = Date.now();
                     if (nowTime - sendTime > 2000) {
                         sendTime = nowTime;
                         await interaction.editReply({
-                            embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(" + wordCheckProcessed + "/" + words.length + ") in Spotify URLを元にYouTubeで曲を検索・抽出中...(" + spotifyCheckProcessed + "/" + spotifyUrls.length + ")" +
-                                (processTimes.length !== 0 ? "抽出が終わるまで残り約" + numberToTimeString((processTimes.reduce((a, b) => a + b, 0) / processTimes.length / 1000) * (spotifyUrls.length - spotifyCheckProcessed)) : ""), interaction.client)]
+                            embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(" + wordCheckProcessed + "/" + words.length + ") in Spotify URLを元にYouTubeで曲を検索・抽出中...(" + Math.floor(spotifyUrls.length / parallelProcess) + "フェーズ中" + spotifyCheckProcessed + "フェーズ)" +
+                                (processTimes.length !== 0 ? "抽出が終わるまで残り約" + numberToTimeString((processTimes.reduce((a, b) => a + b, 0) / processTimes.length / 1000) * (Math.floor(spotifyUrls.length / parallelProcess) - spotifyCheckProcessed)) : "") + " " + (spotifyCheckProcessed * parallelProcess) + "曲がすでに追加済みです。", interaction.client)]
                         });
                     }
-                    try {
-                        const videoId = await videoMetaCache.spotifyToYouTubeId(spotifyUrl);
-                        if (videoId) {
-                            result.push({ type: "videoId", body: videoId });
-                            SumLog.log(spotifyUrl + "は" + videoId + "に変換されました。", suminfo);
-                        } else {
-                            console.log("次のSpotify URLは解析に失敗しました。: ", spotifyUrl);
-                            SumLog.error(spotifyUrl + "はSpotifyのURLとして解析ができませんでした。", suminfo);
-                        }
-                    } catch (e) {
-                        console.log("次のSpotify URLは解析中にエラーとなりました。: ", spotifyUrl, e);
-                        SumLog.error(spotifyUrl + "をSpotifyのURLとして解析する途中にエラーが発生しました。", suminfo);
+                    const slice = spotifyUrls.slice(i, i + parallelProcess);
+                    const sorted = await spotifyChunkHelper(slice, i);
+                    for (const playlistData of sorted) {
+                        sourcePathManager.getAudioPath(playlistData).catch(e => {
+                            SumLog.error(playlistData.body + "のダウンロードでエラーが発生しました。", suminfo);
+                            console.error("addコマンドで次の動画のダウンロードができませんでした。", playlistData, e);
+                        });
                     }
+                    const saveplaylist = await variableExistCheck.playlist() || []
+                    saveplaylist.push(...sorted);
+                    addedPlaylist.push(...sorted);
+                    envData.playlistSave(saveplaylist);
+                    spotifyCheckProcessed++;
                     if (processTimes.length > 6) processTimes.pop();
                     processTimes.push(Date.now() - nowTime);
-                }
-                if (result.length > 0) {
-                    getContents.push(...result);
-                } else {
-                    console.log("次のSpotify URLは解析に失敗しました。: ", spotifyUrls);
-                    SumLog.error(word + "はSpotifyのURLとして解析できませんでした。", suminfo);
                 }
                 SumLog.log(word + "をSpotifyのURLとして処理するのにかかった時間は" + ((Date.now() - startTime) / 1000) + "秒です。", suminfo);
                 continue;
@@ -147,41 +144,33 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             const appleMusicUrls = await parseAppleMusicUrl(word);
             if (appleMusicUrls) {
                 const startTime = Date.now();
-                SumLog.log(word + "はApple MusicのURLです。解析を開始します。リストは次です。\n" + appleMusicUrls, suminfo);
+                SumLog.log(word + "はApple MusicのURLです。解析を開始します。リスト(" + appleMusicUrls.length + "個)は次です。\n" + appleMusicUrls, suminfo);
                 let appleMusicCheckProcessed = 0;
-                const result: { type: "videoId", body: string }[] = [];
                 const processTimes: number[] = [];
-                for (const appleMusicUrl of appleMusicUrls) {
-                    appleMusicCheckProcessed++;
+                for (let i = 0; i < appleMusicUrls.length; i += parallelProcess) {
                     const nowTime = Date.now();
                     if (nowTime - sendTime > 2000) {
                         sendTime = nowTime;
                         await interaction.editReply({
-                            embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(" + wordCheckProcessed + "/" + words.length + ") in Apple Music URLを元にYouTubeで曲を検索・抽出中...(" + appleMusicCheckProcessed + "/" + appleMusicUrls.length + ")" +
-                                (processTimes.length !== 0 ? "抽出が終わるまで残り約" + numberToTimeString((processTimes.reduce((a, b) => a + b, 0) / processTimes.length / 1000) * (appleMusicUrls.length - appleMusicCheckProcessed)) : ""), interaction.client)]
+                            embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(" + wordCheckProcessed + "/" + words.length + ") in Apple Music URLを元にYouTubeで曲を検索・抽出中...(" + Math.floor(appleMusicUrls.length / parallelProcess) + "フェーズ中" + appleMusicCheckProcessed + "フェーズ)" +
+                                (processTimes.length !== 0 ? "抽出が終わるまで残り約" + numberToTimeString((processTimes.reduce((a, b) => a + b, 0) / processTimes.length / 1000) * (Math.floor(appleMusicUrls.length / parallelProcess) - appleMusicCheckProcessed)) : "") + " " + (appleMusicCheckProcessed * parallelProcess) + "曲がすでに追加済みです。", interaction.client)]
                         });
                     }
-                    try {
-                        const videoId = await videoMetaCache.appleMusicToYouTubeId(appleMusicUrl);
-                        if (videoId) {
-                            result.push({ type: "videoId", body: videoId });
-                            SumLog.log(appleMusicUrl + "は" + videoId + "に変換されました。", suminfo);
-                        } else {
-                            console.log("次のApple Music URLは解析に失敗しました。: ", appleMusicUrl);
-                            SumLog.error(appleMusicUrl + "はApple MusicのURLとして解析ができませんでした。", suminfo);
-                        }
-                    } catch (e) {
-                        console.log("次のApple Music URLは解析中にエラーとなりました。: ", appleMusicUrl, e);
-                        SumLog.error(appleMusicUrl + "をApple MusicのURLとして解析する途中にエラーが発生しました。", suminfo);
+                    const slice = appleMusicUrls.slice(i, i + parallelProcess);
+                    const sorted = await appleChunkHelper(slice, i);
+                    for (const playlistData of sorted) {
+                        sourcePathManager.getAudioPath(playlistData).catch(e => {
+                            SumLog.error(playlistData.body + "のダウンロードでエラーが発生しました。", suminfo);
+                            console.error("addコマンドで次の動画のダウンロードができませんでした。", playlistData, e);
+                        });
                     }
+                    const saveplaylist = await variableExistCheck.playlist() || [];
+                    saveplaylist.push(...sorted);
+                    addedPlaylist.push(...sorted);
+                    envData.playlistSave(saveplaylist);
+                    appleMusicCheckProcessed++;
                     if (processTimes.length > 6) processTimes.pop();
                     processTimes.push(Date.now() - nowTime);
-                }
-                if (result.length > 0) {
-                    getContents.push(...result);
-                } else {
-                    console.log("次のApple Music URLは解析に失敗しました。: ", appleMusicUrls);
-                    SumLog.error(word + "はApple MusicのURLとして解析できませんでした。", suminfo);
                 }
                 SumLog.log(word + "をApple MusicのURLとして処理するのにかかった時間は" + ((Date.now() - startTime) / 1000) + "秒です。", suminfo);
                 continue;
@@ -244,12 +233,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             if (priority === "niconico") niconicoData ? getContents.push(niconicoData) : youtubeData ? getContents.push(youtubeData) : "";
             else youtubeData ? getContents.push(youtubeData) : niconicoData ? getContents.push(niconicoData) : "";
         }
-
-        if (getContents.length <= 0) {
-            SumLog.error(data + "はどのような手段を用いても取得ができませんでした。", suminfo);
-            console.error("認識失敗: ", data);
-            return await interaction.editReply({ embeds: [messageEmbedGet("`" + data + "`は有効な内容として認識することができず、追加ができませんでした。再度追加するか、botの作成者に相談してください。", interaction.client)] });
-        }
         // 追加
         const truePlaylist: Playlist[] = [];
         let trueCheckProcessed = 0;
@@ -273,13 +256,20 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 processTimes.push(Date.now() - nowTime); truePlaylist.push(playlistData);
             }
         }
-        playlist.push(...truePlaylist);
-        const envData = new EnvData(guildData.guildId);
-        envData.playlistSave(playlist);
+
+        addedPlaylist.push(...truePlaylist);
+        if (addedPlaylist.length <= 0) {
+            SumLog.error(data + "はどのような手段を用いても取得ができませんでした。", suminfo);
+            console.error("認識失敗: ", data);
+            return await interaction.editReply({ embeds: [messageEmbedGet("`" + data + "`は有効な内容として認識することができず、追加ができませんでした。再度追加するか、botの作成者に相談してください。", interaction.client)] });
+        }
+        const saveplaylist = await variableExistCheck.playlist() || []
+        saveplaylist.push(...truePlaylist);
+        envData.playlistSave(saveplaylist);
 
         SumLog.log(data + "を追加する処理が完了しました。", suminfo);
         await interaction.editReply({ embeds: [messageEmbedGet("ステップ４/４: 取得操作が完了し、結果レポート作成中...", interaction.client)] });
-        const embed = await videoInfoEmbedGet(truePlaylist, (truePlaylist.length === 1 ? "" : truePlaylist.length) + "曲が追加されました。", interaction.client);
+        const embed = await videoInfoEmbedGet(addedPlaylist, (addedPlaylist.length === 1 ? "" : addedPlaylist.length) + "曲が追加されました。", interaction.client);
         await interaction.editReply({ embeds: [embed] });
     }
 }
@@ -288,43 +278,34 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
 
 /**
  * SpotifyのURLを「曲URLの配列」に正規化します。
- * - track: その曲だけ
- * - album: 収録曲すべて（embedページから抽出）
- * - playlist: 収録曲すべて（embedページから抽出）
- * - artist: 人気の曲（embedページから抽出）
- * - user/playlist, /embed/, /intl-xx/ などのバリアント、短縮URL(spotify.link / spoti.fi)も解決
- * - 解析に失敗した場合は undefined を返します（アルバム/プレイリストで曲列挙に失敗した場合は元URLを返さず undefined）
+ * (1) 自動で匿名トークンを取得し、(2) Spotify Web APIでページングして全曲を収集し、(3) 失敗時に既存のembed抽出へフォールバック
  */
 async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
+    // --- helpers: 短縮URL正規化 ---------------------------------------------
     const normalizeShort = async (raw: string): Promise<string> => {
         try {
             const u0 = new URL(raw);
             if (!/^(?:spoti\.fi|spotify\.link)$/i.test(u0.hostname)) return raw;
-            // リダイレクトを追って最終URLを取得
-            const res = await fetch(raw, { redirect: "follow" as any });
-            // fetch が追跡後の最終URLを持つ
-            const finalUrl = (res && typeof res.url === "string" && res.url) ? res.url : raw;
-            return finalUrl;
+            const res = await fetch(raw, { redirect: "follow" as any }).catch(() => undefined);
+            return (res && typeof res.url === "string" && res.url) ? res.url : raw;
         } catch {
             return raw;
         }
     };
 
+    // --- helpers: embedページからtrackをbest-effort抽出 ----------------------
     const toTrackUrlsFromEmbed = async (embedUrl: string): Promise<string[] | undefined> => {
         try {
             const res = await fetch(embedUrl).catch(() => undefined);
             if (!res || !res.ok) return undefined;
             const html = await res.text();
 
-            // /track/{22} を抽出（intl-ja 等も許容）
             const idsA = Array.from(new Set(
                 Array.from(html.matchAll(/\/(?:intl-[a-z]{2}\/)?track\/([A-Za-z0-9]{22})/gi)).map(m => m[1])
             ));
-            // JSON 内の "uri":"spotify:track:xxxxx"
             const idsB = Array.from(new Set(
                 Array.from(html.matchAll(/"uri"\s*:\s*"spotify:track:([A-Za-z0-9]{22})"/gi)).map(m => m[1])
             ));
-
             const ids = Array.from(new Set([...idsA, ...idsB]));
             return ids.length ? ids.map(id => `https://open.spotify.com/track/${id}`) : undefined;
         } catch {
@@ -342,13 +323,73 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
         return fallbackEmbedPath;
     };
 
+    // --- helpers: Spotify Web API（匿名トークンを自動取得） ------------------
+    const getSpotifyEmbedToken = async (): Promise<string | undefined> => {
+        try {
+            const r = await fetch("https://open.spotify.com/get_access_token?reason=transport&productType=web_player").catch(() => undefined);
+            if (!r || !r.ok) return undefined;
+            const j: any = await r.json().catch(() => undefined);
+            const token: string | undefined = j?.accessToken;
+            return (typeof token === "string" && token.length > 10) ? token : undefined;
+        } catch {
+            return undefined;
+        }
+    };
+
+    const isId = (s: any): s is string => typeof s === "string" && /^[A-Za-z0-9]{22}$/.test(s);
+    const trackUrl = (id: string) => `https://open.spotify.com/track/${id}`;
+
+    const fetchAllPlaylistTrackIds_API = async (pid: string): Promise<string[] | undefined> => {
+        const token = await getSpotifyEmbedToken();
+        if (!token) return undefined;
+        const out: string[] = [];
+        let url = `https://api.spotify.com/v1/playlists/${pid}/tracks?fields=next,items(track(id))&limit=100`;
+        for (let guard = 0; guard < 100; guard++) {
+            const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } as any }).catch(() => undefined);
+            if (!r || !r.ok) return undefined;
+            const j: any = await r.json().catch(() => undefined);
+            if (!j) return undefined;
+            const items = Array.isArray(j.items) ? j.items : [];
+            for (const it of items) {
+                const id = it?.track?.id;
+                if (isId(id)) out.push(id);
+            }
+            if (!j.next) break;
+            url = j.next as string;
+        }
+        const uniq = Array.from(new Set(out));
+        return uniq.length ? uniq : undefined;
+    };
+
+    const fetchAllAlbumTrackIds_API = async (aid: string): Promise<string[] | undefined> => {
+        const token = await getSpotifyEmbedToken();
+        if (!token) return undefined;
+        const out: string[] = [];
+        let url = `https://api.spotify.com/v1/albums/${aid}/tracks?fields=next,items(id)&limit=50`;
+        for (let guard = 0; guard < 100; guard++) {
+            const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } as any }).catch(() => undefined);
+            if (!r || !r.ok) return undefined;
+            const j: any = await r.json().catch(() => undefined);
+            if (!j) return undefined;
+            const items = Array.isArray(j.items) ? j.items : [];
+            for (const it of items) {
+                const id = it?.id;
+                if (isId(id)) out.push(id);
+            }
+            if (!j.next) break;
+            url = j.next as string;
+        }
+        const uniq = Array.from(new Set(out));
+        return uniq.length ? uniq : undefined;
+    };
+
+    // --- main --------------------------------------------------------------
     try {
         const resolved = await normalizeShort(url);
         let u: URL;
         try { u = new URL(resolved); } catch { return undefined; }
         if (!/\.spotify\.com$/i.test(u.hostname) && !/^(?:spoti\.fi|spotify\.link)$/i.test(u.hostname)) return undefined;
 
-        // /intl-xx/ や /embed/ をスキップして種別判定
         const segs = u.pathname.split("/").filter(Boolean);
         let i = 0;
         const head = segs[0]?.toLowerCase() || "";
@@ -357,55 +398,57 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
         const kind = (segs[i] || "").toLowerCase();
         const id = segs[i + 1] || "";
 
-        // playlist URL が user 経由のこともある: /user/{uid}/playlist/{id}
-        // その場合は head が "user"、次が "playlist"
+        // user経由のplaylistパス: /user/{uid}/playlist/{id}
         let playlistId: string | undefined;
-        if (kind === "user" && (segs[i + 1] || "").length > 0 && (segs[i + 2] || "").toLowerCase() === "playlist") {
+        if (kind === "user" && (segs[i + 2] || "").toLowerCase() === "playlist") {
             playlistId = segs[i + 3] || "";
         }
 
-        // ハイライト（アルバム/プレイリスト内で特定曲を指す）
-        const highlight = u.searchParams.get("highlight"); // e.g. spotify:track:{id}
+        // ?highlight=spotify:track:XXXX（アルバム/プレイリスト内ハイライト）
+        const highlight = u.searchParams.get("highlight");
         const highlightId = highlight?.match(/spotify:track:([A-Za-z0-9]{22})/)?.[1];
+        if (highlightId) return [trackUrl(highlightId)];
 
         // --- track ---
-        if (kind === "track" && /^[A-Za-z0-9]{22}$/.test(id)) {
-            return [`https://open.spotify.com/track/${id}`];
-        }
+        if (kind === "track" && isId(id)) return [trackUrl(id)];
 
-        // --- album ---
-        if (kind === "album" && /^[A-Za-z0-9]{22}$/.test(id)) {
-            if (highlightId) return [`https://open.spotify.com/track/${highlightId}`];
+        // --- album ---: まずAPIで全曲 → 失敗時embed
+        if (kind === "album" && isId(id)) {
+            const apiIds = await fetchAllAlbumTrackIds_API(id);
+            if (apiIds?.length) return apiIds.map(trackUrl);
             const pageUrl = `https://open.spotify.com/album/${id}`;
             const embedUrl = await toEmbedFromOEmbed(pageUrl, `https://open.spotify.com/embed/album/${id}`);
             const tracks = await toTrackUrlsFromEmbed(embedUrl);
             return tracks ?? undefined;
         }
 
-        // --- playlist (直/ユーザー経由/intl/embed) ---
-        if ((kind === "playlist" && /^[A-Za-z0-9]{22}$/.test(id)) || (playlistId && /^[A-Za-z0-9]{22}$/.test(playlistId))) {
+        // --- playlist ---: まずAPIで全曲 → 失敗時embed
+        if ((kind === "playlist" && isId(id)) || (playlistId && isId(playlistId))) {
             const pid = kind === "playlist" ? id : (playlistId as string);
-            if (highlightId) return [`https://open.spotify.com/track/${highlightId}`];
+            const apiIds = await fetchAllPlaylistTrackIds_API(pid);
+            if (apiIds?.length) return apiIds.map(trackUrl);
             const pageUrl = `https://open.spotify.com/playlist/${pid}`;
             const embedUrl = await toEmbedFromOEmbed(pageUrl, `https://open.spotify.com/embed/playlist/${pid}`);
             const tracks = await toTrackUrlsFromEmbed(embedUrl);
             return tracks ?? undefined;
         }
 
-        // --- artist（人気の曲を列挙：embed/artist/{id} から抽出） ---
-        if (kind === "artist" && /^[A-Za-z0-9]{22}$/.test(id)) {
+        // --- artist（人気曲）: ここではembedフォールバックのみ（必要ならAPIでtop-tracksへ拡張可）
+        if (kind === "artist" && isId(id)) {
             const pageUrl = `https://open.spotify.com/artist/${id}`;
             const embedUrl = await toEmbedFromOEmbed(pageUrl, `https://open.spotify.com/embed/artist/${id}`);
             const tracks = await toTrackUrlsFromEmbed(embedUrl);
             return tracks ?? undefined;
         }
 
-        // 後方互換: 正規表現で拾えるもの（track/album/playlist/artist）
+        // --- 後方互換: 正規表現で拾う（track/album/playlist） -----------------
         const mTrack = resolved.match(/spotify\.com\/(?:intl-[a-z]{2}\/)?(?:embed\/)?track\/([A-Za-z0-9]{22})/i);
-        if (mTrack) return [`https://open.spotify.com/track/${mTrack[1]}`];
+        if (mTrack) return [trackUrl(mTrack[1])];
 
         const mAlbum = resolved.match(/spotify\.com\/(?:intl-[a-z]{2}\/)?(?:embed\/)?album\/([A-Za-z0-9]{22})/i);
         if (mAlbum) {
+            const apiIds = await fetchAllAlbumTrackIds_API(mAlbum[1]);
+            if (apiIds?.length) return apiIds.map(trackUrl);
             const embedUrl = `https://open.spotify.com/embed/album/${mAlbum[1]}`;
             const tracks = await toTrackUrlsFromEmbed(embedUrl);
             return tracks ?? undefined;
@@ -413,21 +456,16 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
 
         const mPlaylist = resolved.match(/spotify\.com\/(?:intl-[a-z]{2}\/)?(?:(?:user\/[^/]+\/)?|(?:embed\/)?)playlist\/([A-Za-z0-9]{22})/i);
         if (mPlaylist) {
+            const apiIds = await fetchAllPlaylistTrackIds_API(mPlaylist[1]);
+            if (apiIds?.length) return apiIds.map(trackUrl);
             const embedUrl = `https://open.spotify.com/embed/playlist/${mPlaylist[1]}`;
-            const tracks = await toTrackUrlsFromEmbed(embedUrl);
-            return tracks ?? undefined;
-        }
-
-        const mArtist = resolved.match(/spotify\.com\/(?:intl-[a-z]{2}\/)?(?:embed\/)?artist\/([A-Za-z0-9]{22})/i);
-        if (mArtist) {
-            const embedUrl = `https://open.spotify.com/embed/artist/${mArtist[1]}`;
             const tracks = await toTrackUrlsFromEmbed(embedUrl);
             return tracks ?? undefined;
         }
 
         // アルバムURL上の ?highlight=spotify:track:xxxxx
         const mHighlight = resolved.match(/[?&]highlight=spotify:track:([A-Za-z0-9]{22})/i);
-        if (mHighlight) return [`https://open.spotify.com/track/${mHighlight[1]}`];
+        if (mHighlight) return [trackUrl(mHighlight[1])];
 
         return undefined;
     } catch {
