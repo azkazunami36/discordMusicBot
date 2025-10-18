@@ -590,3 +590,53 @@ export function parseNicoVideo(input: string): string | undefined {
 
     return undefined;
 }
+
+/**
+ * niconico のマイリストURL（例: https://www.nicovideo.jp/mylist/76853423）を受け取り、
+ * 含まれている動画ID（sm/nm/so で始まるID）の配列を返します。
+ *
+ * 入力はマイリストURL「のみ」を受け付け、その他のURL・形式は undefined を返します。
+ * 取得には RSS ( ?rss=2.0 ) を利用します。
+ */
+export async function getNicoMylistIds(url: string): Promise<string[] | undefined> {
+    // 入力検証
+    let u: URL;
+    try { u = new URL(url); } catch { return undefined; }
+
+    const host = u.hostname.toLowerCase();
+    // nicovideo.jp のみ許可（nico.ms 等は不可）
+    if (!/^(?:[^.]+\.)?nicovideo\.jp$/.test(host)) return undefined;
+
+    // /mylist/<digits> もしくは /my/mylist/<digits> のみ許可（公開マイリストのみ対象）
+    const m = u.pathname.match(/^(?:\/mylist\/(\d+)|\/my\/mylist\/(\d+))(?:\/|$)/);
+    if (!m) return undefined;
+
+    const mylistId = m[1] ?? m[2];
+    const rssUrl = `https://www.nicovideo.jp/mylist/${mylistId}?rss=2.0`;
+
+    try {
+        const res = await fetch(rssUrl, {
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) NodeFetch/1.0 Chrome/123.0.0.0 Safari/537.36",
+                "Accept": "application/rss+xml, application/xml, text/xml, */*",
+                "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+                "Referer": "https://www.nicovideo.jp/",
+                "Accept-Encoding": "gzip, deflate, br",
+            },
+        });
+        if (!res.ok) return undefined; // 非公開や404など
+
+        const xml = await res.text();
+        // RSS全体から sm/nm/so のIDを収集（重複排除）
+        const idSet = new Set<string>();
+        const re = /\b(?:sm|nm|so)[1-9]\d*\b/g;
+        let mId: RegExpExecArray | null;
+        while ((mId = re.exec(xml))) {
+            idSet.add(mId[0]);
+        }
+        return Array.from(idSet);
+    } catch {
+        return undefined;
+    }
+}

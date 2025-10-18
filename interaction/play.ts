@@ -6,6 +6,7 @@ import { VariableExistCheck } from "../variableExistCheck.js";
 import { EnvData, VideoMetaCache } from "../envJSON.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
 import { progressBar } from "../progressBar.js";
+import { SumLog } from "../sumLog.js";
 
 export const command = new SlashCommandBuilder()
     .setName("play")
@@ -29,6 +30,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         serverData.discord.calledChannel = interaction.channelId;
         const metaEmbed = await videoInfoEmbedGet([playlist[0]], "再生準備中...\n0%`" + progressBar(0, 35) + "`", interaction.client);
         await interaction.editReply({ embeds: [metaEmbed] });
+        SumLog.log("再生処理を開始します。", { functionName: "play", guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, voiceChannelId: vchannelId, userId: interaction.user.id });
         const envData = new EnvData(guildData.guildId);
         let statusTemp: {
             status: "loading" | "downloading" | "formatchoosing" | "converting" | "done" | "queue",

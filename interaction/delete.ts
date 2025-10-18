@@ -27,7 +27,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const start = Number(number ? number[0] : undefined);
         const end = Number(number ? number[1] : undefined);
         if (Number.isNaN(start)) return await interaction.editReply({ embeds: [messageEmbedGet("番号が入力されていません。番号を入力してから再度実行してください。", interaction.client)] });
-
         if (playlist[start - 1]) {
             const playlistData = playlist.splice(start - 1, (!Number.isNaN(end) && end > start) ? end - (start - 1) : 1);
             const envData = new EnvData(guildData.guildId);

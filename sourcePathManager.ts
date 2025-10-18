@@ -1,10 +1,10 @@
 import fs, { constants } from "fs";
 import fsPromise from "fs/promises";
 import { exec, execSync, spawn } from "child_process";
-import ffmpeg from "fluent-ffmpeg";
+import ffmpeg, { FfprobeData } from "fluent-ffmpeg";
 import { parseYtDlpProgressLine } from "./parseYtDlpProgressLine.js";
 import { Playlist } from "./envJSON.js";
-import path from "path";
+import { SumLog } from "./sumLog.js";
 
 /**
  * 状況ごとにステータスが変動します。
@@ -27,7 +27,7 @@ export class SourcePathManager {
         /** 進捗です。ステータスと併用してください。 */
         percent: number;
         /** ここに関数を入れると、完了した時に入れられた関数を発火します。 */
-        processedCallback: (() => void)[];
+        processedCallback: ((err?: unknown) => void)[];
         /** ここに関数を入れるとステータスが転移した時に入れられた関数を発火します。 */
         statusCallback: ((status: Status, percent: number) => void)[];
     }[] = [];
@@ -35,7 +35,10 @@ export class SourcePathManager {
         if (statusCallback) statusCallback("loading", 1);
         const type = playlistData.type;
         const folderPath = type === "videoId" ? "./youtubeCache" : type === "nicovideoId" ? "./niconicoCache" : undefined;
-        if (!folderPath) return console.error("SourcePathManager: 現時点で対応していない種類が選ばれました。", type);
+        if (!folderPath) {
+            SumLog.error("現時点で対応していない種類が選ばれました。", { functionName: "SourcePathManager getAudioPath" });
+            return console.error("SourcePathManager: 現時点で対応していない種類が選ばれました。", type);
+        }
         if (!await fsPromise.access(folderPath, constants.R_OK).then(() => true).catch(() => false)) await fsPromise.mkdir(folderPath);
         const files = await fsPromise.readdir(folderPath);
         const result = files.find(file => file.startsWith(playlistData.body + "."));
@@ -50,8 +53,10 @@ export class SourcePathManager {
             else return undefined;
         }
     }
-    async addQueue(playlistData: Playlist, statusCallback?: (status: Status, percent: number) => void) {
-        if (!this.#downloadingQueues.find(downloadingQueue => downloadingQueue.playlist.body === playlistData.body)) {
+    addQueue(playlistData: Playlist, statusCallback?: (status: Status, percent: number) => void) {
+        const existIs = this.#downloadingQueues.find(downloadingQueue => downloadingQueue.playlist.body === playlistData.body);
+        if (existIs === undefined) {
+            SumLog.log("キューに" + playlistData.body + "を追加しました。", { functionName: "SourcePathManager addQueue" });
             this.#downloadingQueues.push({
                 playlist: playlistData,
                 status: "queue",
@@ -59,21 +64,26 @@ export class SourcePathManager {
                 statusCallback: [],
                 processedCallback: []
             });
+        } else {
+            SumLog.log("キューに存在している" + playlistData.body + "を待機しています。", { functionName: "SourcePathManager addQueue" });
         }
         const downloadingQueue = this.#downloadingQueues.find(downloadingQueue => downloadingQueue.playlist.body === playlistData.body);
-        if (!downloadingQueue) return console.error("通常なら存在するはずのキューを取得できず、処理を続行できませんでした。");
+        if (!downloadingQueue) {
+            SumLog.error("通常なら存在するはずのキューを取得できず、処理を続行できませんでした。", { functionName: "SourcePathManager addQueue" });
+            return console.error("通常なら存在するはずのキューを取得できず、処理を続行できませんでした。");
+        }
         if (statusCallback) {
             statusCallback(downloadingQueue.status, downloadingQueue.percent);
             downloadingQueue.statusCallback.push(statusCallback);
         }
         this.downloadProcess(); // 実際に待機するのは下のprocessedCallbackなのでこの関数で待機をしない。
-        await new Promise<void>(resolve => { downloadingQueue.processedCallback.push(() => { resolve(); }); });
+        return new Promise<void>((resolve, reject) => { downloadingQueue.processedCallback.push((err) => { if (!err) resolve(); else reject(err); }); });
     }
     downloadProcess() {
-        const downloading = this.#downloadingQueues.filter(downloadingQueue => downloadingQueue.status !== "queue");
-        if (downloading.length >= 5) return;
+        const downloadings = this.#downloadingQueues.filter(downloadingQueue => downloadingQueue.status === "converting" || downloadingQueue.status === "downloading" || downloadingQueue.status === "formatchoosing");
+        if (downloadings.length >= 5) return;
         const downloadingQueue = this.#downloadingQueues.find(downloadingQueue => downloadingQueue.status === "queue");
-        if (downloadingQueue === undefined) return;
+        if (downloadingQueue === undefined) return SumLog.log("ダウンロードキューを全て消化しました。ダウンロード中が" + downloadings.length + "つです。", { functionName: "SourcePathManager downloadProcess" });
         const downloadingId = downloadingQueue.playlist.body;
         const downloadingGet = () => {
             return this.#downloadingQueues.find(downloadingQueue => downloadingQueue.playlist.body === downloadingId);
@@ -85,10 +95,14 @@ export class SourcePathManager {
             if (percent) downloading.percent = percent;
             downloading.statusCallback.forEach(func => func(downloading.status, downloading.percent));
         }
-        const processEnd = () => {
-            downloadingGet()?.processedCallback.forEach(func => { try { func() } catch (e) { console.error("SourcePathManager: コールバック先でエラーが発生しました。", e) } });
+        const processEnd = (e?: unknown) => {
+            console.log("ダウンロードプロセスの終了: ", downloadingId, downloadingGet()?.status);
+            const downloadingInfo = downloadingGet();
+            if (downloadingInfo) downloadingInfo.processedCallback.forEach(func => { try { func(e) } catch (e) { console.error("SourcePathManager: コールバック先でエラーが発生しました。", e) } });
             const index = this.#downloadingQueues.findIndex(downloadingQueue => downloadingQueue.playlist.body === downloadingId);
             if (index !== -1) this.#downloadingQueues.splice(index, 1);
+            const downloading = this.#downloadingQueues.filter(downloadingQueue => downloadingQueue.status === "converting" || downloadingQueue.status === "downloading" || downloadingQueue.status === "formatchoosing");
+            SumLog.log(downloadingId + "のダウンロードプロセスが完了しました。ダウンロード中が" + downloading.length + "つで、処理中などを含めた全てのキューの数が" + this.#downloadingQueues.length + "つです。", { functionName: "SourcePathManager downloadProcess" })
             this.downloadProcess();
         }
         status("formatchoosing", 30);
@@ -99,28 +113,31 @@ export class SourcePathManager {
             processEnd();
             return console.error("SourcePathManager: 通常存在しないといけない変数が存在しませんでした。もしかしたら不具合が起きるかもしれません。種類を判別できませんでした。", downloadingQueue);
         }
+        // 1. その動画に関連づけられているデータから最適なフォーマットを取得する。
+        interface Format {
+            asr?: number;
+            format_id: string;
+            format_note: string;
+            resolution: string;
+            url?: string;
+            manifest_url?: string;
+            ext?: string | null;
+            protocol?: string | null;
+            has_drm?: boolean;
+            vcodec?: string | null;
+            acodec?: string | null;
+            audio_ext?: string | null;
+            video_ext?: string | null;
+            abr?: number | null;  // audio bitrate (kbps)
+            tbr?: number | null;  // total bitrate (kbps)
+        }
+        let audioformat: Format | undefined;
+        let formats: Format[] | undefined;
         (async () => {
             try {
-                // 1. その動画に関連づけられているデータから最適なフォーマットを取得する。
-                interface Format {
-                    asr?: number;
-                    format_id: string;
-                    format_note: string;
-                    resolution: string;
-                    url?: string;
-                    manifest_url?: string;
-                    ext?: string | null;
-                    protocol?: string | null;
-                    has_drm?: boolean;
-                    vcodec?: string | null;
-                    acodec?: string | null;
-                    audio_ext?: string | null;
-                    video_ext?: string | null;
-                    abr?: number | null;  // audio bitrate (kbps)
-                    tbr?: number | null;  // total bitrate (kbps)
-                }
-                const formats: Format[] = await new Promise((resolve, reject) => {
+                formats = await new Promise((resolve, reject) => {
                     function retry(err: any, olderrt: string) {
+                        SumLog.warn("yt-dlpでフォーマットを取得しようとしたらエラーが発生しました。リトライ関数で再施行します。", { functionName: "SourcePathManager downloadProcess" });
                         console.log("SourcePathManager: 通常のyt-dlpではメタデータを取得できませんでした。別のパターンで検証します。", err, olderrt);
                         const candidates = [
                             "/opt/homebrew/bin/yt-dlp",
@@ -153,7 +170,7 @@ export class SourcePathManager {
                     }
                     let text = "";
                     let errt = "";
-                    const proc = exec(`yt-dlp --print "%(formats)j" -q --cookies-from-browser chrome --no-warnings ${type === "videoId" ? '--extractor-args youtube:player_client=tv_embedded,ios https://youtu.be/'
+                    const proc = exec(`yt-dlp --print "%(formats)j" -q --cookies-from-browser chrome --no-warnings ${type === "videoId" ? '--extractor-args youtube:player_client=tv_embedded https://youtu.be/'
                         : type === "nicovideoId" ? '--add-header "Referer:https://www.nicovideo.jp/" https://www.nicovideo.jp/watch/'
                             : ""
                         }` + downloadingId, (err, stdout, stderr) => {
@@ -175,8 +192,7 @@ export class SourcePathManager {
                     const isAudioOnly = (f: Format) => {
                         const res = (f.resolution ?? '').toLowerCase();
                         return (
-                            (f.vcodec ?? '').toLowerCase() === 'none' ||
-                            (f.video_ext ?? '').toLowerCase() === 'none' ||
+                            (f.acodec ?? '').toLowerCase() !== 'none' ||
                             res.includes('audio only')
                         );
                     };
@@ -217,12 +233,14 @@ export class SourcePathManager {
                         return num(b.tbr) - num(a.tbr);
                     }
                 }
-                const audioformat = pickBestFormat(formats);
+                audioformat = pickBestFormat(formats || []);
                 // 4. もし取得できたらダウンロードをして拡張子・コンテナを修正する。
                 if (audioformat) {
                     status("downloading", 40);
                     await new Promise<void>((resolve, reject) => {
+                        let errmsg = "";
                         const retry = (err?: any) => {
+                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。リトライ関数で再施行します。", { functionName: "SourcePathManager downloadProcess" });
                             const candidates = [
                                 "/opt/homebrew/bin/yt-dlp",
                                 "/usr/local/bin/yt-dlp",
@@ -233,7 +251,7 @@ export class SourcePathManager {
 
                             const cp = spawn(ytdlp, [
                                 "--progress", "--newline",
-                                "-f", audioformat.format_id,
+                                "-f", audioformat?.format_id || "",
                                 "-o", folderPath + "/%(id)s-cache.%(ext)s",
                                 "--progress-template", "%(progress)j",
                                 "--cookies-from-browser", "chrome",
@@ -254,7 +272,7 @@ export class SourcePathManager {
                             });
 
                             cp.stderr.on("data", message => {
-                                console.error("ダウンロードでエラーが発生しました。", String(message));
+                                errmsg += message;
                             });
 
                             cp.on("close", code => {
@@ -262,16 +280,16 @@ export class SourcePathManager {
                                 else reject(new Error(`yt-dlp exited with code ${code}`));
                             });
 
-                            cp.on("error", e => reject({ one: err, two: e }));
+                            cp.on("error", e => reject({ one: err, two: e, errmsg }));
                         }
                         const cp = spawn("yt-dlp", [
                             "--progress", "--newline",
-                            "-f", audioformat.format_id,
+                            "-f", audioformat?.format_id || "",
                             "-o", folderPath + "/%(id)s-cache.%(ext)s",
                             "--progress-template", "%(progress)j",
                             "--cookies-from-browser", "chrome",
                             ...(() => {
-                                if (type === "videoId") return ["--extractor-args", 'youtube:player_client=tv_embedded,ios']
+                                if (type === "videoId") return ["--extractor-args", 'youtube:player_client=tv_embedded']
                                 if (type === "nicovideoId") return ["--add-header", "Referer:https://www.nicovideo.jp/"]
                                 return []
                             })(),
@@ -287,7 +305,7 @@ export class SourcePathManager {
                         });
 
                         cp.stderr.on("data", message => {
-                            console.error(String(message));
+                            errmsg += message;
                         });
 
                         cp.on("close", code => {
@@ -301,22 +319,30 @@ export class SourcePathManager {
                     const cacheFilename = files.find(file => file.startsWith(downloadingId + "-cache."));
                     if (cacheFilename) {
                         status("converting", 70);
-                        const info = await new Promise<ffmpeg.FfprobeData>(resolve => ffmpeg.ffprobe("./" + folderPath + "/" + cacheFilename, (err, data) => resolve(data)));
-                        await new Promise<void>((resolve, reject) => {
-                            exec(`ffmpeg -i ${folderPath}/${cacheFilename} -c copy ${folderPath}/${downloadingId}.${info.streams[0].codec_name === "aac" ? "m4a" : "ogg"}`, (err, stdout, stderr) => {
-                                if (err) return reject(err);
-                                resolve();
+                        try {
+                            const info: FfprobeData = await new Promise<ffmpeg.FfprobeData>((resolve, reject) => ffmpeg.ffprobe("./" + folderPath + "/" + cacheFilename, (err, data) => { if (!err) resolve(data); else reject(err) }));
+                            await new Promise<void>((resolve, reject) => {
+                                exec(`ffmpeg -i ${folderPath}/${cacheFilename} -vn -c copy ${folderPath}/${downloadingId}.${info.streams.filter(stream => stream.codec_name === "aac").length !== 0 ? "m4a" : "ogg"}`, (err, stdout, stderr) => {
+                                    if (err) return reject(err);
+                                    resolve();
+                                });
                             });
-                        });
-                        await fsPromise.unlink("./" + folderPath + "/" + cacheFilename);
+                            await fsPromise.unlink("./" + folderPath + "/" + cacheFilename);
+                        } catch (e) {
+                            await fsPromise.unlink("./" + folderPath + "/" + cacheFilename);
+                            throw e;
+                        }
                     }
                 } else {
                     console.error("このYouTubeのIDは無効のようです。: ", downloadingId, "内容: ", JSON.stringify(formats, null, "  "));
                 }
                 processEnd();
             } catch (e) {
+                SumLog.error("ダウンロードプロセス中にエラーが発生しました。ログを確認してください。", { functionName: "SourcePathManager downloadProcess" });
+                console.log("ダウンロードに使用したフォーマットは次です。", audioformat, " フォーマット全てです。", formats)
                 console.error("SourcePathManager: ダウンロードプロセス関数内でエラーを検出しました。", e);
-                processEnd();
+                console.error(e);
+                processEnd(e);
             }
         })();
     }

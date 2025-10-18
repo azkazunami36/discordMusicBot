@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import util from "util";
 import * as _log4js from "log4js";
+import { SumLog } from "./sumLog.js";
 const log4js = ((_log4js as any).default ?? _log4js) as typeof _log4js;
 
 // ルート直下 log フォルダを保証
@@ -18,7 +19,7 @@ log4js.configure({
     file: {
       type: "file",
       filename: path.join(logDir, "log.log"), // 本体
-      maxLogSize: 1 * 1024 * 1024,            // 1MB 超でローテ
+      maxLogSize: 5 * 1024 * 1024,            // 5MB 超でローテ
       backups: 50,                             // 世代数
       keepFileExt: true,                       // log.1.log のように拡張子維持
       compress: true,                          // 古い世代は .gz
@@ -47,10 +48,10 @@ const logger = log4js.getLogger(); // default カテゴリ
 type ConsoleMethods = "log" | "info" | "warn" | "error" | "debug";
 const originalConsole: Record<ConsoleMethods, (...args: any[]) => void> = {
   log: console.log.bind(console),
-  info: console.info?.bind(console) ?? console.log.bind(console),
+  info: console.info.bind(console),
   warn: console.warn.bind(console),
   error: console.error.bind(console),
-  debug: console.debug?.bind(console) ?? console.log.bind(console),
+  debug: console.debug.bind(console),
 };
 
 // util.format で %s / %d / %o などのフォーマット互換を維持
@@ -80,16 +81,19 @@ if (!g.__CONSOLE_BRIDGED__) {
       return;
     }
     logger.warn(line);
+    SumLog.warn("warnが発生しました。抜粋: " + line.slice(0, 20), { functionName: "logger" });
   };
 
   console.error = (...args: any[]) => {
-    logger.error(toLine(args));
+    const line = toLine(args);
+    logger.error(line);
+    SumLog.error("errorが発生しました。抜粋: " + line.slice(0, 20), { functionName: "logger" });
   };
 
   console.debug = (...args: any[]) => {
     logger.debug(toLine(args));
   };
-// ------------------------------------------------------------------------
+  // ------------------------------------------------------------------------
 }
 // ------------------------------------------------------------------------
 

@@ -780,8 +780,7 @@ export class VideoMetaCache {
                 }
             }
             if (!userId) {
-                const ts = new Date().toISOString();
-                console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] ユーザーID/URLの解析に失敗しました:`, userIdOrUrl);
+                console.error(`[niconicoUserInfoGet] ユーザーID/URLの解析に失敗しました:`, userIdOrUrl);
                 return undefined;
             }
             const json: VideoInfoCache = JSON.parse(String(fs.readFileSync("videoInfoCache.json")));
@@ -799,7 +798,6 @@ export class VideoMetaCache {
                         'User-Agent': 'Mozilla/5.0'
                     }
                 });
-                const ts = new Date().toISOString();
                 if (nv.ok) {
                     const j = await nv.json();
                     const u = j?.data?.user ?? j?.data;
@@ -834,27 +832,29 @@ export class VideoMetaCache {
                         fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
                         return info;
                     } else {
-                        console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] nvapiは応答したが name/iconUrl が欠落: `, { nameNv, iconNv });
+                        console.error(`[niconicoUserInfoGet] nvapiは応答したが name/iconUrl が欠落: `, { nameNv, iconNv });
                     }
                 } else {
-                    console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] nvapi応答エラー: HTTP ${nv.status}`);
+                    if (nv.status === 404) {
+                        // 404 は致命的ではなく後続の OG 解析で処理できるため、ログレベルを下げる
+                        console.log(`[niconicoUserInfoGet] nvapi 404 (not fatal): userId=${userId}`);
+                    } else {
+                        console.error(`[niconicoUserInfoGet] nvapi応答エラー: HTTP ${nv.status}`);
+                    }
                 }
             } catch (e) {
-                const ts = new Date().toISOString();
-                console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] nvapi取得中に例外が発生:`, e);
+                console.warn(`[niconicoUserInfoGet] nvapi取得中に例外が発生:`, e);
             }
 
             let response: Response;
             try {
                 response = await fetch(userUrl);
                 if (!response.ok) {
-                    const ts = new Date().toISOString();
-                    console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] ユーザーページの取得に失敗しました: HTTP ${response.status}`);
+                    console.error(`[niconicoUserInfoGet] ユーザーページの取得に失敗しました: HTTP ${response.status}`);
                     return undefined;
                 }
             } catch (e) {
-                const ts = new Date().toISOString();
-                console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] ユーザーページの取得中にエラーが発生しました:`, e);
+                console.error(`[niconicoUserInfoGet] ユーザーページの取得中にエラーが発生しました:`, e);
                 return undefined;
             }
             const html = await response.text();
@@ -882,8 +882,7 @@ export class VideoMetaCache {
             }
 
             if (!name || !iconUrl) {
-                const ts = new Date().toISOString();
-                console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] OGメタから name/iconUrl が取得できませんでした`, { name, iconUrl });
+                console.error(`[niconicoUserInfoGet] OGメタから name/iconUrl が取得できませんでした`, { name, iconUrl });
                 return undefined;
             }
 
@@ -898,8 +897,7 @@ export class VideoMetaCache {
             fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
             return info;
         } catch (e) {
-            const ts = new Date().toISOString();
-            console.error(`[${ts}] [ERROR] [niconicoUserInfoGet] 処理中にエラーが発生しました:`, e);
+            console.error(`[niconicoUserInfoGet] 処理中にエラーが発生しました:`, e);
             return undefined;
         }
     }
@@ -918,8 +916,7 @@ export class VideoMetaCache {
                 if (m2) channelId = m2[0];
             }
             if (!channelId) {
-                const ts = new Date().toISOString();
-                console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] チャンネルID/URLの解析に失敗しました:`, channelIdOrUrl);
+                console.error(`[niconicoChannelInfoGet] チャンネルID/URLの解析に失敗しました:`, channelIdOrUrl);
                 return undefined;
             }
 
@@ -941,14 +938,12 @@ export class VideoMetaCache {
                     if (altRes.ok) {
                         response = altRes as any;
                     } else {
-                        const ts = new Date().toISOString();
-                        console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] チャンネルページの取得に失敗しました: HTTP ${response.status} / ${altRes.status}`);
+                        console.error(`[niconicoChannelInfoGet] チャンネルページの取得に失敗しました: HTTP ${response.status} / ${altRes.status}`);
                         return undefined;
                     }
                 }
             } catch (e) {
-                const ts = new Date().toISOString();
-                console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] チャンネルページ取得中にエラーが発生しました:`, e);
+                console.error(`[niconicoChannelInfoGet] チャンネルページ取得中にエラーが発生しました:`, e);
                 return undefined;
             }
 
@@ -971,8 +966,7 @@ export class VideoMetaCache {
             }
 
             if (!name || !iconUrl) {
-                const ts = new Date().toISOString();
-                console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] OGメタから name/iconUrl が取得できませんでした`, { name, iconUrl });
+                console.error(`[niconicoChannelInfoGet] OGメタから name/iconUrl が取得できませんでした`, { name, iconUrl });
                 return undefined;
             }
 
@@ -988,8 +982,7 @@ export class VideoMetaCache {
             fs.writeFileSync("videoInfoCache.json", JSON.stringify(json, null, "    "));
             return info;
         } catch (e) {
-            const ts = new Date().toISOString();
-            console.error(`[${ts}] [ERROR] [niconicoChannelInfoGet] 処理中にエラーが発生しました:`, e);
+            console.error(`[niconicoChannelInfoGet] 処理中にエラーが発生しました:`, e);
             return undefined;
         }
     }
@@ -1139,6 +1132,7 @@ export class VideoMetaCache {
         return candidates[0]; // まずは最上位を返す（クライアント側で順次フォールバックする設計にしておくのが実運用◎）
     }
     async spotifyToYouTubeId(spotifyUrlOrId: string): Promise<string | undefined> {
+        const startTime = Date.now();
         // --- scoped log collector (only prints on final failure) ---
         const log: { type: "info" | "warn" | "error"; body: any[] }[] = [];
         const push = (type: "info" | "warn" | "error", ...body: any[]) => { log.push({ type, body }); };
@@ -1342,14 +1336,20 @@ export class VideoMetaCache {
         };
 
         // JP / EN ページを取ってみる（片方でもOK）
-        const [jpHtml, enHtml] = await Promise.all([
-            fetchText(canonical("ja"), "ja-JP,ja;q=0.9,en;q=0.6"),
-            fetchText(canonical("en"), "en-US,en;q=0.9,ja;q=0.6"),
-        ]);
+        const t_fetchText_jp = Date.now();
+        const jpHtml = await fetchText(canonical("ja"), "ja-JP,ja;q=0.9,en;q=0.6");
+        console.log(`[計測] fetchText（JP） に ${((Date.now() - t_fetchText_jp) / 1000).toFixed(2)} 秒かかりました`);
+        const t_fetchText_en = Date.now();
+        const enHtml = await fetchText(canonical("en"), "en-US,en;q=0.9,ja;q=0.6");
+        console.log(`[計測] fetchText（EN） に ${((Date.now() - t_fetchText_en) / 1000).toFixed(2)} 秒かかりました`);
         info(`[spotifyToYouTubeId] html fetched: jp=${!!jpHtml} en=${!!enHtml}`);
 
+        const t_fetchOEmbed_jp = Date.now();
         const jpEmbed = await fetchOEmbed(canonical("ja")).catch(() => undefined);
+        console.log(`[計測] fetchOEmbed（JP） に ${((Date.now() - t_fetchOEmbed_jp) / 1000).toFixed(2)} 秒かかりました`);
+        const t_fetchOEmbed_en = Date.now();
         const enEmbed = await fetchOEmbed(canonical("en")).catch(() => undefined);
+        console.log(`[計測] fetchOEmbed（EN） に ${((Date.now() - t_fetchOEmbed_en) / 1000).toFixed(2)} 秒かかりました`);
         info(`[spotifyToYouTubeId] oembed fetched: jp=${!!jpEmbed} en=${!!enEmbed}`);
 
         // --- Fetch iframe (embed) HTML as additional metadata source ---
@@ -1518,8 +1518,12 @@ export class VideoMetaCache {
 
         const searchYoutubei = async (q: string): Promise<YtItem[]> => {
             try {
+                const t_create = Date.now();
                 const yt = await (youtubei.Innertube.create({ lang: "ja", location: "JP" } as any).catch(e => { err("youtubei.create", e); }));
+                console.log(`[計測] youtubei.Innertube.create に ${((Date.now() - t_create) / 1000).toFixed(2)} 秒かかりました`);
+                const t_search = Date.now();
                 const r = await (yt?.search(q).catch(e => { err("youtubei.search", e); }));
+                console.log(`[計測] youtubei.search に ${((Date.now() - t_search) / 1000).toFixed(2)} 秒かかりました`);
                 const items: any[] = (Array.isArray(r?.videos) ? r.videos : []) || (Array.isArray(r?.results) ? r.results : []);
                 return (items || []).map(it => {
                     const id = it.id || it.videoId || it?.endpoint?.payload?.videoId;
@@ -1543,7 +1547,9 @@ export class VideoMetaCache {
 
         const searchYts = async (q: string): Promise<YtItem[]> => {
             try {
+                const t_yts = Date.now();
                 const r: any = await yts(q).catch(e => { err("searchYtsError:", e); });
+                console.log(`[計測] yts検索 に ${((Date.now() - t_yts) / 1000).toFixed(2)} 秒かかりました`);
                 const vids: any[] = Array.isArray(r?.videos) ? r.videos : [];
                 return vids.map(v => ({
                     videoId: v.videoId,
@@ -1631,6 +1637,7 @@ export class VideoMetaCache {
         return filtered[0].videoId;
     }
     async appleMusicToYouTubeId(appleUrlOrId: string): Promise<string | undefined> {
+        const startTime = Date.now();
         // --- scoped log collector (only prints on final failure) ---
         const log: { type: "info" | "warn" | "error"; body: any[] }[] = [];
         const push = (type: "info" | "warn" | "error", ...body: any[]) => { log.push({ type, body }); };
@@ -1663,7 +1670,9 @@ export class VideoMetaCache {
 
         const fetchLookup = async (country: string) => {
             const url = `https://itunes.apple.com/lookup?id=${trackId}&entity=song&country=${country}`;
+            const t_lookup = Date.now();
             const res = await fetch(url);
+            console.log(`[計測] fetchLookup（${country.toUpperCase()}） に ${((Date.now() - t_lookup) / 1000).toFixed(2)} 秒かかりました`);
             if (!res.ok) return undefined;
             const data = await res.json().catch(() => undefined);
             const items = Array.isArray(data?.results) ? data.results : [];
@@ -1697,206 +1706,220 @@ export class VideoMetaCache {
         const jpQuery = buildQuery(jpTitle, jpArtist, jpAlbum);
         const enQuery = buildQuery(enTitle, enArtist, enAlbum);
 
-        const stripAlbumSuffixes = (s?: string) =>
-            (s || "").replace(/\s*-\s*(EP|Single)\s*$/i, "").trim();
+        const stripAlbumSuffixes = (s?: string) => (s || "").replace(/\s*-\s*(EP|Single)\s*$/i, "").trim();
 
-        const albumNormJP = stripAlbumSuffixes(jpAlbum);
-        const albumNormEN = stripAlbumSuffixes(enAlbum);
+        const deepCheck = false;
+        if (deepCheck) {
+            const albumNormJP = stripAlbumSuffixes(jpAlbum);
+            const albumNormEN = stripAlbumSuffixes(enAlbum);
 
-        const qJP_full = [jpTitle, jpArtist, albumNormJP].filter(Boolean).join(" ").trim();
-        const qEN_full = [enTitle, enArtist, albumNormEN].filter(Boolean).join(" ").trim();
+            const qJP_full = [jpTitle, jpArtist, albumNormJP].filter(Boolean).join(" ").trim();
+            const qEN_full = [enTitle, enArtist, albumNormEN].filter(Boolean).join(" ").trim();
 
-        const safeSearch = async (q: string, lang: "ja" | "en") => {
-            try {
-                const res = await (await youtubei.Innertube.create({
-                    timezone: "Asia/Tokyo",
-                    lang: lang,
-                    location: "JP",
-                    device_category: "desktop",
-                })).search(q);
-                const result: {
-                    title: string;
-                    authorName: string;
-                    videoId: string
-                }[] = []
-                for (const resu of res.results)
-                    if (resu.is(youtubei.YTNodes.Video) && resu.title.text)
-                        result.push({ title: resu.title.text, authorName: resu.author.name, videoId: resu.video_id })
-                return result;
-            } catch (e) {
-                console.error("er", e);
-            }
-        };
-        async function inspectResults(searchResult: {
-            title: string;
-            authorName: string;
-            videoId: string
-        }[]) {
-            const yt = await youtubei.Innertube.create({
-                client_type: youtubei.ClientType.MUSIC,
-                lang: 'ja',
-                location: 'JP'
-            });
-            interface TrackMeta {
-                title?: string;
-                albumTitle?: string;
-                artistName?: string;
-                videoId: string;
-            }
-            const musicInfoResult: TrackMeta[] = [];
-
-            for (const item of searchResult) {
-                const videoId = item.videoId;
-                if (!videoId) continue;
+            const safeSearch = async (q: string, lang: "ja" | "en") => {
                 try {
-                    const info = await yt.music.getInfo(videoId);
+                    const __t_create = Date.now();
+                    const __yt = await youtubei.Innertube.create({
+                        timezone: "Asia/Tokyo",
+                        lang: lang,
+                        location: "JP",
+                        device_category: "desktop",
+                    });
+                    console.log(`[計測] youtubei.Innertube.create に ${((Date.now() - __t_create) / 1000).toFixed(2)} 秒かかりました`);
+                    const __t_search = Date.now();
+                    const res = await __yt.search(q);
+                    console.log(`[計測] youtubei.search に ${((Date.now() - __t_search) / 1000).toFixed(2)} 秒かかりました`);
+                    const result: {
+                        title: string;
+                        authorName: string;
+                        videoId: string
+                    }[] = []
+                    for (const resu of res.results)
+                        if (resu.is(youtubei.YTNodes.Video) && resu.title.text)
+                            result.push({ title: resu.title.text, authorName: resu.author.name, videoId: resu.video_id })
+                    return result;
+                } catch (e) {
+                    console.error("er", e);
+                }
+            };
+            async function inspectResults(searchResult: {
+                title: string;
+                authorName: string;
+                videoId: string
+            }[]) {
+                const __t_create2 = Date.now();
+                const yt = await youtubei.Innertube.create({
+                    client_type: youtubei.ClientType.MUSIC,
+                    lang: 'ja',
+                    location: 'JP'
+                });
+                console.log(`[計測] youtubei.Innertube.create(MUSIC) に ${((Date.now() - __t_create2) / 1000).toFixed(2)} 秒かかりました`);
+                interface TrackMeta {
+                    title?: string;
+                    albumTitle?: string;
+                    artistName?: string;
+                    videoId: string;
+                }
+                const musicInfoResult: TrackMeta[] = [];
 
-                    /**
-                     * TrackInfo から title / albumTitle / artistName を抽出
-                     * @param track YouTube.js の TrackInfo
-                     * @returns TrackMeta
-                     */
-                    async function extractTrackMeta(track: youtubei.YTMusic.TrackInfo): Promise<TrackMeta> {
-                        const meta: TrackMeta = { videoId };
-                        const basic = track.basic_info;
+                for (const item of searchResult) {
+                    const videoId = item.videoId;
+                    if (!videoId) continue;
+                    try {
+                        const __t_getInfo = Date.now();
+                        const info = await yt.music.getInfo(videoId);
+                        console.log(`[計測] yt.music.getInfo(${videoId}) に ${((Date.now() - __t_getInfo) / 1000).toFixed(2)} 秒かかりました`);
 
-                        // --- 1) basic_info ---
-                        if (basic?.title) meta.title = basic.title;
-                        if (basic?.channel?.name) meta.artistName = basic.channel.name;
+                        /**
+                         * TrackInfo から title / albumTitle / artistName を抽出
+                         * @param track YouTube.js の TrackInfo
+                         * @returns TrackMeta
+                         */
+                        async function extractTrackMeta(track: youtubei.YTMusic.TrackInfo): Promise<TrackMeta> {
+                            const meta: TrackMeta = { videoId };
+                            const basic = track.basic_info;
 
-                        // 再帰的に text / runs を集める内部関数
-                        const collectTexts = (node: unknown, depth = 0): string[] => {
-                            if (depth > 6 || typeof node !== "object" || node === null) return [];
-                            const texts: string[] = [];
+                            // --- 1) basic_info ---
+                            if (basic?.title) meta.title = basic.title;
+                            if (basic?.channel?.name) meta.artistName = basic.channel.name;
 
-                            const n = node as Record<string, unknown>;
-                            const value = n["text"];
-                            if (typeof value === "string") {
-                                texts.push(value);
-                            } else if (value && typeof value === "object" && Array.isArray((value as any).runs)) {
-                                const runs = (value as { runs: { text?: string }[] }).runs;
-                                texts.push(runs.map(r => r.text ?? "").join(""));
-                            }
+                            // 再帰的に text / runs を集める内部関数
+                            const collectTexts = (node: unknown, depth = 0): string[] => {
+                                if (depth > 6 || typeof node !== "object" || node === null) return [];
+                                const texts: string[] = [];
 
-                            if (Array.isArray(n["runs"])) {
-                                const runs = n["runs"] as { text?: string }[];
-                                texts.push(runs.map(r => r.text ?? "").join(""));
-                            }
+                                const n = node as Record<string, unknown>;
+                                const value = n["text"];
+                                if (typeof value === "string") {
+                                    texts.push(value);
+                                } else if (value && typeof value === "object" && Array.isArray((value as any).runs)) {
+                                    const runs = (value as { runs: { text?: string }[] }).runs;
+                                    texts.push(runs.map(r => r.text ?? "").join(""));
+                                }
 
-                            for (const val of Object.values(n)) {
-                                if (Array.isArray(val)) for (const v of val) texts.push(...collectTexts(v, depth + 1));
-                                else if (typeof val === "object" && val !== null) texts.push(...collectTexts(val, depth + 1));
-                            }
+                                if (Array.isArray(n["runs"])) {
+                                    const runs = n["runs"] as { text?: string }[];
+                                    texts.push(runs.map(r => r.text ?? "").join(""));
+                                }
 
-                            return texts;
-                        };
+                                for (const val of Object.values(n)) {
+                                    if (Array.isArray(val)) for (const v of val) texts.push(...collectTexts(v, depth + 1));
+                                    else if (typeof val === "object" && val !== null) texts.push(...collectTexts(val, depth + 1));
+                                }
 
-                        // 指定ラベルに基づき値を拾う
-                        const findByLabel = (texts: string[], labels: string[]): string | undefined => {
-                            for (let i = 0; i < texts.length; i++) {
-                                const t = texts[i].trim();
-                                for (const label of labels) {
-                                    const pattern = new RegExp(`^${label}\\s*[•:\\-]\\s*(.+)$`, "i");
-                                    const match = t.match(pattern);
-                                    if (match) return match[1].trim();
-                                    if (t.toLowerCase() === label.toLowerCase() && texts[i + 1])
-                                        return texts[i + 1].trim();
+                                return texts;
+                            };
+
+                            // 指定ラベルに基づき値を拾う
+                            const findByLabel = (texts: string[], labels: string[]): string | undefined => {
+                                for (let i = 0; i < texts.length; i++) {
+                                    const t = texts[i].trim();
+                                    for (const label of labels) {
+                                        const pattern = new RegExp(`^${label}\\s*[•:\\-]\\s*(.+)$`, "i");
+                                        const match = t.match(pattern);
+                                        if (match) return match[1].trim();
+                                        if (t.toLowerCase() === label.toLowerCase() && texts[i + 1])
+                                            return texts[i + 1].trim();
+                                    }
+                                }
+                                return undefined;
+                            };
+
+                            // --- 2) getRelated() から ---
+                            const related = await track.getRelated().catch(() => undefined);
+                            if (related && Array.isArray(related)) {
+                                for (const node of related) {
+                                    if (
+                                        node instanceof youtubei.YTNodes.MusicDescriptionShelf ||
+                                        node instanceof youtubei.YTNodes.MusicCarouselShelf
+                                    ) {
+                                        const texts = collectTexts(node);
+                                        const album = findByLabel(texts, ["album", "アルバム"]);
+                                        const artist = findByLabel(texts, ["artist", "アーティスト"]);
+                                        if (album && !meta.albumTitle) meta.albumTitle = album;
+                                        if (artist && !meta.artistName) meta.artistName = artist;
+                                    }
                                 }
                             }
-                            return undefined;
-                        };
 
-                        // --- 2) getRelated() から ---
-                        const related = await track.getRelated().catch(() => undefined);
-                        if (related && Array.isArray(related)) {
-                            for (const node of related) {
-                                if (
-                                    node instanceof youtubei.YTNodes.MusicDescriptionShelf ||
-                                    node instanceof youtubei.YTNodes.MusicCarouselShelf
-                                ) {
-                                    const texts = collectTexts(node);
+                            // --- 3) getTab() 経由で補完 ---
+                            if (!meta.albumTitle || !meta.artistName) {
+                                for (const tabName of track.available_tabs) {
+                                    if (!/desc|概要|about|information|詳細/i.test(tabName)) continue;
+                                    const tab = await track.getTab(tabName).catch(() => undefined);
+                                    if (!tab) continue;
+
+                                    const texts = collectTexts(tab);
                                     const album = findByLabel(texts, ["album", "アルバム"]);
                                     const artist = findByLabel(texts, ["artist", "アーティスト"]);
                                     if (album && !meta.albumTitle) meta.albumTitle = album;
                                     if (artist && !meta.artistName) meta.artistName = artist;
+                                    if (meta.albumTitle && meta.artistName) break;
                                 }
                             }
+
+                            // --- 4) 最後のフォールバック ---
+                            if (!meta.artistName && basic?.author) meta.artistName = basic.author;
+
+                            return meta;
                         }
-
-                        // --- 3) getTab() 経由で補完 ---
-                        if (!meta.albumTitle || !meta.artistName) {
-                            for (const tabName of track.available_tabs) {
-                                if (!/desc|概要|about|information|詳細/i.test(tabName)) continue;
-                                const tab = await track.getTab(tabName).catch(() => undefined);
-                                if (!tab) continue;
-
-                                const texts = collectTexts(tab);
-                                const album = findByLabel(texts, ["album", "アルバム"]);
-                                const artist = findByLabel(texts, ["artist", "アーティスト"]);
-                                if (album && !meta.albumTitle) meta.albumTitle = album;
-                                if (artist && !meta.artistName) meta.artistName = artist;
-                                if (meta.albumTitle && meta.artistName) break;
-                            }
-                        }
-
-                        // --- 4) 最後のフォールバック ---
-                        if (!meta.artistName && basic?.author) meta.artistName = basic.author;
-
-                        return meta;
-                    }
-                    musicInfoResult.push((await extractTrackMeta(info)));
-                } catch (err) {
-                    console.warn('Failed to fetch video info for', videoId, err);
-                }
-            }
-            return musicInfoResult;
-        }
-
-        const jpResult = await safeSearch(qJP_full, "ja");
-        const enResult = await safeSearch(qEN_full, "en");
-        if (jpResult && enResult) {
-            type VideoObject = { videoId: string;[key: string]: unknown };
-
-            /**
-             * 2つの配列を videoId で照合し、共通するものを { one: [], two: [] } にまとめて返す
-             * どちらの配列にも存在する videoId がない場合は空の配列を返す
-             */
-            function matchByVideoId<
-                T extends VideoObject,
-                U extends VideoObject
-            >(one: T[], two: U[]): { one: T[]; two: U[] } {
-                const result: { one: T[]; two: U[] } = { one: [], two: [] };
-
-                // Map化して高速照合
-                const mapTwo = new Map<string, U>();
-                for (const t of two) {
-                    mapTwo.set(t.videoId, t);
-                }
-
-                for (const o of one) {
-                    const match = mapTwo.get(o.videoId);
-                    if (match) {
-                        result.one.push(o);
-                        result.two.push(match);
+                        musicInfoResult.push((await extractTrackMeta(info)));
+                    } catch (err) {
+                        console.warn('Failed to fetch video info for', videoId, err);
                     }
                 }
-
-                return result;
+                return musicInfoResult;
             }
-            const { one, two } = matchByVideoId(jpResult, enResult);
-            const jpInfo = await inspectResults(one);
-            const enInfo = await inspectResults(two);
 
+            const jpResult = await safeSearch(qJP_full, "ja");
+            const enResult = await safeSearch(qEN_full, "en");
+            if (jpResult && enResult) {
+                type VideoObject = { videoId: string;[key: string]: unknown };
+
+                /**
+                 * 2つの配列を videoId で照合し、共通するものを { one: [], two: [] } にまとめて返す
+                 * どちらの配列にも存在する videoId がない場合は空の配列を返す
+                 */
+                function matchByVideoId<
+                    T extends VideoObject,
+                    U extends VideoObject
+                >(one: T[], two: U[]): { one: T[]; two: U[] } {
+                    const result: { one: T[]; two: U[] } = { one: [], two: [] };
+
+                    // Map化して高速照合
+                    const mapTwo = new Map<string, U>();
+                    for (const t of two) {
+                        mapTwo.set(t.videoId, t);
+                    }
+
+                    for (const o of one) {
+                        const match = mapTwo.get(o.videoId);
+                        if (match) {
+                            result.one.push(o);
+                            result.two.push(match);
+                        }
+                    }
+
+                    return result;
+                }
+                const { one, two } = matchByVideoId(jpResult, enResult);
+                const jpInfo = await inspectResults(one);
+                const enInfo = await inspectResults(two);
+
+            }
         }
-
 
         // --- 3) YouTube 検索（youtubei と yts の両方で試す） ---
         type YtItem = { videoId: string; title?: string; seconds?: number; channelTitle?: string; };
 
         const searchYoutubei = async (q: string): Promise<YtItem[]> => {
             try {
+                const __t_create3 = Date.now();
                 const yt = await (youtubei.Innertube.create({ lang: "ja", location: "JP" } as any).catch(e => { err("youtubei.create", e); }));
+                console.log(`[計測] youtubei.Innertube.create に ${((Date.now() - __t_create3) / 1000).toFixed(2)} 秒かかりました`);
+                const __t_search2 = Date.now();
                 const r = await (yt?.search(q).catch(e => { err("youtubei.search", e); }));
+                console.log(`[計測] youtubei.search に ${((Date.now() - __t_search2) / 1000).toFixed(2)} 秒かかりました`);
 
                 const items: any[] =
                     (Array.isArray(r?.videos) ? r.videos : []) ||
@@ -1938,7 +1961,9 @@ export class VideoMetaCache {
 
         const searchYts = async (q: string): Promise<YtItem[]> => {
             try {
+                const __t_yts = Date.now();
                 const r: any = await yts(q).catch(e => { err("searchYtsError:", e); });
+                console.log(`[計測] yts検索 に ${((Date.now() - __t_yts) / 1000).toFixed(2)} 秒かかりました`);
                 const vids: any[] = Array.isArray(r?.videos) ? r.videos : [];
                 return vids.map(v => ({
                     videoId: v.videoId,
@@ -2041,6 +2066,7 @@ export class VideoMetaCache {
             return fail('no selected candidate');
         }
 
+        console.log(`[計測] appleMusicToYouTubeId 全体で ${((Date.now() - startTime) / 1000).toFixed(2)} 秒かかりました`);
         return filteredJP[0].videoId;
     }
     async cacheGet(data: Playlist): Promise<CacheGetReturn | undefined> {

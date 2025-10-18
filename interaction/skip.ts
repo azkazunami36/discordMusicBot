@@ -5,6 +5,7 @@ import { VariableExistCheck } from "../variableExistCheck.js";
 import { EnvData, VideoMetaCache } from "../envJSON.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
 import { progressBar } from "../progressBar.js";
+import { SumLog } from "../sumLog.js";
 
 export const command = new SlashCommandBuilder()
     .setName("skip")
@@ -36,6 +37,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         envData.playlistSave(playlist);
         const metaEmbed = await videoInfoEmbedGet([playlist[0]], "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`", interaction.client);
         await interaction.editReply({ embeds: [metaEmbed] });
+        SumLog.log("スキップ処理を開始します。", { functionName: "skip", guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, voiceChannelId: vchannelId, userId: interaction.user.id });
         let statusTemp: {
             status: "loading" | "downloading" | "formatchoosing" | "converting" | "done" | "queue",
             percent: number;

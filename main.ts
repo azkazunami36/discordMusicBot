@@ -4,11 +4,13 @@ import "dotenv/config";
 import "./logger.js"
 
 process.on("uncaughtException", (err) => {
-    console.error("uncaughtException:", err.stack || String(err));
+    console.error("キャッチされずグローバルで発生した例外:", err);
+    SumLog.error("グローバルでエラーが発生しました。ログを確認してください。", { functionName: "process.on" });
 });
 
 process.on("unhandledRejection", (reason) => {
-    console.error("unhandledRejection:", (reason as any)?.stack || String(reason));
+    console.error("未処理の拒否:", reason);
+    SumLog.error("よくわからないけどunhandledRejectionっていうやつが発生しました。ログを見てください。", { functionName: "process.on" });
 });
 
 import { EnvData } from "./envJSON.js";
@@ -19,6 +21,7 @@ import { Player } from "./player.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "./embed.js";
 import { progressBar } from "./progressBar.js";
 import { getVoiceConnections, VoiceConnection } from "@discordjs/voice";
+import { SumLog } from "./sumLog.js";
 
 const client = new Discord.Client({
     intents: [
@@ -40,10 +43,12 @@ const webPlayerAPI = new WebPlayerAPI(serversDataClass, client);
 /** 全てのVCの動作を追いかけるクラスです。 */
 const player = new Player();
 
+
 /** 再生をしきったあとにする操作です。たいていリピート操作や再生停止操作などが行われます。 */
 player.on("playAutoEnd", async (guildId) => {
     const serverData = serversData[guildId];
-    if (!serverData || !serverData.discord.calledChannel) return;
+    SumLog.log("音楽の再生の終了を示すコールバックが動作しました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
+    if (!serverData?.discord.calledChannel) return;
     const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
     const envData = new EnvData(guildId);
     const playlist = envData.playlistGet();
@@ -66,7 +71,9 @@ player.on("playAutoEnd", async (guildId) => {
             if (channel && channel.isTextBased()) {
                 await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
             }
+            SumLog.log("プレイリストが空になり、退出の連絡をしました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
         } catch (e) {
+            SumLog.error("プレイリストが空になりましたが、エラーが発生しました。再生は停止できたはずです。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
             console.error(e);
         }
         player.stop(guildId);
@@ -127,6 +134,7 @@ player.on("playAutoEnd", async (guildId) => {
     } else {
         await player.sourceSet(guildId, playlist[0]);
     }
+    SumLog.log("次の曲が存在したため、次の曲の再生を開始しました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
 })
 
 /** インタラクションコマンドのデータです。 */
@@ -152,6 +160,7 @@ const runedServerTime: { guildId: string; runedTime: number; }[] = [];
 /** コマンドの最短実行間隔です。 */
 const runlimit = 1000;
 client.on(Discord.Events.InteractionCreate, async interaction => {
+    SumLog.log("インタラクションを受信しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId || undefined, functionName: "client.on Interaction", userId: interaction.user.id });
     if (fs.existsSync("./log/userinteraction.log")) {
         const meta = fs.statSync("./log/userinteraction.log");
         if (meta.size > 10 * 1000 * 1000) {
@@ -390,6 +399,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             if (!me) permissionIs = false;
             else if (!interaction.channel.permissionsFor(me).has(checkPermission)) permissionIs = false;
         }
+        SumLog.log("コマンド「/" + interaction.commandName + "」の実行を開始しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId || undefined, functionName: "client.on Interaction", userId: interaction.user.id });
         // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, player };
         await interaction.reply({
@@ -409,6 +419,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         try {
             await data.execute(interaction, inputData);
         } catch (e) {
+            SumLog.error("コマンド「/" + interaction.commandName + "」の実行でエラーが発生しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId || undefined, functionName: "client.on Interaction", userId: interaction.user.id });
             console.error(e);
             await interaction.editReply({
                 embeds: [new Discord.EmbedBuilder()
@@ -427,6 +438,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
 client.on(Discord.Events.ClientReady, () => {
     console.log("OK " + client.user?.displayName);
     client.user?.setStatus("online");
+    SumLog.log("botが起動しました。", { client, functionName: "client.on ready", userId: client.user?.id });
 });
 // VCの状態が変化したら実行します。
 client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
@@ -445,6 +457,7 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
                 });
             }
         }
+        SumLog.log("VCからメンバーが退出し、botも退出しました。", { client, functionName: "client.on voiceupdate", guildId: newState.guild.id, voiceChannelId: newState.channelId || undefined });
         // 実際に退出します。
         player.stop(channel.guildId);
     }
@@ -483,6 +496,7 @@ const bt = [
 let joubutuNumber = Math.floor(Math.random() * bt.length);
 client.on(Discord.Events.GuildCreate, guild => {
     console.log("音楽botが新しいサーバーに参加。参加したサーバー名: " + guild.name + " 現在の参加数: " + client.guilds.cache.size);
+    SumLog.log("新しいサーバーにbotが参加しました。現時点の参加数: " + client.guilds.cache.size, { client, functionName: "client.on guildcreate", guildId: guild.id });
 });
 client.on(Discord.Events.MessageCreate, async message => {
     if (!message.author.bot) {
@@ -548,6 +562,8 @@ client.on(Discord.Events.MessageCreate, async message => {
             return results;
         }
         fs.appendFileSync("./log/usermessage.log", "\n[" + formatDateJST() + "] [" + message.guild?.name + "(" + message.guildId + ")" + "] [" + message.author.globalName + "(" + message.author.username + "/" + message.author.id + ")" + "] " + message.content + ", " + JSON.stringify(extractMessageExtras(message), null, "  "))
+
+        SumLog.log(message.content, { client, functionName: "client.on message", guildId: message.guildId || undefined, textChannelId: message.channelId, userId: message.member?.id });
     }
     if (message.guildId === "926965020724691005") {
         if (message.content === client.user?.displayName + "のコマンドを再定義する") {

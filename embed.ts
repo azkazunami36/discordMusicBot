@@ -3,8 +3,10 @@ import fs from "fs";
 import { EnvData, Playlist, VideoMetaCache } from "./envJSON.js";
 import { numberToTimeString } from "./numberToTimeString.js";
 import { musicBrainz } from "./MusicBrainz.js";
+import { SumLog } from "./sumLog.js";
 
 export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: string, client: Client) {
+    const startTime = Date.now();
     const videoMetaCache = new VideoMetaCache();
     if (playlistDatas.length === 1) {
         const playlistData = playlistDatas[0];
@@ -99,6 +101,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
         });
         if (videoThumbnail) if (meta?.type === "videoId") embed.setImage(videoThumbnail);
         else embed.setThumbnail(videoThumbnail);
+        SumLog.log("動画のサムネイルを表示するEmbedを作成しました。作成にかかった時間は" + Math.floor((Date.now() - startTime) / 1000) + "秒です。", { functionName: "videoInfoEmbedGet" });
         return embed;
     } else {
         const fields: APIEmbedField[] = [];
@@ -159,6 +162,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
             .setDescription(message)
             .addFields(fields)
             .setColor("Purple");
+        SumLog.log("複数の動画の情報を示すEmbedを作成しました。作成にかかった時間は" + Math.floor((Date.now() - startTime) / 1000) + "秒です。", { functionName: "videoInfoEmbedGet" });
         return embed;
     }
 }
@@ -173,6 +177,7 @@ export async function statusEmbedGet(data: {
         playingTime?: number;
     }
 }) {
+    const startTime = Date.now();
     const { client, guildId, page, playlist } = data;
     const albumInfoJson: {
         youtubeLink: {
@@ -277,6 +282,7 @@ export async function statusEmbedGet(data: {
     } else {
         embed.setTitle("再生していません");
     }
+    SumLog.log("/statusコマンド用Embedを作成しました。作成にかかった時間は" + Math.floor((Date.now() - startTime) / 1000) + "秒です。", { functionName: "statusEmbedGet" });
     return embed;
 }
 
