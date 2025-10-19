@@ -424,6 +424,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             else if (!interaction.channel.permissionsFor(me).has(checkPermission)) permissionIs = false;
         }
         SumLog.log("コマンド「/" + interaction.commandName + "」の実行を開始しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, functionName: "client.on Interaction", userId: interaction.user.id });
+        if (!permissionIs) SumLog.log("このサーバーが権限が不足している箇所が多いようです。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, functionName: "client.on Interaction", userId: interaction.user.id });
         // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, player };
         const response = await interaction.reply({

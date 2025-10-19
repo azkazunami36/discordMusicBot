@@ -2,7 +2,7 @@
 # create by chatgpt.
 # npm run start を常時再起動。終了後に3秒の停止受付（Ctrl+C）を用意。
 
-DELAY="${RESTART_DELAY:-0}"   # 環境変数 RESTART_DELAY で秒数を変更可
+DELAY="${RESTART_DELAY:-1}"   # 環境変数 RESTART_DELAY で秒数を変更可
 
 while :; do
   # 親プロセスは Ctrl+C を一時無視（子の npm には届きます）
