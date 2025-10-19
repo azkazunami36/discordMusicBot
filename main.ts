@@ -13,11 +13,11 @@ process.on("unhandledRejection", (reason) => {
     SumLog.error("よくわからないけどunhandledRejectionっていうやつが発生しました。ログを見てください。", { functionName: "process.on" });
 });
 
-import { EnvData } from "./funcs/envJSON.js";
+import { EnvData } from "./class/envJSON.js";
 import { ServersDataClass } from "./class/serversData.js";
 import { InteractionInputData } from "./funcs/interface.js";
 import { WebPlayerAPI } from "./class/webAPI.js";
-import { Player } from "./funcs/player.js";
+import { Player } from "./class/player.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "./funcs/embed.js";
 import { progressBar } from "./createByChatGPT/progressBar.js";
 import { getVoiceConnections, VoiceConnection } from "@discordjs/voice";

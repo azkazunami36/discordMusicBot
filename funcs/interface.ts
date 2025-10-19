@@ -1,5 +1,5 @@
 import { ServersDataClass } from "../class/serversData.js";
-import { Player } from "./player.js";
+import { Player } from "../class/player.js";
 
 export interface ServersData {
     [guildId: string]: {

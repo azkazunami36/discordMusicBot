@@ -2,7 +2,7 @@ import { Interaction, SlashCommandBuilder, CacheType, GuildMember, Message } fro
 
 import { InteractionInputData } from "../funcs/interface.js";
 import { VariableExistCheck } from "../class/variableExistCheck.js";
-import { EnvData } from "../funcs/envJSON.js";
+import { EnvData } from "../class/envJSON.js";
 import { messageEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()

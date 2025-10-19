@@ -1,8 +1,8 @@
 import * as Discord from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
-import { EnvData } from "../funcs/envJSON.js";
+import { EnvData } from "./envJSON.js";
 import { ServersDataClass } from "./serversData.js";
-import { Player } from "../funcs/player.js";
+import { Player } from "./player.js";
 import { messageEmbedGet } from "../funcs/embed.js";
 import { ChannelType, ChatInputCommandInteraction, GuildMember, PermissionsBitField, VoiceBasedChannel } from "discord.js";
 import { SumLog } from "./sumLog.js";

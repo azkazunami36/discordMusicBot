@@ -1,6 +1,6 @@
 import { APIEmbedField, Client, EmbedBuilder } from "discord.js";
 import fs from "fs";
-import { EnvData, Playlist, videoMetaCacheGet } from "./envJSON.js";
+import { EnvData, Playlist, videoMetaCacheGet } from "../class/envJSON.js";
 import { numberToTimeString } from "../createByChatGPT/numberToTimeString.js";
 import { SumLog } from "../class/sumLog.js";
 import { youtubeUserInfoGet } from "../worker/helper/createByChatGPT/youtubeUserInfoGetHelper.js";

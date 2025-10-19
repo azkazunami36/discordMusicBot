@@ -3,7 +3,7 @@ import ytdl from "ytdl-core";
 import yts from "yt-search";
 
 import { InteractionInputData } from "../funcs/interface.js";
-import { EnvData, Playlist, videoMetaCacheGet } from "../funcs/envJSON.js";
+import { EnvData, Playlist, videoMetaCacheGet } from "../class/envJSON.js";
 import { VariableExistCheck } from "../class/variableExistCheck.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../funcs/embed.js";
 import { sourcePathManager } from "../class/sourcePathManager.js";

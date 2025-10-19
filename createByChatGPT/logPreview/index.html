@@ -23,7 +23,7 @@
     th.center, td.center { text-align: center; }
     /* 可変列の最小幅（functionName以降）*/
     th:nth-child(n+4), td:nth-child(n+4) { min-width: 120px; }
-    /* message列の最小幅を上書き（5列目）*/
+    /* message列の最小幅（5列目）*/
     th:nth-child(5), td:nth-child(5) { min-width: 250px; }
     /* type の強調 */
     td.type-warn { background: #f39c12; color: #fff; font-weight: 900; }
@@ -48,6 +48,13 @@
         <option value="voiceChannel">voiceChannel</option>
       </select>
       <label style="display:flex; gap:4px; align-items:center;"><input id="excludeToggle" type="checkbox" /> 除外</label>
+    </div>
+
+    <!-- 検索中のみ表示する範囲UI -->
+    <div id="rangeUI" style="display:none; gap:6px; align-items:center;">
+      <button id="wprev" class="btn">範囲 ←</button>
+      <div id="winfo">Window 1 / 1</div>
+      <button id="wnext" class="btn">→ 範囲</button>
     </div>
 
     <div class="spacer"></div>
@@ -90,11 +97,17 @@
       const cfg = await fetch('/config', {cache:'no-store'}).then(r=>r.json());
       const PAGE_SIZE = Number(cfg.pageSize || 2500);
       const POLL_MS = Number(cfg.pollMs || 1000);
+      const SEARCH_WINDOW_SIZE = Number(cfg.searchWindowSize || 50000);
 
       let mode = 'normal'; // 'normal' | 'search'
-      let searchParams = { field: 'message', q: '', exclude: false, page: 1, totalPages: 1, total: 0 };
+      let searchParams = {
+        field: 'message', q: '', exclude: false,
+        page: 1, totalPages: 1, total: 0,
+        // 追加：範囲ウィンドウ情報
+        windowIndex: 0, windowCount: 1, windowStartLine: 0, windowEndLine: 0
+      };
 
-      let lastPos=0,pending="",currentPage=1,totalPages=1,totalLines=0,fileSize=0,onLatestPage=true,lastShownIndex=0;
+      let lastPos=0,pending="",currentPage=1,totalPages=1,totalLines=0,fileSize=0,onLatestPage=true;
       const tbody=document.querySelector("#table tbody"),
             pageInfo=document.getElementById("pageInfo"),
             rowsStat=document.getElementById("rowsStat"),
@@ -103,13 +116,36 @@
             nextBtn=document.getElementById("next"),
             searchBox=document.getElementById("searchBox"),
             searchFieldSel=document.getElementById("searchField"),
-            excludeToggle=document.getElementById("excludeToggle");
+            excludeToggle=document.getElementById("excludeToggle"),
+            rangeUI=document.getElementById("rangeUI"),
+            wprevBtn=document.getElementById("wprev"),
+            wnextBtn=document.getElementById("wnext"),
+            winfo=document.getElementById("winfo");
+
+      function setRangeUIVisible(v){
+        rangeUI.style.display = v ? "flex" : "none";
+      }
+      function updateRangeUIState(){
+        winfo.textContent = `Window ${searchParams.windowIndex+1} / ${searchParams.windowCount}`;
+        wprevBtn.disabled = (searchParams.windowIndex<=0);
+        wnextBtn.disabled = (searchParams.windowIndex>=(searchParams.windowCount-1));
+      }
 
       function setPageInfo(){
-        const tp=(mode==='search')? (searchParams.totalPages||1) : (totalPages||1);
-        const cp=(mode==='search')? (searchParams.page||1) : (currentPage||1);
-        pageInfo.textContent = "Page " + cp + " / " + tp + (mode==='search' ? " (search)" : "");
-        prevBtn.disabled = cp<=1; nextBtn.disabled = cp>=tp;
+        if(mode==='search'){
+          pageInfo.textContent = `Page ${searchParams.page||1} / ${searchParams.totalPages||1} (search)`;
+        }else{
+          pageInfo.textContent = `Page ${currentPage||1} / ${totalPages||1}`;
+        }
+        prevBtn.disabled = (mode==='search' ? (searchParams.page<=1) : (currentPage<=1));
+        nextBtn.disabled = (mode==='search' ? (searchParams.page>=searchParams.totalPages) : (currentPage>=totalPages));
+      }
+      function setRowsStatVal(){
+        if(mode==='search'){
+          rowsStat.textContent = "hits: " + (searchParams.total || 0);
+        }else{
+          rowsStat.textContent = "rows: " + (totalLines || 0);
+        }
       }
       function humanBytes(n){
         if(n<1024) return n+"B";
@@ -137,26 +173,36 @@
       }
       function normalize(v){ return (v==null?"":String(v)).toLowerCase(); }
 
-      function appendRowsFromLines(lines){
+      // ★ lines配列と、実JSONL開始行番号(offsetBase)またはnumbers配列から描画
+      function appendRowsFromLines(lines, offsetBase, numbers){
         const f=document.createDocumentFragment();
-        for(const line of lines){
+        // when numbers is provided (search mode), use it directly; otherwise derive from offsetBase
+        const useNumbers = Array.isArray(numbers) && numbers.length === lines.length;
+        let base = (typeof offsetBase==='number' && offsetBase>=0) ? offsetBase : 0;
+
+        for(let i=0;i<lines.length;i++){
+          const line = lines[i];
           if(!line) continue;
           try{
-            const d=JSON.parse(line), i=d.info||{}, g=i.guild||{}, tx=i.textChannelId||{}, vx=i.voiceChannelId||{}, u=i.userId||{}, tr=document.createElement("tr");
+            const d=JSON.parse(line), iinfo=d.info||{}, g=iinfo.guild||{}, tx=iinfo.textChannelId||{}, vx=iinfo.voiceChannelId||{}, u=iinfo.userId||{}, tr=document.createElement("tr");
             const userStr = u.globalName||u.displayName||u.username||"";
             const guildStr = g.name||g.id||"";
             const txStr = tx.name||tx.id||"";
             const vxStr = vx.name||vx.id||"";
-            const fnStr = i.functionName||"";
+            const fnStr = iinfo.functionName||"";
             const typeStr = (d.type||"").toString();
 
-            // #
-            let td=document.createElement("td"); td.className="center"; td.textContent=String(++lastShownIndex); tr.appendChild(td);
+            // #（実際の JSONL 行番号）
+            const displayNo = useNumbers ? Number(numbers[i])||0 : (base + i + 1);
+            let td=document.createElement("td"); td.className="center"; td.textContent=String(displayNo); tr.appendChild(td);
+
             // date
             td=document.createElement("td"); td.className="center"; td.textContent=formatDate(d.date); tr.appendChild(td);
-            // type
+            // type（装飾）
             const t=typeStr.toLowerCase();
-            td=document.createElement("td"); td.className="center"; if(t.indexOf("error")!==-1) td.classList.add("type-error"); else if(t.indexOf("warn")!==-1) td.classList.add("type-warn"); td.textContent=typeStr; tr.appendChild(td);
+            td=document.createElement("td"); td.className="center";
+            if(t.indexOf("error")!==-1) td.classList.add("type-error"); else if(t.indexOf("warn")!==-1) td.classList.add("type-warn");
+            td.textContent=typeStr; tr.appendChild(td);
             // functionName
             td=document.createElement("td"); td.textContent=fnStr; tr.appendChild(td);
             // message
@@ -184,14 +230,22 @@
         }
         tbody.appendChild(f);
 
-        // 1ページ目（最新）で通常モード時は PAGE_SIZE を超えたら上から削る
+        // 1ページ目（最新）＆通常モード時は PAGE_SIZE 超過で上から削除
         if(mode==='normal' && (onLatestPage && (searchBox.value.trim()===''))){
           while(tbody.rows.length > PAGE_SIZE) tbody.deleteRow(0);
         }
-        rowsStat.textContent = "rows: " + tbody.rows.length;
       }
 
-      function clearAndSetIndexBase(base){ tbody.innerHTML=""; lastShownIndex=base; }
+      function computeStartBaseNewestFirst(totalCount, pageIndex, pageChunkLength){
+        const t = Math.max(0, Number(totalCount||0));
+        const p = Math.max(1, Number(pageIndex||1));
+        const len = Math.max(0, Number(pageChunkLength||0));
+        const prevPagesCount = (p-1) * PAGE_SIZE;
+        return Math.max(0, t - prevPagesCount - len);
+      }
+
+      function clearBody(){ tbody.innerHTML=""; }
+
       async function fetchJSON(u){ const r=await fetch(u,{cache:'no-store'}); if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }
 
       // ---- 通常表示：page=1（最新）をロード ----
@@ -202,8 +256,15 @@
         totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
         currentPage=1; onLatestPage=true;
         lastPos=d.size??0; fileSize=d.size??0; pending="";
-        clearAndSetIndexBase((currentPage-1)*PAGE_SIZE); appendRowsFromLines(l);
+        clearBody();
+
+        const base = (d.startIndex!=null)
+          ? Number(d.startIndex)||0
+          : computeStartBaseNewestFirst(totalLines, currentPage, l.length);
+
+        appendRowsFromLines(l, base);
         bytesStat.textContent="size: "+humanBytes(fileSize); setPageInfo();
+        setRowsStatVal();
         window.scrollTo({top:document.body.scrollHeight});
       }
 
@@ -223,11 +284,19 @@
             if(tail){ try{ JSON.parse(tail); parts.push(tail); pending=""; } catch{ pending=tail; } } else { pending=""; }
             const newLines=parts.filter(x=>x.length>0);
             if(newLines.length>0){
-              appendRowsFromLines(newLines);
+              let lastNumber = 0;
+              const lastTr = tbody.lastElementChild;
+              if(lastTr && lastTr.firstChild && lastTr.firstChild.textContent){
+                lastNumber = Number(lastTr.firstChild.textContent) || 0;
+              }else{
+                lastNumber = totalLines - (tbody.rows.length || 0);
+              }
+              appendRowsFromLines(newLines, lastNumber);
               window.scrollTo({top:document.body.scrollHeight});
               totalLines+=newLines.length;
               totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
               setPageInfo();
+              setRowsStatVal();
             }
             lastPos=fileSize;
           }else{
@@ -244,25 +313,59 @@
           const d=await fetchJSON("/page?index="+i+"&size="+PAGE_SIZE), t=d.lines||"", l=t?splitLinesNoRegex(t):[];
           totalLines=d.totalLines||totalLines; totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
           currentPage=i; onLatestPage=(currentPage===1); setPageInfo();
-          clearAndSetIndexBase((currentPage-1)*PAGE_SIZE); appendRowsFromLines(l);
-          window.scrollTo({top: onLatestPage? document.body.scrollHeight : 0});
+          clearBody();
+
+          const base = (d.startIndex!=null)
+            ? Number(d.startIndex)||0
+            : computeStartBaseNewestFirst(totalLines, currentPage, l.length);
+
+          appendRowsFromLines(l, base);
+          window.scrollTo({ top: document.body.scrollHeight });
+          setRowsStatVal();
         }catch{}
       }
 
-      // ---- 検索（サーバー全体）----
+      // =============================
+      //  検索（サーバー全体 /search-window）
+      // =============================
       async function runSearch(page){
         const q = searchBox.value.trim();
         const field = searchFieldSel.value || "message";
         const exclude = excludeToggle.checked ? 1 : 0;
-        if(q===""){ mode='normal'; return initialLoad(); }
+
+        if(q===""){
+          mode='normal';
+          setRangeUIVisible(false);
+          return initialLoad();
+        }
         mode='search';
+
+        // 範囲UIの表示ON
+        setRangeUIVisible(true);
+
+        const windex = searchParams.windowIndex || 0;
         try{
-          const d=await fetchJSON(`/search?field=${encodeURIComponent(field)}&q=${encodeURIComponent(q)}&exclude=${exclude}&index=${page||1}&size=${PAGE_SIZE}`);
+          const d=await fetchJSON(`/search-window?field=${encodeURIComponent(field)}&q=${encodeURIComponent(q)}&exclude=${exclude}&windex=${windex}&index=${page||1}&size=${PAGE_SIZE}`);
           const t=d.lines||""; const l=t?splitLinesNoRegex(t):[];
-          searchParams={ field, q, exclude: !!exclude, page: d.pageIndex||1, totalPages: d.totalPages||1, total: d.total||l.length };
+
+          // サーバーからの window 情報で状態を更新
+          const w = d.window || {};
+          searchParams = {
+            field, q, exclude: !!exclude,
+            page: d.pageIndex||1, totalPages: d.totalPages||1, total: d.total||l.length,
+            windowIndex: (w.index!=null ? Number(w.index): (windex||0)),
+            windowCount: (w.windowCount!=null ? Number(w.windowCount): 1),
+            windowStartLine: (w.startLine!=null ? Number(w.startLine): 0),
+            windowEndLine: (w.endLine!=null ? Number(w.endLine): 0)
+          };
+
           setPageInfo();
-          clearAndSetIndexBase((searchParams.page-1)*PAGE_SIZE); appendRowsFromLines(l);
-          rowsStat.textContent = "rows: " + tbody.rows.length + " / " + searchParams.total;
+          updateRangeUIState();
+
+          clearBody();
+          const nums = Array.isArray(d.numbers) ? d.numbers : null;
+          appendRowsFromLines(l, 0, nums);
+          setRowsStatVal();
           window.scrollTo({top:document.body.scrollHeight});
         }catch{}
       }
@@ -277,6 +380,20 @@
       searchBox.addEventListener("input", ()=> runSearch(1));
       searchFieldSel.addEventListener("change", ()=> runSearch(1));
       excludeToggle.addEventListener("change", ()=> runSearch(1));
+
+      // 範囲UIボタン
+      wprevBtn.addEventListener("click", ()=>{
+        if(searchParams.windowIndex>0){
+          searchParams.windowIndex -= 1;
+          runSearch(1);
+        }
+      });
+      wnextBtn.addEventListener("click", ()=>{
+        if(searchParams.windowIndex < (searchParams.windowCount-1)){
+          searchParams.windowIndex += 1;
+          runSearch(1);
+        }
+      });
 
       // クリック→検索に反映（#, date, message は除外）
       // 0:#, 1:date, 2:type, 3:functionName, 4:message, 5:user, 6:guild, 7:textChannel, 8:voiceChannel
@@ -301,6 +418,8 @@
         if(!value) return;
         searchFieldSel.value = field;
         searchBox.value = value;
+        // ウィンドウは最新側（0）から検索を開始
+        searchParams.windowIndex = 0;
         runSearch(1);
       });
 

@@ -1,6 +1,6 @@
 import { Interaction, SlashCommandBuilder, CacheType, Message } from "discord.js";
 import { InteractionInputData } from "../funcs/interface.js";
-import { EnvData } from "../funcs/envJSON.js";
+import { EnvData } from "../class/envJSON.js";
 import { VariableExistCheck } from "../class/variableExistCheck.js";
 import { messageEmbedGet } from "../funcs/embed.js";
 
