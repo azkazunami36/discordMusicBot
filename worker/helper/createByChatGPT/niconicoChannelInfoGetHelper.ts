@@ -1,6 +1,7 @@
 import { Worker } from "worker_threads";
 import path from "path";
 import url from "url";
+import fs from "fs";
 
 // __dirname（ESM）
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
@@ -32,6 +33,14 @@ export async function niconicoChannelInfoGetBatch(
   start = 0
 ): Promise<(NicoChannelInfo | undefined)[]> {
   const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "niconicoChannelInfoGetWorker.js"); // ビルド後 .js を参照
+
+  if (!Array.isArray(inputs)) {
+    throw new Error("[niconicoChannelInfoGetBatch] inputs must be an array");
+  }
+  if (!fs.existsSync(workerPath)) {
+    throw new Error(`[niconicoChannelInfoGetBatch] worker not found: ${workerPath}`);
+  }
+
   const payload: Payload = { inputs, start };
 
   const result: WorkerResp = await new Promise((resolve) => {
@@ -43,7 +52,23 @@ export async function niconicoChannelInfoGetBatch(
     });
   });
 
-  if (!result.ok) return new Array(inputs.length).fill(undefined);
-  const bodies = result.data.map((d) => d.body);
+  if (!result || result.ok !== true) {
+    const errMsg = (result && (result as any).error) || "unknown error";
+    throw new Error(`[niconicoChannelInfoGetBatch] worker failed: ${errMsg}`);
+  }
+
+  const dataArr = result.data;
+  if (!Array.isArray(dataArr)) {
+    throw new Error("[niconicoChannelInfoGetBatch] invalid worker payload: data is not an array");
+  }
+
+  const bodies = dataArr.map((d, i) => {
+    const body = d && (d as any).body as NicoChannelInfo | undefined;
+    if (!body) {
+      throw new Error(`[niconicoChannelInfoGetBatch] empty body at index ${i}`);
+    }
+    return body;
+  });
+
   return bodies;
 }

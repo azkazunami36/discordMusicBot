@@ -1,6 +1,7 @@
 import { Worker } from "worker_threads";
 import path from "path";
 import url from "url";
+import fs from "fs";
 interface NicoSnapshotItem {
     // 基本
     contentId: string;
@@ -47,6 +48,14 @@ export async function niconicoInfoGetBatch(
   start = 0
 ): Promise<(NicoSnapshotItem | undefined)[]> {
   const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "niconicoInfoGetWorker.js"); // ビルド後 .js を参照
+
+  if (!Array.isArray(contentIds)) {
+    throw new Error("[niconicoInfoGetBatch] contentIds must be an array");
+  }
+  if (!fs.existsSync(workerPath)) {
+    throw new Error(`[niconicoInfoGetBatch] worker not found: ${workerPath}`);
+  }
+
   const payload: Payload = { contentIds, start };
 
   const result: WorkerResp = await new Promise((resolve) => {
@@ -58,7 +67,23 @@ export async function niconicoInfoGetBatch(
     });
   });
 
-  if (!result.ok) return new Array(contentIds.length).fill(undefined);
-  const bodies = result.data.map((d) => d.body);
+  if (!result || result.ok !== true) {
+    const errMsg = (result && (result as any).error) || "unknown error";
+    throw new Error(`[niconicoInfoGetBatch] worker failed: ${errMsg}`);
+  }
+
+  if (!Array.isArray(result.data)) {
+    throw new Error("[niconicoInfoGetBatch] invalid worker payload: data is not an array");
+  }
+
+  // それぞれの要素に body があるかを検証
+  const bodies = result.data.map((d, i) => {
+    const body = d && (d as any).body as NicoSnapshotItem | undefined;
+    if (!body) {
+      throw new Error(`[niconicoInfoGetBatch] empty body at index ${i}`);
+    }
+    return body;
+  });
+
   return bodies;
 }

@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import url from "url";
 import yts from "yt-search";
-import { google, youtube_v3 } from "googleapis";
+import { google } from "googleapis";
 
 // __dirname（ESM）
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));

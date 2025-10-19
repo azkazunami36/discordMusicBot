@@ -1,6 +1,7 @@
 import { Worker } from "worker_threads";
 import path from "path";
 import url from "url";
+import fs from "fs";
 
 // __dirname（ESM）
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
@@ -42,7 +43,15 @@ interface NicoSnapshotItem {
  * - 返り値: NicoSnapshotItem[] | undefined
  */
 export async function searchNicoVideo(query: string): Promise<NicoSnapshotItem[] | undefined> {
+    if (typeof query !== "string" || !query.trim()) {
+        throw new Error("[searchNicoVideo] query must be a non-empty string");
+    }
+
     const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "searchNicoVideoWorker.js"); // ビルド後 .js を参照
+
+    if (!fs.existsSync(workerPath)) {
+        throw new Error(`[searchNicoVideo] worker not found: ${workerPath}`);
+    }
 
     const result: WorkerResp = await new Promise((resolve) => {
         const worker = new Worker(workerPath, { workerData: query });
@@ -53,7 +62,15 @@ export async function searchNicoVideo(query: string): Promise<NicoSnapshotItem[]
         });
     });
 
-    if (!result.ok) return undefined;
-    // worker からは items 配列のみが返ってくる
-    return (result.data || []) as NicoSnapshotItem[];
+    if (!result || result.ok !== true) {
+        const errMsg = (result && (result as any).error) || "unknown error";
+        throw new Error(`[searchNicoVideo] worker failed: ${errMsg}`);
+    }
+
+    const data = (result as any).data;
+    if (!Array.isArray(data)) {
+        throw new Error("[searchNicoVideo] invalid worker payload: data is not an array");
+    }
+
+    return data as NicoSnapshotItem[];
 }

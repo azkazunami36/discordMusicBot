@@ -1,6 +1,7 @@
 import { Worker } from "worker_threads";
 import path from "path";
 import url from "url";
+import fs from "fs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
@@ -11,54 +12,76 @@ export interface MusicBrainzArtist { id: string; name: string; ["sort-name"]: st
 type Kind = "artist" | "release" | "recording";
 
 type WorkerResp =
-  | { ok: true; data: any }
+  | { ok: true; data: any; netAt?: number }
   | { ok: false; error: string };
 
 function workerPath() {
   // helper -> ../../createByChatGPT/musicBrainzInfoWorker.js（ビルド後 .js）
-  return path.join(__dirname, "..", "..", "createByChatGPT", "musicBrainzInfoWorker.js");
+  const p = path.join(__dirname, "..", "..", "createByChatGPT", "musicBrainzInfoWorker.js");
+  if (!fs.existsSync(p)) {
+    throw new Error(`[musicBrainzInfoHelper] worker not found: ${p}`);
+  }
+  return p;
 }
 
-async function callWorker(kind: Kind, mbid: string): Promise<any> {
-  const payload = { kind, mbid };
+async function callWorker(kind: Kind, mbid: string, lastNetAt?: number): Promise<{ data: any; netAt?: number }> {
+  if (!mbid || typeof mbid !== "string") {
+    throw new Error(`[musicBrainzInfoHelper] invalid mbid: ${String(mbid)}`);
+  }
+  if (kind !== "artist" && kind !== "release" && kind !== "recording") {
+    throw new Error(`[musicBrainzInfoHelper] invalid kind: ${String(kind)}`);
+  }
+
+  const payload = { kind, mbid, lastNetAt } as const;
   const wp = workerPath();
+
   const result: WorkerResp = await new Promise((resolve) => {
     const w = new Worker(wp, { workerData: payload });
     w.on("message", (msg) => resolve(msg as WorkerResp));
     w.on("error", (err) => resolve({ ok: false, error: String(err) }));
-    w.on("exit", (code) => { if (code !== 0) resolve({ ok: false, error: `Worker stopped with code ${code}` }); });
+    w.on("exit", (code) => {
+      if (code !== 0) resolve({ ok: false, error: `Worker stopped with code ${code}` });
+    });
   });
-  if (!result.ok) throw new Error(`[musicBrainzInfoWorker] failed: ${result.error || "unknown error"}`);
-  return result.data;
+
+  if (!result || (result as any).ok !== true) {
+    const errMsg = (result && (result as any).error) || "unknown error";
+    throw new Error(`[musicBrainzInfoWorker] failed: ${errMsg}`);
+  }
+
+  const data = (result as any).data;
+  if (data === undefined || data === null) {
+    throw new Error(`[musicBrainzInfoWorker] empty payload for kind=${kind} mbid=${mbid}`);
+  }
+  const netAt = (result as any).netAt as number | undefined;
+  return { data, netAt };
 }
 
 /** 1秒レート制御付きヘルパークラス */
 export class MusicBrainzHelper {
-  private _lastDoneAt = 0;
+  private _lastNetAt = 0; // ネットワークアクセスの最終時刻（Date.now）
 
-  private async _sleepUntilNext() {
-    const now = Date.now();
-    const elapsed = now - this._lastDoneAt;
-    const waitMs = Math.max(0, 1000 - elapsed);
-    if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
-    this._lastDoneAt = Date.now();
+  private _updateNetAt(netAt?: number) {
+    if (typeof netAt === "number" && Number.isFinite(netAt) && netAt > this._lastNetAt) {
+      this._lastNetAt = netAt;
+    }
   }
 
   async artistInfoGet(mbid: string): Promise<MusicBrainzArtist> {
-    await this._sleepUntilNext();
-    const data = await callWorker("artist", mbid);
+    const { data, netAt } = await callWorker("artist", mbid, this._lastNetAt);
+    this._updateNetAt(netAt);
     return data as MusicBrainzArtist;
   }
 
   async releaseInfoGet(mbid: string): Promise<MusicBrainzRelease> {
-    await this._sleepUntilNext();
-    const data = await callWorker("release", mbid);
+    const { data, netAt } = await callWorker("release", mbid, this._lastNetAt);
+    this._updateNetAt(netAt);
     return data as MusicBrainzRelease;
   }
 
   async recordingInfoGet(mbid: string): Promise<MusicBrainzRecording> {
-    await this._sleepUntilNext();
-    const data = await callWorker("recording", mbid);
+    const { data, netAt } = await callWorker("recording", mbid, this._lastNetAt);
+    this._updateNetAt(netAt);
     return data as MusicBrainzRecording;
   }
 }

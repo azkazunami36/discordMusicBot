@@ -56,12 +56,9 @@ export interface MusicBrainzArtist {
 type Kind = "artist" | "release" | "recording";
 
 type Payload =
-  | { kind: "artist"; mbid: string }
-  | { kind: "release"; mbid: string }
-  | { kind: "recording"; mbid: string };
-
-type Ok<T> = { ok: true; data: T };
-type Err = { ok: false; error: string };
+  | { kind: "artist"; mbid: string; lastNetAt?: number }
+  | { kind: "release"; mbid: string; lastNetAt?: number }
+  | { kind: "recording"; mbid: string; lastNetAt?: number };
 
 // ========== Consts ==========
 const CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
@@ -73,6 +70,8 @@ const FILES = {
 
 // TTL 6 months (ms)
 const CACHE_TTL_MS = 6 * 30 * 24 * 60 * 60 * 1000;
+
+function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 
 // ========== JSONL utilities ==========
 function ensureCacheFileSync(kind: Kind) {
@@ -182,31 +181,39 @@ async function fetchJSON<T>(urlStr: string): Promise<T> {
 }
 
 // ========== main resolver ==========
-async function resolveMB(kind: Kind, mbid: string): Promise<any> {
+async function resolveMB(kind: Kind, mbid: string, lastNetAt?: number): Promise<{ data: any; netAt?: number }> {
   // 1) fresh cache
   const cached = lookupFreshSync<any>(kind, mbid);
-  if (cached) return cached;
+  if (cached) return { data: cached, netAt: undefined };
 
-  // 2) fetch
+  // 2) (rate limit) wait only if network access will occur and lastNetAt provided
+  if (typeof lastNetAt === "number" && Number.isFinite(lastNetAt)) {
+    const elapsed = Date.now() - lastNetAt;
+    const remain = 1000 - elapsed;
+    if (remain > 0) await sleep(remain);
+  }
+
+  // 3) fetch
   let urlStr = "";
   if (kind === "artist") urlStr = `https://musicbrainz.org/ws/2/artist/${mbid}?fmt=json`;
   else if (kind === "release") urlStr = `https://musicbrainz.org/ws/2/release/${mbid}?fmt=json&inc=artist-credits`;
   else urlStr = `https://musicbrainz.org/ws/2/recording/${mbid}?fmt=json&inc=releases`;
 
-  const data = await fetchJSON<any>(urlStr);
+  const netAt = Date.now();
+  const dataRaw = await fetchJSON<any>(urlStr);
 
-  // 3) override merge
+  // 4) override merge
   const albumInfo = loadAlbumInfo();
   const overrideMap =
     kind === "artist" ? albumInfo.artist :
     kind === "release" ? albumInfo.release :
     albumInfo.recording;
-  const merged = overrideMap && overrideMap[mbid] ? deepMerge<any>(data, overrideMap[mbid] as any) : data;
+  const merged = overrideMap && overrideMap[mbid] ? deepMerge<any>(dataRaw, overrideMap[mbid] as any) : dataRaw;
 
-  // 4) append-if-missing
+  // 5) append-if-missing
   appendIfMissingByMbidSync(kind, mbid, merged);
 
-  return merged;
+  return { data: merged, netAt };
 }
 
 // ========== worker entry ==========
@@ -215,11 +222,10 @@ async function resolveMB(kind: Kind, mbid: string): Promise<any> {
     const payload = workerData as Payload;
     if (!payload || !payload.kind || !payload.mbid) throw new Error("invalid payload");
     ensureCacheFileSync(payload.kind);
-    const data = await resolveMB(payload.kind, payload.mbid);
-    const out: Ok<any> = { ok: true, data };
-    parentPort?.postMessage(out);
+    const { data, netAt } = await resolveMB(payload.kind, payload.mbid, (payload as any).lastNetAt);
+    parentPort?.postMessage({ ok: true, data, netAt });
   } catch (e) {
-    const err: Err = { ok: false, error: String(e) };
+    const err = { ok: false, error: String(e) };
     parentPort?.postMessage(err);
   }
 })();

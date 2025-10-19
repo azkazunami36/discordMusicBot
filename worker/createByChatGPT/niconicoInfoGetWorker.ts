@@ -1,3 +1,13 @@
+// --- Robust error logger ---
+function logErr(ctx: string, err: unknown) {
+  try {
+    const msg = err instanceof Error ? (err.stack || err.message) : String(err);
+    console.error(`[niconicoInfoGetWorker][${ctx}]`, msg);
+  } catch {
+    // as a last resort
+    console.error(`[niconicoInfoGetWorker][${ctx}]`, err);
+  }
+}
 import { parentPort, workerData } from "worker_threads";
 import fs from "fs";
 import path from "path";
@@ -40,8 +50,12 @@ const CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
 const CACHE_FILE = path.join(CACHE_DIR, "niconicoInfoCache.jsonl");
 
 function ensureCacheFileSync() {
-  try { if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch {}
-  try { if (!fs.existsSync(CACHE_FILE)) fs.writeFileSync(CACHE_FILE, ""); } catch {}
+  try {
+    if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+  } catch (e) { logErr("ensureCacheFileSync:mkdir", e); }
+  try {
+    if (!fs.existsSync(CACHE_FILE)) fs.writeFileSync(CACHE_FILE, "");
+  } catch (e) { logErr("ensureCacheFileSync:touch", e); }
 }
 
 function readAllCacheRowsSync(): NicoSnapshotItem[] {
@@ -50,13 +64,21 @@ function readAllCacheRowsSync(): NicoSnapshotItem[] {
     const txt = String(fs.readFileSync(CACHE_FILE));
     if (!txt) return [];
     const rows: NicoSnapshotItem[] = [];
-    for (const line of txt.split("\n")) {
-      const s = line.trim();
+    const lines = txt.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const s = lines[i].trim();
       if (!s) continue;
-      try { rows.push(JSON.parse(s) as NicoSnapshotItem); } catch {}
+      try {
+        rows.push(JSON.parse(s) as NicoSnapshotItem);
+      } catch (e) {
+        logErr(`readAllCacheRowsSync:parse line=${i + 1}`, e);
+      }
     }
     return rows;
-  } catch { return []; }
+  } catch (e) {
+    logErr("readAllCacheRowsSync:read", e);
+    return [];
+  }
 }
 
 function lookupByContentIdSync(contentId: string): NicoSnapshotItem | undefined {
@@ -96,22 +118,42 @@ async function fetchSnapshot(input: string): Promise<NicoSnapshotItem | undefine
   ensureCacheFileSync();
 
   const contentId = extractNicoContentId(input);
-  if (!contentId) return undefined;
+  if (!contentId) {
+    logErr("fetchSnapshot:invalidContentId", new Error(`Invalid input: ${input}`));
+    console.warn(`[niconicoInfoGetWorker] Skipped invalid input: ${input}`);
+    return undefined;
+  }
 
-  // キャッシュ確認
-  const cached = lookupByContentIdSync(contentId);
-  if (cached) return cached;
+  try {
+    const cached = lookupByContentIdSync(contentId);
+    if (cached) {
+      console.log(`[niconicoInfoGetWorker] Cache hit for ${contentId}`);
+      return cached;
+    }
+  } catch (e) {
+    logErr("fetchSnapshot:cacheLookup", e);
+    console.error(`[niconicoInfoGetWorker] Cache lookup failed for ${contentId}`);
+  }
 
-  // 取得（searchNicoVideo は配列を返す想定）
   try {
     const result = await searchNicoVideo(contentId);
     const hit: NicoSnapshotItem | undefined = Array.isArray(result) ? result[0] : undefined;
-    if (!hit) return undefined;
-
-    // 保存（直前に再読込 → 重複ならスキップ）
-    appendIfMissingByContentIdSync(hit);
+    if (!hit) {
+      logErr("fetchSnapshot:noHit", new Error(`No result found for ${contentId}`));
+      console.warn(`[niconicoInfoGetWorker] No search result for ${contentId}`);
+      return undefined;
+    }
+    try {
+      appendIfMissingByContentIdSync(hit);
+      console.log(`[niconicoInfoGetWorker] Cached new item ${contentId}`);
+    } catch (e) {
+      logErr("fetchSnapshot:appendCache", e);
+      console.error(`[niconicoInfoGetWorker] Failed to append cache for ${contentId}`);
+    }
     return hit;
-  } catch {
+  } catch (e) {
+    logErr("fetchSnapshot:search", e);
+    console.error(`[niconicoInfoGetWorker] Search error for ${contentId}`);
     return undefined;
   }
 }
@@ -125,6 +167,11 @@ async function processSlice(data: Payload): Promise<SortedOut> {
       .map((raw, idx) => fetchSnapshot(raw).then((info) => ({ num: start + idx, info })))
   );
 
+  // Log rejected promises with their reasons
+  for (const r of settled) {
+    if (r.status === "rejected") logErr("processSlice:rejected", r.reason);
+  }
+
   const sorted: SortedOut = settled
     .filter(
       (r): r is PromiseFulfilledResult<{ num: number; info: NicoSnapshotItem | undefined }> =>
@@ -134,11 +181,23 @@ async function processSlice(data: Payload): Promise<SortedOut> {
     .sort((a, b) => a.num - b.num)
     .map(({ info }) => ({ type: "niconicoInfo", body: info }));
 
+  if (sorted.length === 0) {
+    console.error(`[niconicoInfoGetWorker] No valid results returned in processSlice, input count=${(contentIds||[]).length}`);
+  }
+
   return sorted;
 }
 
 // 起動即実行して結果を返す
 processSlice(workerData as Payload).then(
-  (res) => parentPort?.postMessage({ ok: true, data: res }),
-  (err) => parentPort?.postMessage({ ok: false, error: String(err) })
+  (res) => {
+    if (!Array.isArray(res) || res.length === 0) {
+      console.error(`[niconicoInfoGetWorker] Worker completed but no valid data produced.`);
+    }
+    parentPort?.postMessage({ ok: true, data: res });
+  },
+  (err) => {
+    logErr("workerEntry", err);
+    parentPort?.postMessage({ ok: false, error: String(err) });
+  }
 );

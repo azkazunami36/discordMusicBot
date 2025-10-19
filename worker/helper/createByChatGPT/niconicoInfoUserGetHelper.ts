@@ -1,3 +1,4 @@
+import fs from "fs";
 import { Worker } from "worker_threads";
 import path from "path";
 import url from "url";
@@ -45,6 +46,14 @@ export async function niconicoUserInfoGetBatch(
   start = 0
 ): Promise<(NicoUserInfo | undefined)[]> {
   const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "niconicoInfoUserGetWorker.js"); // ビルド後 .js を参照
+
+  if (!Array.isArray(inputs)) {
+    throw new Error("[niconicoUserInfoGetBatch] inputs must be an array");
+  }
+  if (!fs.existsSync(workerPath)) {
+    throw new Error(`[niconicoUserInfoGetBatch] worker not found: ${workerPath}`);
+  }
+
   const payload: Payload = { inputs, start };
 
   const result: WorkerResp = await new Promise((resolve) => {
@@ -56,7 +65,23 @@ export async function niconicoUserInfoGetBatch(
     });
   });
 
-  if (!result.ok) return new Array(inputs.length).fill(undefined);
-  const bodies = result.data.map((d) => d.body);
+  if (!result || result.ok !== true) {
+    const errMsg = (result && (result as any).error) || "unknown error";
+    throw new Error(`[niconicoUserInfoGetBatch] worker failed: ${errMsg}`);
+  }
+
+  const dataArr = result.data;
+  if (!Array.isArray(dataArr)) {
+    throw new Error("[niconicoUserInfoGetBatch] invalid worker payload: data is not an array");
+  }
+
+  const bodies = dataArr.map((d, i) => {
+    const body = d && (d as any).body as NicoUserInfo | undefined;
+    if (!body) {
+      throw new Error(`[niconicoUserInfoGetBatch] empty body at index ${i}`);
+    }
+    return body;
+  });
+
   return bodies;
 }
