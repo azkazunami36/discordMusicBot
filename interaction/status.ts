@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, CommandInteraction, APIEmbedField } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, CommandInteraction, APIEmbedField, Message } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
@@ -13,7 +13,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
@@ -30,6 +30,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             playlist,
             playing: { playingPlaylist: inputData.player.playingGet(guildData.guildId), playingTime: inputData.player.playtimeGet(guildData.guildId) }
         });
-        await interaction.editReply({embeds: [embed]});
+        await message.edit({embeds: [embed]});
     }
 }

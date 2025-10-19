@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, Message } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
@@ -15,7 +15,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
@@ -23,11 +23,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
         if (!serverData) return;
         const num = interaction.options.getNumber("num");
-        if (num === null || num < -100 || num > 100) return await interaction.editReply({ embeds: [messageEmbedGet("数字が指定されておらず、そして正しい指定ではありません。正しい数字を入力してください。", interaction.client)] });
+        if (num === null || num < -100 || num > 100) return await message.edit({ embeds: [messageEmbedGet("数字が指定されておらず、そして正しい指定ではありません。正しい数字を入力してください。", interaction.client)] });
         const envdata = new EnvData(guildData.guildId);
         envdata.playPitch = num;
         await inputData.player.pitchSet(guildData.guildId, num);
-        await interaction.editReply({ embeds: [messageEmbedGet("ピッチを" + num + "にしました。", interaction.client)] });
+        await message.edit({ embeds: [messageEmbedGet("ピッチを" + num + "にしました。", interaction.client)] });
     }
 }
-

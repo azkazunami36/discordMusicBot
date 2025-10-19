@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
 import { EnvData, VideoMetaCache } from "../envJSON.js";
@@ -15,7 +15,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
@@ -26,15 +26,14 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const number = interaction.options.getString("range")?.split("-");
         const start = Number(number ? number[0] : undefined);
         const end = Number(number ? number[1] : undefined);
-        if (Number.isNaN(start)) return await interaction.editReply({ embeds: [messageEmbedGet("番号が入力されていません。番号を入力してから再度実行してください。", interaction.client)] });
+        if (Number.isNaN(start)) return await message.edit({ embeds: [messageEmbedGet("番号が入力されていません。番号を入力してから再度実行してください。", interaction.client)] });
         if (playlist[start - 1]) {
             const playlistData = playlist.splice(start - 1, (!Number.isNaN(end) && end > start) ? end - (start - 1) : 1);
             const envData = new EnvData(guildData.guildId);
             envData.playlistSave(playlist);
-            await interaction.editReply({ embeds: [await videoInfoEmbedGet(playlistData, "曲を削除しました。", interaction.client)] });
+            await message.edit({ embeds: [await videoInfoEmbedGet(playlistData, "曲を削除しました。", interaction.client)] });
         } else {
-            await interaction.editReply({ embeds: [messageEmbedGet("番号が無効です。`/status`を利用してどの番号にどの曲が入っているかを確認してください。", interaction.client)] });
+            await message.edit({ embeds: [messageEmbedGet("番号が無効です。`/status`を利用してどの番号にどの曲が入っているかを確認してください。", interaction.client)] });
         }
     }
 }
-

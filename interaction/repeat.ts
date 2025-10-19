@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, Message } from "discord.js";
 import { InteractionInputData } from "../interface.js";
 import { EnvData } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
@@ -17,32 +17,32 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
         const mode = interaction.options.getString("mode");
-        if (mode === null) return await interaction.editReply({ embeds: [messageEmbedGet("リピートモードが選択されていません。選択してからもう一度やり直してください。", interaction.client)] });
+        if (mode === null) return await message.edit({ embeds: [messageEmbedGet("リピートモードが選択されていません。選択してからもう一度やり直してください。", interaction.client)] });
         let num: 1 | 2 | 3;
         switch (mode) {
             case "off": {
-                await interaction.editReply({ embeds: [messageEmbedGet("リピートをオフにしました。", interaction.client)] });
+                await message.edit({ embeds: [messageEmbedGet("リピートをオフにしました。", interaction.client)] });
                 num = 1;
                 break;
             }
             case "repeat": {
                 num = 2;
-                await interaction.editReply({ embeds: [messageEmbedGet("リピートをオンにしました。", interaction.client)] });
+                await message.edit({ embeds: [messageEmbedGet("リピートをオンにしました。", interaction.client)] });
                 break;
             }
             case "only": {
                 num = 3;
-                await interaction.editReply({ embeds: [messageEmbedGet("リピートを１曲のみにしました。", interaction.client)] });
+                await message.edit({ embeds: [messageEmbedGet("リピートを１曲のみにしました。", interaction.client)] });
                 break;
             }
             default: {
-                return await interaction.editReply({ embeds: [messageEmbedGet("正しい選択肢が入力されていません。入力してからもう一度やり直してください。", interaction.client)] });
+                return await message.edit({ embeds: [messageEmbedGet("正しい選択肢が入力されていません。入力してからもう一度やり直してください。", interaction.client)] });
             }
         }
         const envData = new EnvData(guildData.guildId);

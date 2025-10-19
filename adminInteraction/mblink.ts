@@ -1,6 +1,6 @@
 import fs from "fs";
 
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, APIEmbedField, APIEmbed } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, APIEmbedField, APIEmbed, Message } from "discord.js";
 import { InteractionInputData } from "../interface.js";
 import { musicBrainz } from "../MusicBrainz.js";
 import { messageEmbedGet } from "../embed.js";
@@ -49,10 +49,10 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         const subcommand = interaction.options.getSubcommand(false);
-        if (subcommand === null) return interaction.editReply({ embeds: [messageEmbedGet("サブコマンドがなく、実行ができませんでした。正しい構文で実行してください。", interaction.client)] });
+        if (subcommand === null) return message.edit({ embeds: [messageEmbedGet("サブコマンドがなく、実行ができませんでした。正しい構文で実行してください。", interaction.client)] });
         switch (subcommand) {
             case "view": {
                 const albumInfoJson = JSON.parse(String(fs.readFileSync("albumInfo.json")));
@@ -68,7 +68,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 const page = interaction.options.getNumber("page") || 1;
                 const selectvideoIdsPage = page < videoIdsPage ? page : videoIdsPage;
                 const viewVideoIds = videoIds.slice((selectvideoIdsPage - 1) * 10, (selectvideoIdsPage - 1) * 10 + 10);
-                interaction.editReply({ embeds: [messageEmbedGet("MusicBrainzから情報を取得中...", interaction.client)] });
+                message.edit({ embeds: [messageEmbedGet("MusicBrainzから情報を取得中...", interaction.client)] });
                 for (let i = 0; i < viewVideoIds.length; i++) {
                     const videoId = viewVideoIds[i];
                     const recordingInfo = await musicBrainz.recordingInfoGet(list[videoId].recording);
@@ -78,7 +78,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                         value: "VideoID: `" + videoId + "` Recording MBID: `" + list[videoId].recording + "` Release MBID: `" + list[videoId].release + "`"
                     });
                 }
-                await interaction.editReply({
+                await message.edit({
                     embeds: [
                         new EmbedBuilder()
                             .setTitle("MusicBrainzリンク済み動画(" + selectvideoIdsPage + "/" + videoIdsPage + ")")
@@ -93,11 +93,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 break;
             }
             case "set": {
-                if (interaction.user.id !== "835789352910716968") return interaction.editReply({ embeds: [messageEmbedGet("現在`/mblink set`コマンドは管理者のみが操作可能です。ご了承ください。", interaction.client)] });
+                if (interaction.user.id !== "835789352910716968") return message.edit({ embeds: [messageEmbedGet("現在`/mblink set`コマンドは管理者のみが操作可能です。ご了承ください。", interaction.client)] });
                 const releaseMBID = interaction.options.getString("releasembid");
                 const recordingMBID = interaction.options.getString("recordingmbid");
                 const videoId = interaction.options.getString("videoid");
-                if (!releaseMBID || !recordingMBID || !videoId) return interaction.editReply({ embeds: [messageEmbedGet("IDが不足しており、実行ができません。すべて入力してください。", interaction.client)] });
+                if (!releaseMBID || !recordingMBID || !videoId) return message.edit({ embeds: [messageEmbedGet("IDが不足しており、実行ができません。すべて入力してください。", interaction.client)] });
                 const albumInfoJson = JSON.parse(String(fs.readFileSync("albumInfo.json")));
                 const list: {
                     [videoId: string]: {
@@ -110,7 +110,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                     release: releaseMBID
                 };
                 fs.writeFileSync("albumInfo.json", JSON.stringify(albumInfoJson, null, "    "));
-                interaction.editReply({ embeds: [messageEmbedGet("セットが完了しました。`/add text:" + videoId + "`を行って確認してください。", interaction.client)] });
+                message.edit({ embeds: [messageEmbedGet("セットが完了しました。`/add text:" + videoId + "`を行って確認してください。", interaction.client)] });
                 break;
             }
             case "check": {
@@ -143,13 +143,12 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                     embed.setColor("Purple");
                     embeds.push(embed);
                 }
-                interaction.editReply({ embeds })
+                message.edit({ embeds })
                 break;
             }
             default: {
-                return interaction.editReply({ embeds: [messageEmbedGet("正しいサブコマンド名ではないため、実行ができませんでした。正しい構文で実行してください。", interaction.client)] });
+                return message.edit({ embeds: [messageEmbedGet("正しいサブコマンド名ではないため、実行ができませんでした。正しい構文で実行してください。", interaction.client)] });
             }
         }
     }
 }
-

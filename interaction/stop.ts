@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, GuildMember } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, GuildMember, Message } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
@@ -10,7 +10,7 @@ export const command = new SlashCommandBuilder()
     .setDescription("再生を停止します。")
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         // 1. 必要な変数があるかチェック
         const variableExistCheck = new VariableExistCheck(interaction);
@@ -23,6 +23,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (envData.playType === 1) playlist.shift();
         envData.playlistSave(playlist);
         inputData.player.stop(guildData.guildId);
-        await interaction.editReply({ embeds: [messageEmbedGet("曲を停止しました。", interaction.client)] });
+        await message.edit({ embeds: [messageEmbedGet("曲を停止しました。", interaction.client)] });
     }
 }

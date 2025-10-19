@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
 
 import { InteractionInputData } from "../interface.js";
@@ -13,7 +13,7 @@ export const command = new SlashCommandBuilder()
     .setDescription("キュー内の曲を再生します。")
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         // 1. 必要な変数があるかチェック
         const variableExistCheck = new VariableExistCheck(interaction);
@@ -29,7 +29,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!playlist) return;
         serverData.discord.calledChannel = interaction.channelId;
         const metaEmbed = await videoInfoEmbedGet([playlist[0]], "再生準備中...\n0%`" + progressBar(0, 35) + "`", interaction.client);
-        await interaction.editReply({ embeds: [metaEmbed] });
+        await message.edit({ embeds: [metaEmbed] });
         SumLog.log("再生処理を開始します。", { functionName: "play", guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, voiceChannelId: vchannelId, userId: interaction.user.id });
         const envData = new EnvData(guildData.guildId);
         let statusTemp: {
@@ -53,14 +53,13 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
             statusTemp = temp;
             statuscallTime = Date.now();
-            if (status === "loading") { metaEmbed.setDescription("音声ファイルを準備中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await interaction.editReply({ embeds: [metaEmbed] }); }
-            if (status === "downloading") { metaEmbed.setDescription("音声ファイルをダウンロード中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await interaction.editReply({ embeds: [metaEmbed] }); }
-            if (status === "converting") { metaEmbed.setDescription("音声ファイルを再生可能な形式に変換中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await interaction.editReply({ embeds: [metaEmbed] }); }
-            if (status === "formatchoosing") { metaEmbed.setDescription((type ? (type === "videoId" ? "YouTube" : type === "nicovideoId" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await interaction.editReply({ embeds: [metaEmbed] }); }
-            if (status === "done") { metaEmbed.setDescription("再生開始処理中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await interaction.editReply({ embeds: [metaEmbed] }); }
+            if (status === "loading") { metaEmbed.setDescription("音声ファイルを準備中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
+            if (status === "downloading") { metaEmbed.setDescription("音声ファイルをダウンロード中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
+            if (status === "converting") { metaEmbed.setDescription("音声ファイルを再生可能な形式に変換中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
+            if (status === "formatchoosing") { metaEmbed.setDescription((type ? (type === "videoId" ? "YouTube" : type === "nicovideoId" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
+            if (status === "done") { metaEmbed.setDescription("再生開始処理中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
         });
         metaEmbed.setDescription("再生を開始しました。")
-        await interaction.editReply({ embeds: [metaEmbed] });
+        await message.edit({ embeds: [metaEmbed] });
     }
 }
-

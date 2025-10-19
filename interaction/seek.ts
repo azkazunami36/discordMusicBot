@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, GuildMember } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, GuildMember, Message } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
 import { parseStrToNum } from "../parseTimeStrToNum.js";
@@ -17,7 +17,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         // 1. 必要な変数があるかチェック
         const variableExistCheck = new VariableExistCheck(interaction);
@@ -28,11 +28,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const envData = new EnvData(guildData.guildId);
         const time = interaction.options.getString("time");
-        if (time === null) return await interaction.editReply({ embeds: [messageEmbedGet("時間が指定されていません。時間を指定してからもう一度やり直してください。", interaction.client)] });
+        if (time === null) return await message.edit({ embeds: [messageEmbedGet("時間が指定されていません。時間を指定してからもう一度やり直してください。", interaction.client)] });
         const second = parseStrToNum(time);
-        if (second === undefined) return await interaction.editReply({ embeds: [messageEmbedGet("「" + time + "」を正しく分析できません。もう一度入力し直してください。", interaction.client)] });
+        if (second === undefined) return await message.edit({ embeds: [messageEmbedGet("「" + time + "」を正しく分析できません。もう一度入力し直してください。", interaction.client)] });
         await inputData.player.playtimeSet(guildData.guildId, second);
-        await interaction.editReply({ embeds: [messageEmbedGet("時間を" + numberToTimeString(second) + "にしました。", interaction.client)] });
+        await message.edit({ embeds: [messageEmbedGet("時間を" + numberToTimeString(second) + "にしました。", interaction.client)] });
     }
 }
-

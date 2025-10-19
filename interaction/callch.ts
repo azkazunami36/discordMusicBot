@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } from "discord.js";
 import { InteractionInputData } from "../interface.js";
 import { EnvData } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
@@ -13,7 +13,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         const channel = interaction.options.getChannel("channel");
         const variableExistCheck = new VariableExistCheck(interaction);
@@ -23,13 +23,12 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (channel) {
             if (guildData.guild.channels.cache.get(channel.id)) {
                 envData.callchannelId = channel.id;
-                interaction.editReply({ embeds: [messageEmbedGet("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。", interaction.client)] });
+                message.edit({ embeds: [messageEmbedGet("このチャンネルでのみコマンドを受け付けるように設定しました。他のチャンネルではコマンドは使用できません。", interaction.client)] });
                 return;
             }
         }
         envData.callchannelId = "";
-        interaction.editReply({ embeds: [messageEmbedGet("どのチャンネルでもコマンドが利用できるように設定しました。", interaction.client)] });
+        message.edit({ embeds: [messageEmbedGet("どのチャンネルでもコマンドが利用できるように設定しました。", interaction.client)] });
 
     }
 }
-

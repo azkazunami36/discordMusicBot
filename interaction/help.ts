@@ -1,6 +1,6 @@
 import fs from "fs";
 
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } from "discord.js";
 import { InteractionInputData } from "../interface.js";
 
 export const command = new SlashCommandBuilder()
@@ -12,11 +12,11 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         if (interaction.commandName !== "help") return;
         if (interaction.options.getBoolean("full")) {
-            interaction.editReply({
+            message.edit({
                 embeds: [new EmbedBuilder()
                     .setTitle("音楽bot v" + JSON.parse(String(fs.readFileSync("package.json"))).version + "のヘルプ")
                     .setAuthor({
@@ -26,7 +26,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                     .setDescription(String(fs.readFileSync("README-short.md")))
                     .setColor("Purple")]
             });
-        } else interaction.editReply({
+        } else message.edit({
             embeds: [new EmbedBuilder()
                 .setTitle("音楽bot v" + JSON.parse(String(fs.readFileSync("package.json"))).version + "のヘルプ")
                 .setAuthor({
@@ -38,4 +38,3 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         });
     }
 }
-

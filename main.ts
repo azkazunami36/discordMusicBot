@@ -141,7 +141,7 @@ player.on("playAutoEnd", async (guildId) => {
 /** インタラクションコマンドのデータです。 */
 const interactionFuncs = (() => {
     const arr: {
-        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData) => Promise<void>;
+        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData, message: Discord.Message) => Promise<void>;
         command?: Discord.SlashCommandOptionsOnlyBuilder;
     }[] = [];
     fs.readdirSync("interaction").forEach(async str => {
@@ -159,7 +159,7 @@ const interactionFuncs = (() => {
 /** インタラクションコマンドのデータです。 */
 const adminInteractionFuncs = (() => {
     const arr: {
-        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData) => Promise<void>;
+        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData, message: Discord.Message) => Promise<void>;
         command?: Discord.SlashCommandOptionsOnlyBuilder;
     }[] = [];
     fs.readdirSync("adminInteraction").forEach(async str => {
@@ -393,9 +393,9 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
     const commandFunction = data || adminData;
     if (commandFunction && commandFunction.command && commandFunction.execute) {
         if (adminData && interaction.user.id !== process.env.DISCORD_ADMIN_USER_ID) return interaction.reply({
-                embeds: [messageEmbedGet("このコマンドは管理者用です。管理者にコマンドを利用させてください。もし、管理者のいないサーバーでこのコマンドを実行したら...「え？なんで実行できてるの！？」って管理者である@kazunami36_sum1は驚きを隠せなくなります。ログで見ているので、修正される予定です。", client)],
-                flags: "Ephemeral"
-            });
+            embeds: [messageEmbedGet("このコマンドは管理者用です。管理者にコマンドを利用させてください。もし、管理者のいないサーバーでこのコマンドを実行したら...「え？なんで実行できてるの！？」って管理者である@kazunami36_sum1は驚きを隠せなくなります。ログで見ているので、修正される予定です。", client)],
+            flags: "Ephemeral"
+        });
         // 3. サーバー内で実行されている場合、専用チャンネルであるかどうかやそのサーバーで間隔内でチャットが行われているかどうかの検査をします。
         if (interaction.guildId) {
             const envData = new EnvData(interaction.guildId);
@@ -424,12 +424,14 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             if (!me) permissionIs = false;
             else if (!interaction.channel.permissionsFor(me).has(checkPermission)) permissionIs = false;
         }
-        SumLog.log("コマンド「/" + interaction.commandName + "」の実行を開始しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId || undefined, functionName: "client.on Interaction", userId: interaction.user.id });
+        SumLog.log("コマンド「/" + interaction.commandName + "」の実行を開始しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, functionName: "client.on Interaction", userId: interaction.user.id });
         // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, player };
-        await interaction.reply({
-            embeds: [messageEmbedGet("コマンド「" + commandFunction.command.name + "」の処理を開始しています...", client)]
+        const response = await interaction.reply({
+            embeds: [messageEmbedGet("コマンド「" + commandFunction.command.name + "」の処理を開始しています...", client)],
+            withResponse: true
         });
+        const message = response.resource?.message || undefined;
         if (!permissionIs) await interaction.followUp({
             embeds: [new Discord.EmbedBuilder()
                 .setTitle("警告")
@@ -441,8 +443,9 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
                 .setColor("Purple")
             ]
         });
+        if (!message) return SumLog.error("メッセージを取得できなかったため、コマンドは実行されませんでした。", { functionName: "client.on Interaction", guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, userId: interaction.user.id });
         try {
-            await commandFunction.execute(interaction, inputData);
+            await commandFunction.execute(interaction, inputData, message);
         } catch (e) {
             SumLog.error("コマンド「/" + interaction.commandName + "」の実行でエラーが発生しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId || undefined, functionName: "client.on Interaction", userId: interaction.user.id });
             console.error(e);

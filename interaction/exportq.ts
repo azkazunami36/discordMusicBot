@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
 import { EnvData, VideoMetaCache } from "../envJSON.js";
@@ -10,7 +10,7 @@ export const command = new SlashCommandBuilder()
     .setDescription("キュー内の曲をURLリストにして書き出します。")
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
@@ -28,7 +28,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             }
         }
         result += "\n```";
-        await interaction.editReply({ embeds: [messageEmbedGet("以下はキュー内の動画をURLに変換したものです。\n" + result, interaction.client)] });
+        await message.edit({ embeds: [messageEmbedGet("以下はキュー内の動画をURLに変換したものです。\n" + result, interaction.client)] });
     }
 }
-

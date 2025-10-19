@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType, GuildMember, EmbedBuilder } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, GuildMember, EmbedBuilder, Message } from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
 
 import { InteractionInputData } from "../interface.js";
@@ -14,7 +14,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         // 1. 必要な変数があるかチェック
         const variableExistCheck = new VariableExistCheck(interaction);
@@ -25,7 +25,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const second = interaction.options.getNumber("second") || 10;
         await inputData.player.playtimeSet(guildData.guildId, inputData.player.playtimeGet(guildData.guildId) + second);
-        interaction.editReply({ embeds: [messageEmbedGet(second + "秒すすめました。", interaction.client)] });
+        message.edit({ embeds: [messageEmbedGet(second + "秒すすめました。", interaction.client)] });
     }
 }
-

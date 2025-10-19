@@ -1,4 +1,4 @@
-import { Interaction, SlashCommandBuilder, CacheType } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, Message } from "discord.js";
 import ytdl from "ytdl-core";
 import yts from "yt-search";
 
@@ -34,7 +34,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "/add text:[URLまたはVideoIDまたは検索したいタイトル]";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         /** 検索するテキストデータ */
         const data = interaction.options.getString("text");
@@ -43,8 +43,8 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!guildData) return;
         const playlist = await variableExistCheck.playlist();
         if (!playlist) return;
-        if (data === null) return await interaction.editReply({ embeds: [messageEmbedGet("追加したい曲が指定されませんでした。入力してから追加を行なってください。", interaction.client)] });
-        if (data === "") return await interaction.editReply({ embeds: [messageEmbedGet("内容が空です。入力してから追加をしてください。", interaction.client)] });
+        if (data === null) return await message.edit({ embeds: [messageEmbedGet("追加したい曲が指定されませんでした。入力してから追加を行なってください。", interaction.client)] });
+        if (data === "") return await message.edit({ embeds: [messageEmbedGet("内容が空です。入力してから追加をしてください。", interaction.client)] });
         const priority = interaction.options.getString("service");
         /** まずスペースで分割 */
         const words = data.split(/[ 　]+/);
@@ -52,7 +52,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         let searchWords = "";
         /** 取得できたVideoIDやニコニコ動画のIDをここにまとめます。 */
         const getContents: Playlist[] = [];
-        await interaction.editReply({ embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(1/" + words.length + ")", interaction.client)] });
+        await message.edit({ embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(1/" + words.length + ")", interaction.client)] });
         let playlistCheckingStatusSendedIs = false;
         const addedPlaylist: Playlist[] = [];
         const envData = new EnvData(guildData.guildId);
@@ -67,7 +67,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             const nowTime = Date.now();
             if (nowTime - sendTime > 2000) {
                 sendTime = nowTime;
-                await interaction.editReply({ embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(" + wordCheckProcessed + "/" + words.length + ")", interaction.client)] });
+                await message.edit({ embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(" + wordCheckProcessed + "/" + words.length + ")", interaction.client)] });
             }
             let videoIdData: Playlist | undefined;
             const urlIs = word.startsWith("https://") || word.startsWith("http://");
@@ -117,7 +117,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                     const nowTime = Date.now();
                     if (nowTime - sendTime > 2000) {
                         sendTime = nowTime;
-                        await interaction.editReply({
+                        await message.edit({
                             embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(" + wordCheckProcessed + "/" + words.length + ") in Spotify URLを元にYouTubeで曲を検索・抽出中...(" + Math.floor(spotifyUrls.length / parallelProcess) + "フェーズ中" + spotifyCheckProcessed + "フェーズ)" +
                                 (processTimes.length !== 0 ? "抽出が終わるまで残り約" + numberToTimeString((processTimes.reduce((a, b) => a + b, 0) / processTimes.length / 1000) * (Math.floor(spotifyUrls.length / parallelProcess) - spotifyCheckProcessed)) : "") + " " + (spotifyCheckProcessed * parallelProcess) + "曲がすでに追加済みです。", interaction.client)]
                         });
@@ -151,7 +151,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                     const nowTime = Date.now();
                     if (nowTime - sendTime > 2000) {
                         sendTime = nowTime;
-                        await interaction.editReply({
+                        await message.edit({
                             embeds: [messageEmbedGet("ステップ１/４: 文字列を分析中...(" + wordCheckProcessed + "/" + words.length + ") in Apple Music URLを元にYouTubeで曲を検索・抽出中...(" + Math.floor(appleMusicUrls.length / parallelProcess) + "フェーズ中" + appleMusicCheckProcessed + "フェーズ)" +
                                 (processTimes.length !== 0 ? "抽出が終わるまで残り約" + numberToTimeString((processTimes.reduce((a, b) => a + b, 0) / processTimes.length / 1000) * (Math.floor(appleMusicUrls.length / parallelProcess) - appleMusicCheckProcessed)) : "") + " " + (appleMusicCheckProcessed * parallelProcess) + "曲がすでに追加済みです。", interaction.client)]
                         });
@@ -213,7 +213,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         }
         if (searchWords) {
             SumLog.log(searchWords + "はURLやIDとして分析できないため検索されます。", suminfo);
-            await interaction.editReply({ embeds: [messageEmbedGet("ステップ２/４: 検索中...", interaction.client)] });
+            await message.edit({ embeds: [messageEmbedGet("ステップ２/４: 検索中...", interaction.client)] });
             const youtubeResult = await yts(searchWords);
             const youtubeData: {
                 type: "videoId",
@@ -242,7 +242,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             const nowTime = Date.now();
             if (nowTime - sendTime > 2000) {
                 sendTime = nowTime;
-                await interaction.editReply({
+                await message.edit({
                     embeds: [messageEmbedGet("ステップ３/４: 取得した動画の有効性をチェック中...(" + trueCheckProcessed + "/" + getContents.length + ")" +
                         (processTimes.length !== 0 ? "チェックが終わるまで残り約" + numberToTimeString((processTimes.reduce((a, b) => a + b, 0) / processTimes.length / 1000) * (getContents.length - trueCheckProcessed)) : ""), interaction.client)]
                 });
@@ -261,16 +261,16 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (addedPlaylist.length <= 0) {
             SumLog.error(data + "はどのような手段を用いても取得ができませんでした。", suminfo);
             console.error("認識失敗: ", data);
-            return await interaction.editReply({ embeds: [messageEmbedGet("`" + data + "`は有効な内容として認識することができず、追加ができませんでした。再度追加するか、botの作成者に相談してください。", interaction.client)] });
+            return await message.edit({ embeds: [messageEmbedGet("`" + data + "`は有効な内容として認識することができず、追加ができませんでした。再度追加するか、botの作成者に相談してください。", interaction.client)] });
         }
         const saveplaylist = await variableExistCheck.playlist() || []
         saveplaylist.push(...truePlaylist);
         envData.playlistSave(saveplaylist);
 
         SumLog.log(data + "を追加する処理が完了しました。", suminfo);
-        await interaction.editReply({ embeds: [messageEmbedGet("ステップ４/４: 取得操作が完了し、結果レポート作成中...", interaction.client)] });
+        await message.edit({ embeds: [messageEmbedGet("ステップ４/４: 取得操作が完了し、結果レポート作成中...", interaction.client)] });
         const embed = await videoInfoEmbedGet(addedPlaylist, (addedPlaylist.length === 1 ? "" : addedPlaylist.length) + "曲が追加されました。", interaction.client);
-        await interaction.editReply({ embeds: [embed] });
+        await message.edit({ embeds: [embed] });
     }
 }
 
@@ -281,6 +281,240 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
  * (1) 自動で匿名トークンを取得し、(2) Spotify Web APIでページングして全曲を収集し、(3) 失敗時に既存のembed抽出へフォールバック
  */
 async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
+    const SPOTIFY_DEBUG = true; // コンソールに詳細ログを出す
+    // --- helpers: 埋め込み用アクセストークン取得（キャッシュ付き） --------------------------
+    const getSpotifyEmbedToken = async (contextPageUrl?: string): Promise<string | undefined> => {
+        const now = Date.now();
+        // キャッシュ
+        try {
+            const anyCache: any = (globalThis as any)._SPOTIFY_EMBED_TOKEN_CACHE;
+            if (anyCache && typeof anyCache.token === 'string' && typeof anyCache.expMs === 'number') {
+                if (anyCache.expMs - 60_000 > now) {
+                    if (SPOTIFY_DEBUG) console.log('[Spotify][token] use cache; ttl(ms)=', anyCache.expMs - now);
+                    return anyCache.token;
+                }
+            }
+        } catch { }
+
+        // ENV フォールバック
+        try {
+            const envTok = process.env.SPOTIFY_EMBED_TOKEN || process.env.SPOTIFY_ACCESS_TOKEN || process.env.SPOTIFY_ANON_TOKEN;
+            const envExp = Number(process.env.SPOTIFY_EMBED_TOKEN_EXP_MS || process.env.SPOTIFY_ACCESS_TOKEN_EXP_MS || 0);
+            if (envTok) {
+                const expMs = envExp > now + 60_000 ? envExp : now + 50 * 60 * 1000;
+                (globalThis as any)._SPOTIFY_EMBED_TOKEN_CACHE = { token: envTok, expMs };
+                if (SPOTIFY_DEBUG) console.log('[Spotify][token] use ENV token; ttl(ms)=', expMs - now);
+                return envTok;
+            }
+        } catch { }
+
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://open.spotify.com/',
+            'Origin': 'https://open.spotify.com'
+        } as any;
+
+        const candidates: Array<{ url: string; note: string }> = [
+            { url: 'https://open.spotify.com/get_access_token?reason=transport&productType=embed', note: 'get_access_token embed' },
+            { url: 'https://open.spotify.com/get_access_token?reason=transport&productType=web_player', note: 'get_access_token web_player' },
+            { url: 'https://open.spotify.com/api/token?reason=transport&productType=web_player', note: 'api/token web_player' },
+            { url: 'https://open.spotify.com/api/token?reason=init&productType=web-player', note: 'api/token web-player (hyphen)' }
+        ];
+
+        for (const c of candidates) {
+            let res: Response | undefined;
+            try {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][token] try', c.note, c.url);
+                res = await fetch(c.url, { headers }).catch(() => undefined);
+                if (!res) { if (SPOTIFY_DEBUG) console.log('[Spotify][token] no response'); continue; }
+                if (!res.ok) {
+                    let txt: string | undefined; try { txt = await res.text(); } catch { }
+                    if (SPOTIFY_DEBUG) console.log('[Spotify][token] not ok', res.status, (txt || '').slice(0, 200));
+                    continue;
+                }
+                let j: any; try { j = await res.json(); } catch (e) { if (SPOTIFY_DEBUG) console.log('[Spotify][token] json error', String(e)); continue; }
+                const token = j?.accessToken as string | undefined;
+                const expMs = j?.accessTokenExpirationTimestampMs as number | undefined;
+                if (token && typeof token === 'string' && token.length > 10) {
+                    const exp = typeof expMs === 'number' && expMs > now ? expMs : now + 55 * 60 * 1000;
+                    try { (globalThis as any)._SPOTIFY_EMBED_TOKEN_CACHE = { token, expMs: exp }; } catch { }
+                    if (SPOTIFY_DEBUG) console.log('[Spotify][token] ok; expires in (ms)=', exp - now);
+                    return token;
+                } else {
+                    if (SPOTIFY_DEBUG) console.log('[Spotify][token] missing token field on', c.note, j);
+                }
+            } catch (e) {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][token] exception', c.note, String(e));
+            }
+        }
+
+        // 埋め込みHTMLからの抽出フォールバック
+        if (contextPageUrl) {
+            try {
+                const u = new URL(contextPageUrl);
+                const segs = u.pathname.split('/').filter(Boolean);
+                let kind = segs[0]?.toLowerCase() || '';
+                let id = segs[1] || '';
+                if (kind === 'intl-' && segs[1]) { kind = segs[1].toLowerCase(); id = segs[2] || id; }
+                const embedUrl = `https://open.spotify.com/embed/${kind}/${id}${u.search}`;
+
+                if (SPOTIFY_DEBUG) console.log('[Spotify][token] try embed scrape', embedUrl);
+
+                const res = await fetch(embedUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                        'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
+                        'Referer': 'https://open.spotify.com/',
+                        'Origin': 'https://open.spotify.com'
+                    } as any
+                }).catch(() => undefined);
+
+                if (res && res.ok) {
+                    const html = await res.text();
+                    const mTok = html.match(/"accessToken"\s*:\s*"([^\"]{20,})"/);
+                    const mExp = html.match(/"accessTokenExpirationTimestampMs"\s*:\s*(\d{10,})/);
+                    if (mTok) {
+                        const token = mTok[1];
+                        const expMs = mExp ? Number(mExp[1]) : now + 45 * 60 * 1000;
+                        (globalThis as any)._SPOTIFY_EMBED_TOKEN_CACHE = { token, expMs };
+                        if (SPOTIFY_DEBUG) console.log('[Spotify][token] embed scrape ok; ttl(ms)=', expMs - now);
+                        return token;
+                    } else {
+                        if (SPOTIFY_DEBUG) console.log('[Spotify][token] embed scrape: token not found');
+                    }
+                } else {
+                    if (SPOTIFY_DEBUG) console.log('[Spotify][token] embed scrape: fetch not ok', res && res.status);
+                }
+            } catch (e) {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][token] embed scrape exception', String(e));
+            }
+        }
+
+        if (SPOTIFY_DEBUG) console.log('[Spotify][token] all candidates failed');
+        return undefined;
+    };
+    // --- helpers: client-token取得（Pathfinder用） ------------------------------
+    const getSpotifyClientToken = async (): Promise<string | undefined> => {
+        try {
+            const appVersion = process.env.SPOTIFY_APP_VERSION || '1.2.76.48.gf9b58d28';
+            const clientId = process.env.SPOTIFY_WEB_CLIENT_ID || 'd8a5ed958d274c2e8ee717e6a4b0971d';
+            const body = {
+                client_data: {
+                    client_version: appVersion,
+                    client_id: clientId,
+                    js_sdk_data: {
+                        device_brand: 'unknown',
+                        device_model: 'unknown',
+                        os: 'macos',
+                        os_version: '14.7.1'
+                    }
+                }
+            };
+
+            const r = await fetch('https://clienttoken.spotify.com/v1/clienttoken', {
+                method: 'POST',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36',
+                    'Accept': 'application/json',
+                    'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Origin': 'https://open.spotify.com',
+                    'Referer': 'https://open.spotify.com/',
+                    'Content-Type': 'application/json',
+                    'app-platform': 'WebPlayer',
+                    'spotify-app-version': appVersion
+                } as any,
+                body: JSON.stringify(body)
+            }).catch(() => undefined);
+
+            if (!r) { if (SPOTIFY_DEBUG) console.log('[Spotify][client-token] no response'); return undefined; }
+            if (!r.ok) {
+                let t: string | undefined; try { t = await r.text(); } catch { }
+                if (SPOTIFY_DEBUG) console.log('[Spotify][client-token] not ok', r.status, (t || '').slice(0, 300));
+                return undefined;
+            }
+            const j: any = await r.json().catch(() => undefined);
+            const tok: string | undefined = j?.granted_token?.token;
+            if (tok && tok.length > 10) { if (SPOTIFY_DEBUG) console.log('[Spotify][client-token] ok (len=', tok.length, ')'); return tok; }
+            if (SPOTIFY_DEBUG) console.log('[Spotify][client-token] missing token field', j);
+            return undefined;
+        } catch (e) {
+            if (SPOTIFY_DEBUG) console.log('[Spotify][client-token] exception', String(e));
+            return undefined;
+        }
+    };
+    // --- helpers: Pathfinder(GraphQL)でプレイリスト全件を取得 --------------------
+    const fetchAllPlaylistTrackIds_Pathfinder = async (pid: string): Promise<string[] | undefined> => {
+        const accessToken = await getSpotifyEmbedToken(`https://open.spotify.com/playlist/${pid}`);
+        if (!accessToken) { if (SPOTIFY_DEBUG) console.log('[Spotify][pathfinder] access token missing'); return undefined; }
+        const clientToken = await getSpotifyClientToken();
+        if (!clientToken) { if (SPOTIFY_DEBUG) console.log('[Spotify][pathfinder] client-token missing'); return undefined; }
+
+        const appVersion = process.env.SPOTIFY_APP_VERSION || '1.2.76.48.gf9b58d28';
+        const headers = {
+            'authorization': `Bearer ${accessToken.trim()}`,
+            'client-token': clientToken,
+            'content-type': 'application/json;charset=UTF-8',
+            'accept': 'application/json',
+            'app-platform': 'WebPlayer',
+            'spotify-app-version': appVersion,
+            'origin': 'https://open.spotify.com',
+            'referer': 'https://open.spotify.com/',
+            'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36'
+        } as any;
+
+        const out: string[] = [];
+        const limit = 50; // 25/50が安定（100は弾かれる場合あり）
+
+        const fetchPage = async (offset: number) => {
+            const body = {
+                variables: { uri: `spotify:playlist:${pid}`, offset, limit, enableWatchFeedEntrypoint: false },
+                operationName: 'fetchPlaylist',
+                extensions: { persistedQuery: { version: 1, sha256Hash: '837211ef46f604a73cd3d051f12ee63c81aca4ec6eb18e227b0629a7b36adad3' } }
+            };
+            const r = await fetch('https://api-partner.spotify.com/pathfinder/v2/query', { method: 'POST', headers, body: JSON.stringify(body) }).catch(() => undefined);
+            if (!r || !r.ok) {
+                let t: string | undefined; try { t = r ? await r.text() : undefined; } catch { }
+                if (SPOTIFY_DEBUG) console.log('[Spotify][pathfinder] not ok', r && r.status, (t || '').slice(0, 200));
+                return undefined as any;
+            }
+            return r.json().catch(() => undefined);
+        };
+
+        if (SPOTIFY_DEBUG) console.log('[Spotify][pathfinder] start', { pid, limit });
+        const first = await fetchPage(0);
+        if (!first) return undefined;
+
+        const items = first?.data?.playlistV2?.content?.items ?? [];
+        const total = first?.data?.playlistV2?.content?.totalCount ?? undefined;
+
+        const push = (its: any[]) => {
+            for (const it of its) {
+                const uri: string | undefined = it?.itemV2?.data?.uri; // spotify:track:XXXX
+                const m = uri?.match(/spotify:track:([A-Za-z0-9]{22})/);
+                if (m) out.push(m[1]);
+            }
+        };
+
+        push(items);
+
+        let offset = items.length;
+        // total が無い/信用できない場合でも、空ページが返ったら終了
+        for (let guard = 0; guard < 500 && offset < 5000; guard++, offset += limit) {
+            if (total !== undefined && offset >= total) break;
+            const page = await fetchPage(offset);
+            const its: any[] = page?.data?.playlistV2?.content?.items ?? [];
+            if (!its.length) break;
+            push(its);
+            if (its.length < limit) break;
+        }
+
+        const uniq = Array.from(new Set(out));
+        if (SPOTIFY_DEBUG) console.log('[Spotify][pathfinder] done', { unique: uniq.length });
+        return uniq.length ? uniq : undefined;
+    };
     // --- helpers: 短縮URL正規化 ---------------------------------------------
     const normalizeShort = async (raw: string): Promise<string> => {
         try {
@@ -323,51 +557,115 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
         return fallbackEmbedPath;
     };
 
-    // --- helpers: Spotify Web API（匿名トークンを自動取得） ------------------
-    const getSpotifyEmbedToken = async (): Promise<string | undefined> => {
-        try {
-            const r = await fetch("https://open.spotify.com/get_access_token?reason=transport&productType=web_player").catch(() => undefined);
-            if (!r || !r.ok) return undefined;
-            const j: any = await r.json().catch(() => undefined);
-            const token: string | undefined = j?.accessToken;
-            return (typeof token === "string" && token.length > 10) ? token : undefined;
-        } catch {
-            return undefined;
-        }
-    };
 
     const isId = (s: any): s is string => typeof s === "string" && /^[A-Za-z0-9]{22}$/.test(s);
     const trackUrl = (id: string) => `https://open.spotify.com/track/${id}`;
 
     const fetchAllPlaylistTrackIds_API = async (pid: string): Promise<string[] | undefined> => {
-        const token = await getSpotifyEmbedToken();
-        if (!token) return undefined;
+        const token = await getSpotifyEmbedToken(`https://open.spotify.com/playlist/${pid}`);
+        if (!token) { if (SPOTIFY_DEBUG) console.log('[Spotify][playlist] token get failed', { pid }); return undefined; }
+
         const out: string[] = [];
-        let url = `https://api.spotify.com/v1/playlists/${pid}/tracks?fields=next,items(track(id))&limit=100`;
-        for (let guard = 0; guard < 100; guard++) {
-            const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } as any }).catch(() => undefined);
-            if (!r || !r.ok) return undefined;
-            const j: any = await r.json().catch(() => undefined);
-            if (!j) return undefined;
-            const items = Array.isArray(j.items) ? j.items : [];
-            for (const it of items) {
-                const id = it?.track?.id;
-                if (isId(id)) out.push(id);
+        const headers = {
+            Authorization: `Bearer ${token.trim()}`,
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Origin': 'https://open.spotify.com',
+            'Referer': 'https://open.spotify.com/'
+        } as any;
+
+        const base = `https://api.spotify.com/v1/playlists/${pid}/tracks`;
+        const limit = 100; // API上限
+
+        const makeUrl = (offset: number) => {
+            const params = new URLSearchParams({
+                market: 'from_token',
+                limit: String(limit),
+                offset: String(offset),
+                // 返却量を絞りつつ必要情報は残す
+                fields: 'items(track(id)),limit,offset,next'
+            });
+            return `${base}?${params.toString()}`;
+        };
+
+        if (SPOTIFY_DEBUG) console.log('[Spotify][playlist] start', { pid, limit });
+
+        for (let offset = 0, guard = 0; guard < 200; offset += limit, guard++) {
+            const url = makeUrl(offset);
+            const t0 = Date.now();
+            let r: any;
+            try {
+                r = await fetch(url, { headers });
+            } catch (e) {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][playlist] fetch exception', { offset, url, e });
+                break;
             }
-            if (!j.next) break;
-            url = j.next as string;
+            if (!r || !r.ok) {
+                let text: string | undefined;
+                try { text = r ? await r.text() : undefined; } catch { }
+                if (SPOTIFY_DEBUG) console.log('[Spotify][playlist] fetch not OK', { offset, status: r && r.status, url, body: text?.slice(0, 300) });
+                // Web APIで 400/401 のときは Pathfinder にフォールバック
+                if (r && (r.status === 400 || r.status === 401)) {
+                    if (SPOTIFY_DEBUG) console.log('[Spotify][playlist] fallback to pathfinder due to', r.status);
+                    const pf = await fetchAllPlaylistTrackIds_Pathfinder(pid);
+                    if (pf && pf.length) return Array.from(new Set(pf));
+                }
+                break; // 途中で失敗→取れた分だけ返す
+            }
+            let j: any;
+            try {
+                j = await r.json();
+            } catch (e) {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][playlist] json error', { offset, url, e });
+                break;
+            }
+
+            const items = Array.isArray(j?.items) ? j.items : [];
+            let added = 0;
+            for (const it of items) {
+                const id = it?.track?.id; // episode/local/null は除外
+                if (typeof id === 'string' && /^[A-Za-z0-9]{22}$/.test(id)) { out.push(id); added++; }
+            }
+
+            if (SPOTIFY_DEBUG) console.log('[Spotify][playlist] page', {
+                offset,
+                status: r.status,
+                ms: Date.now() - t0,
+                itemsLen: items.length,
+                added,
+                cumulated: out.length,
+                nextSample: (j?.next ? String(j.next).slice(0, 120) : undefined)
+            });
+
+            // 最終ページ判定：items が limit 未満
+            if (items.length < limit) {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][playlist] reached last page');
+                break;
+            }
         }
+
         const uniq = Array.from(new Set(out));
+        if (SPOTIFY_DEBUG) console.log('[Spotify][playlist] done', { unique: uniq.length });
         return uniq.length ? uniq : undefined;
     };
 
     const fetchAllAlbumTrackIds_API = async (aid: string): Promise<string[] | undefined> => {
-        const token = await getSpotifyEmbedToken();
+        const token = await getSpotifyEmbedToken(`https://open.spotify.com/album/${aid}`);
         if (!token) return undefined;
+        if (SPOTIFY_DEBUG) console.log('[Spotify][album] start', { aid });
         const out: string[] = [];
+        const headers = {
+            Authorization: `Bearer ${token}`,
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Origin': 'https://open.spotify.com',
+            'Referer': 'https://open.spotify.com/'
+        } as any;
         let url = `https://api.spotify.com/v1/albums/${aid}/tracks?fields=next,items(id)&limit=50`;
         for (let guard = 0; guard < 100; guard++) {
-            const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } as any }).catch(() => undefined);
+            const r = await fetch(url, { headers }).catch(() => undefined);
             if (!r || !r.ok) return undefined;
             const j: any = await r.json().catch(() => undefined);
             if (!j) return undefined;
@@ -386,6 +684,7 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
     // --- main --------------------------------------------------------------
     try {
         const resolved = await normalizeShort(url);
+        if (SPOTIFY_DEBUG) console.log('[Spotify][parse] resolved', resolved);
         let u: URL;
         try { u = new URL(resolved); } catch { return undefined; }
         if (!/\.spotify\.com$/i.test(u.hostname) && !/^(?:spoti\.fi|spotify\.link)$/i.test(u.hostname)) return undefined;
@@ -415,7 +714,10 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
         // --- album ---: まずAPIで全曲 → 失敗時embed
         if (kind === "album" && isId(id)) {
             const apiIds = await fetchAllAlbumTrackIds_API(id);
-            if (apiIds?.length) return apiIds.map(trackUrl);
+            if (apiIds?.length) {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][parse] album apiIds', apiIds.length);
+                return apiIds.map(trackUrl);
+            }
             const pageUrl = `https://open.spotify.com/album/${id}`;
             const embedUrl = await toEmbedFromOEmbed(pageUrl, `https://open.spotify.com/embed/album/${id}`);
             const tracks = await toTrackUrlsFromEmbed(embedUrl);
@@ -426,7 +728,11 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
         if ((kind === "playlist" && isId(id)) || (playlistId && isId(playlistId))) {
             const pid = kind === "playlist" ? id : (playlistId as string);
             const apiIds = await fetchAllPlaylistTrackIds_API(pid);
-            if (apiIds?.length) return apiIds.map(trackUrl);
+            if (apiIds?.length) {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][parse] playlist apiIds', apiIds.length);
+                return apiIds.map(trackUrl);
+            }
+            if (SPOTIFY_DEBUG) console.log('[Spotify][parse] playlist fallback to embed', pid);
             const pageUrl = `https://open.spotify.com/playlist/${pid}`;
             const embedUrl = await toEmbedFromOEmbed(pageUrl, `https://open.spotify.com/embed/playlist/${pid}`);
             const tracks = await toTrackUrlsFromEmbed(embedUrl);
@@ -448,7 +754,10 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
         const mAlbum = resolved.match(/spotify\.com\/(?:intl-[a-z]{2}\/)?(?:embed\/)?album\/([A-Za-z0-9]{22})/i);
         if (mAlbum) {
             const apiIds = await fetchAllAlbumTrackIds_API(mAlbum[1]);
-            if (apiIds?.length) return apiIds.map(trackUrl);
+            if (apiIds?.length) {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][parse] album apiIds', apiIds.length);
+                return apiIds.map(trackUrl);
+            }
             const embedUrl = `https://open.spotify.com/embed/album/${mAlbum[1]}`;
             const tracks = await toTrackUrlsFromEmbed(embedUrl);
             return tracks ?? undefined;
@@ -457,7 +766,11 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
         const mPlaylist = resolved.match(/spotify\.com\/(?:intl-[a-z]{2}\/)?(?:(?:user\/[^/]+\/)?|(?:embed\/)?)playlist\/([A-Za-z0-9]{22})/i);
         if (mPlaylist) {
             const apiIds = await fetchAllPlaylistTrackIds_API(mPlaylist[1]);
-            if (apiIds?.length) return apiIds.map(trackUrl);
+            if (apiIds?.length) {
+                if (SPOTIFY_DEBUG) console.log('[Spotify][parse] playlist apiIds', apiIds.length);
+                return apiIds.map(trackUrl);
+            }
+            if (SPOTIFY_DEBUG) console.log('[Spotify][parse] playlist fallback to embed', mPlaylist[1]);
             const embedUrl = `https://open.spotify.com/embed/playlist/${mPlaylist[1]}`;
             const tracks = await toTrackUrlsFromEmbed(embedUrl);
             return tracks ?? undefined;
@@ -779,4 +1092,3 @@ async function parseAppleMusicUrl(url: string): Promise<string[] | undefined> {
         return undefined;
     }
 }
-
