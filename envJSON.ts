@@ -155,6 +155,25 @@ export class EnvData {
     get playPitch() {
         return Number(this.#envJSON("playPitch") || 0);
     }
+    /** 初期値、無効値は-1です */
+    set restartedPlayPoint(point: number) {
+        this.#envJSON("restartedPlayPoint", String(point));
+    }
+    get restartedPlayPoint() {
+        return Number(this.#envJSON("restartedPlayPoint") || -1);
+    }
+    set restartedCalledChannel(point: string) {
+        this.#envJSON("restartedCalledChannel", point);
+    }
+    get restartedCalledChannel() {
+        return this.#envJSON("restartedCalledChannel") || "";
+    }
+    set restartedVoiceChannel(point: string) {
+        this.#envJSON("restartedVoiceChannel", point);
+    }
+    get restartedVoiceChannel() {
+        return this.#envJSON("restartedVoiceChannel") || "";
+    }
 }
 
 export class AlbumInfo {

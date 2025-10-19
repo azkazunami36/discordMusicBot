@@ -22,6 +22,7 @@ import { messageEmbedGet, videoInfoEmbedGet } from "./embed.js";
 import { progressBar } from "./progressBar.js";
 import { getVoiceConnections, VoiceConnection } from "@discordjs/voice";
 import { SumLog } from "./sumLog.js";
+import { VariableExistCheck } from "./variableExistCheck.js";
 
 const client = new Discord.Client({
     intents: [
@@ -147,6 +148,24 @@ const interactionFuncs = (() => {
         if (!str.endsWith(".js")) return;
         try {
             const { execute, command } = await import("./interaction/" + str);
+            arr.push({ execute, command });
+        } catch (e) {
+            console.error(e, str);
+        }
+    });
+    return arr;
+})();
+
+/** インタラクションコマンドのデータです。 */
+const adminInteractionFuncs = (() => {
+    const arr: {
+        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData) => Promise<void>;
+        command?: Discord.SlashCommandOptionsOnlyBuilder;
+    }[] = [];
+    fs.readdirSync("adminInteraction").forEach(async str => {
+        if (!str.endsWith(".js")) return;
+        try {
+            const { execute, command } = await import("./adminInteraction/" + str);
             arr.push({ execute, command });
         } catch (e) {
             console.error(e, str);
@@ -369,14 +388,20 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
     });
     /** 1. コマンドを検索します。ヒットしたコマンドがここに記録されます。 */
     const data = interactionFuncs.find(d => d.command?.name === interaction.commandName);
+    const adminData = adminInteractionFuncs.find(d => d.command?.name === interaction.commandName);
     // 2. コマンドが正しく検索され、そのコマンドが正しく取得できていた場合実行します。
-    if (data && data.command && data.execute) {
+    const commandFunction = data || adminData;
+    if (commandFunction && commandFunction.command && commandFunction.execute) {
+        if (adminData && interaction.user.id !== process.env.DISCORD_ADMIN_USER_ID) return interaction.reply({
+                embeds: [messageEmbedGet("このコマンドは管理者用です。管理者にコマンドを利用させてください。もし、管理者のいないサーバーでこのコマンドを実行したら...「え？なんで実行できてるの！？」って管理者である@kazunami36_sum1は驚きを隠せなくなります。ログで見ているので、修正される予定です。", client)],
+                flags: "Ephemeral"
+            });
         // 3. サーバー内で実行されている場合、専用チャンネルであるかどうかやそのサーバーで間隔内でチャットが行われているかどうかの検査をします。
         if (interaction.guildId) {
             const envData = new EnvData(interaction.guildId);
             const callchannelId = envData.callchannelId;
             if (callchannelId && callchannelId != interaction.channelId) return await interaction.reply({
-                embeds: [messageEmbedGet("ここで曲を追加することはできません。特定のチャンネルでやり直してください。", client)],
+                embeds: [messageEmbedGet("ここで操作することはできません。特定のチャンネルでやり直してください。", client)],
                 flags: "Ephemeral"
             });
             if (!runedServerTime.find(data => data.guildId === interaction.guildId)) runedServerTime.push({ guildId: interaction.guildId, runedTime: 0 });
@@ -403,7 +428,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, player };
         await interaction.reply({
-            embeds: [messageEmbedGet("コマンド「" + data.command.name + "」の処理を開始しています...", client)]
+            embeds: [messageEmbedGet("コマンド「" + commandFunction.command.name + "」の処理を開始しています...", client)]
         });
         if (!permissionIs) await interaction.followUp({
             embeds: [new Discord.EmbedBuilder()
@@ -417,7 +442,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             ]
         });
         try {
-            await data.execute(interaction, inputData);
+            await commandFunction.execute(interaction, inputData);
         } catch (e) {
             SumLog.error("コマンド「/" + interaction.commandName + "」の実行でエラーが発生しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId || undefined, functionName: "client.on Interaction", userId: interaction.user.id });
             console.error(e);
@@ -435,10 +460,44 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         }
     }
 });
-client.on(Discord.Events.ClientReady, () => {
+client.on(Discord.Events.ClientReady, async () => {
     console.log("OK " + client.user?.displayName);
     client.user?.setStatus("online");
-    SumLog.log("botが起動しました。", { client, functionName: "client.on ready", userId: client.user?.id });
+    (await client.guilds.fetch()).forEach(async data => {
+        try {
+            const guild = client.guilds.cache.get(data.id);
+            const envData = new EnvData(data.id);
+            if (!serversDataClass.serversData[data.id]) serversDataClass.serverDataInit(data.id);
+            const serverData = serversDataClass.serversData[data.id];
+            if (guild && serverData && envData.restartedPlayPoint !== -1 && envData.restartedCalledChannel && envData.restartedVoiceChannel) {
+                const channel = await guild?.channels.fetch(envData.restartedCalledChannel);
+                const voiceChannel = await guild?.channels.fetch(envData.restartedVoiceChannel);
+                if (channel?.isTextBased() && voiceChannel?.isVoiceBased() && voiceChannel.members.size > 0) {
+                    const playlist = envData.playlistGet();
+                    serverData.discord.calledChannel = envData.restartedCalledChannel;
+                    await player.forcedPlay({
+                        guildId: data.id,
+                        channelId: envData.restartedVoiceChannel,
+                        adapterCreator: guild.voiceAdapterCreator,
+                        source: playlist[0],
+                        playtime: envData.restartedPlayPoint,
+                        tempo: envData.playTempo,
+                        pitch: envData.playPitch,
+                        volume: envData.volume
+                    });
+                    await channel.send({ embeds: [messageEmbedGet("音楽botは復帰しました。", client)] });
+                    SumLog.log("再起動前に接続していたサーバーに参加しました。", { client, functionName: "client.on ready", guildId: guild.id, textChannelId: channel.id, voiceChannelId: voiceChannel.id });
+                } else {
+                    SumLog.log("再起動前に接続していたサーバーに参加しようとしましたが、情報が正しくなかったか、VCに誰もいなかったため参加しませんでした。", { client, functionName: "client.on ready", guildId: guild.id, textChannelId: envData.restartedCalledChannel, voiceChannelId: envData.restartedVoiceChannel });
+                }
+                envData.restartedPlayPoint = -1;
+                envData.restartedCalledChannel = "";
+                envData.restartedVoiceChannel = "";
+            }
+        } catch (e) {
+            console.error("再生停止処理中にエラー(処理は続行されます)", e)
+        }
+    });
 });
 // VCの状態が変化したら実行します。
 client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
@@ -497,6 +556,18 @@ let joubutuNumber = Math.floor(Math.random() * bt.length);
 client.on(Discord.Events.GuildCreate, guild => {
     console.log("音楽botが新しいサーバーに参加。参加したサーバー名: " + guild.name + " 現在の参加数: " + client.guilds.cache.size);
     SumLog.log("新しいサーバーにbotが参加しました。現時点の参加数: " + client.guilds.cache.size, { client, functionName: "client.on guildcreate", guildId: guild.id });
+});
+client.on(Discord.Events.ShardDisconnect, (event, id) => {
+    console.log(`Shard ${id} disconnected`, event);
+    SumLog.log(`Shard ${id} disconnected ` + event.code + client.guilds.cache.size, { client, functionName: "client.on sharddisconnect" });
+});
+client.on(Discord.Events.ShardReconnecting, (id) => {
+    console.log(`Shard ${id} reconnecting...`);
+    SumLog.log(`Shard ${id} reconnecting...` + client.guilds.cache.size, { client, functionName: "client.on shardreconnenting" });
+});
+client.on(Discord.Events.ShardReady, (id) => {
+    console.log(`Shard ${id} reconnecting...`);
+    SumLog.log(`Shard ${id} connectied` + client.guilds.cache.size, { client, functionName: "client.on shardready" });
 });
 client.on(Discord.Events.MessageCreate, async message => {
     if (!message.author.bot) {
@@ -578,6 +649,8 @@ client.on(Discord.Events.MessageCreate, async message => {
             if (!token || !clientId) return await botmessage.edit("トークンまたはクライアントIDが無効だったよ。");
             const commands = interactionFuncs.map(func => func.command).filter((cmd): cmd is Discord.SlashCommandOptionsOnlyBuilder => cmd !== undefined);
             const body = toJSONBody(commands);
+            const adminCommands = adminInteractionFuncs.map(func => func.command).filter((cmd): cmd is Discord.SlashCommandOptionsOnlyBuilder => cmd !== undefined);
+            const adminBody = toJSONBody(adminCommands);
             const rest = new Discord.REST({ version: "10" }).setToken(token);
 
             botmessage.edit("グローバルコマンドをセットしています...");
@@ -590,7 +663,7 @@ client.on(Discord.Events.MessageCreate, async message => {
                 botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」に登録しています...時間がかかります。");
                 await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: body });
                 botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」から削除しています...");
-                await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: [] });
+                await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: adminBody });
             }
             botmessage.edit("グローバルコマンドを登録しました。");
             return;
@@ -649,6 +722,37 @@ client.on(Discord.Events.MessageCreate, async message => {
                 }
             }
             await botmessage.edit("シャットダウンの準備が整いました。システムが終了しているか確認してください。");
+            await client.destroy();
+            process.exit(0);
+        }
+        if (message.content.startsWith(client.user?.displayName + "を再起動する")) {
+            const connections = getVoiceConnections();
+            const list: VoiceConnection[] = [];
+            connections.forEach(connection => list.push(connection));
+            const botmessage = await message.reply("再生を停止して再起動の旨を連絡中...");
+            let i = 0;
+            for (const data of list) {
+                i++;
+                await botmessage.edit("再生を停止して再起動の旨を連絡中...(" + i + "/" + list.length + ")");
+                try {
+                    const serverData = serversData[data.joinConfig.guildId];
+                    const envData = new EnvData(data.joinConfig.guildId);
+                    if (serverData && serverData.discord.calledChannel && data.joinConfig.channelId) {
+                        const channel = client.guilds.cache.get(data.joinConfig.guildId)?.channels.cache.get(serverData.discord.calledChannel);
+                        if (channel && channel.isTextBased()) {
+                            const adminMessage = message.content.split("♡")[1];
+                            await channel.send({ embeds: [messageEmbedGet("お楽しみ中のところ大変申し訳ありません。音楽botは再起動を開始します。音楽botがオンラインになるまでしばらくお待ちください。再起動後に音楽botはVCに再接続します。" + (adminMessage ? "管理者から再起動理由について説明されています。\n\n**〜管理者よりメッセージ〜**\n\n" + adminMessage : "\n\n現在のメッセージから５分経ってもこのbotのオンラインステータスが復帰しない場合、X(旧Twitter)で@kazunami36_sum1のツイート情報をご確認ください。"), client)] });
+                        }
+                        envData.restartedPlayPoint = player.playtimeGet(data.joinConfig.guildId);
+                        envData.restartedCalledChannel = serverData.discord.calledChannel;
+                        envData.restartedVoiceChannel = data.joinConfig.channelId;
+                    }
+                    player.stop(data.joinConfig.guildId);
+                } catch (e) {
+                    console.error("再生停止処理中にエラー(処理は続行されます)", e)
+                }
+            }
+            await botmessage.edit("再起動の準備が整いました。システムが終了しているか確認してください。");
             await client.destroy();
             process.exit(0);
         }

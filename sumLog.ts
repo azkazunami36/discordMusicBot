@@ -38,6 +38,33 @@ export interface SumInfo {
   client?: Client;
   userId?: string;
 }
+
+export interface SumLogJSON {
+  message?: string;
+  type?: string;
+  info?: {
+    functionName?: string;
+    guild?: {
+      id?: string;
+      name?: string;
+    }
+    textChannelId?: {
+      id?: string;
+      name?: string;
+    }
+    voiceChannelId?: {
+      id?: string;
+      name?: string;
+    }
+    userId?: {
+      id?: string;
+      globalName?: string | null;
+      displayName?: string;
+      username?: string;
+    }
+  };
+  date?: number;
+}
 /**
  * # かずなみが見やすいと思うログを表示するやつだよ！！！！
  * 
@@ -57,7 +84,7 @@ export class SumLog {
       "|vc:" + padStringWithSpaces(voiceChannel ? voiceChannel.name.slice(0, 10) || "" : "", 10) +
       "|us:" + padStringWithSpaces(user ? (user.globalName || user.displayName).slice(0, 10) || "" : "", 10) +
       "|" + message;
-    appendFileSync("./log/sumlogJSON.jsonl", "\n" + JSON.stringify({
+    const saveJSON: SumLogJSON = {
       message, type, info: {
         functionName: info.functionName,
         guild: info.guildId && guild ? {
@@ -78,8 +105,10 @@ export class SumLog {
           displayName: user.displayName,
           username: user.username
         } : undefined
-      }, date: Date.now()
-    }));
+      },
+      date: Date.now()
+    };
+    appendFileSync("./log/sumlogJSON.jsonl", "\n" + JSON.stringify(saveJSON));
   }
   static log(message: string, info: SumInfo) {
     this.#logWrite(message, info, "log");
