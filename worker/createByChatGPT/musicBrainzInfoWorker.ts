@@ -167,24 +167,83 @@ function deepMerge<T>(base: T, override?: Partial<T>): T {
 
 // ========== fetch ==========
 async function fetchJSON<T>(urlStr: string): Promise<T> {
-  const res = await fetch(urlStr, {
-    headers: {
-      "User-Agent": "KazunamiDiscordBot/1.0 (+https://example.com/contact)",
-      "Accept": "application/json",
-    } as any,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} for ${urlStr}\n${text}`);
+  const controller = new AbortController();
+  const timeoutMs = 15000; // 15s timeout
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  // up to 3 total tries on transient network errors
+  const transientCodes = new Set([
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "EAI_AGAIN",
+    "ENOTFOUND",
+    "ECONNREFUSED",
+  ]);
+
+  let lastErr: any = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(urlStr, {
+        headers: {
+          // MusicBrainz requires a descriptive UA with contact URL/email
+          "User-Agent": "KazunamiDiscordBot/1.0 (https://github.com/azkazunami36/discordMusicBot; contact: azkazunami36)",
+          "Accept": "application/json",
+        } as any,
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        const detail = {
+          status: res.status,
+          statusText: res.statusText,
+          url: urlStr,
+          bodySnippet: text?.slice(0, 300),
+        };
+        throw new Error(`HTTP ${res.status} ${res.statusText} for ${urlStr} body=${JSON.stringify(detail.bodySnippet)}`);
+      }
+      clearTimeout(timer);
+      return (await res.json()) as T;
+    } catch (e: any) {
+      lastErr = e;
+      // If aborted, wrap as timeout for clarity
+      const code = e?.code || e?.cause?.code;
+      const isAbort = e?.name === "AbortError";
+      const transient = isAbort || transientCodes.has(code);
+      if (attempt < 3 && transient) {
+        // simple exponential backoff: 500ms, 1000ms
+        const wait = 500 * attempt;
+        await sleep(wait);
+        continue;
+      }
+      break;
+    }
   }
-  return (await res.json()) as T;
+
+  // Re-throw with rich context
+  const err = lastErr || new Error("Unknown fetch error");
+  const info = {
+    message: String(err?.message || err),
+    name: err?.name,
+    code: err?.code || err?.cause?.code,
+    errno: err?.errno || err?.cause?.errno,
+    syscall: err?.syscall || err?.cause?.syscall,
+    hostname: err?.hostname || err?.cause?.hostname,
+    url: urlStr,
+    stack: typeof err?.stack === "string" ? err.stack.split("\n").slice(0, 5).join("\n") : undefined,
+    timeoutMs,
+  };
+  throw new Error(`fetch failed: ${JSON.stringify(info)}`);
 }
 
 // ========== main resolver ==========
 async function resolveMB(kind: Kind, mbid: string, lastNetAt?: number): Promise<{ data: any; netAt?: number }> {
+  console.log(`[MusicBrainzWorker] resolving ${kind} ${mbid}`);
   // 1) fresh cache
   const cached = lookupFreshSync<any>(kind, mbid);
-  if (cached) return { data: cached, netAt: undefined };
+  if (cached) {
+    console.log(`[MusicBrainzWorker] cache hit ${kind} ${mbid}`);
+    return { data: cached, netAt: undefined };
+  }
 
   // 2) (rate limit) wait only if network access will occur and lastNetAt provided
   if (typeof lastNetAt === "number" && Number.isFinite(lastNetAt)) {
@@ -199,6 +258,8 @@ async function resolveMB(kind: Kind, mbid: string, lastNetAt?: number): Promise<
   else if (kind === "release") urlStr = `https://musicbrainz.org/ws/2/release/${mbid}?fmt=json&inc=artist-credits`;
   else urlStr = `https://musicbrainz.org/ws/2/recording/${mbid}?fmt=json&inc=releases`;
 
+  console.log(`[MusicBrainzWorker] fetching ${urlStr}`);
+
   const netAt = Date.now();
   const dataRaw = await fetchJSON<any>(urlStr);
 
@@ -209,6 +270,8 @@ async function resolveMB(kind: Kind, mbid: string, lastNetAt?: number): Promise<
     kind === "release" ? albumInfo.release :
     albumInfo.recording;
   const merged = overrideMap && overrideMap[mbid] ? deepMerge<any>(dataRaw, overrideMap[mbid] as any) : dataRaw;
+
+  console.log(`[MusicBrainzWorker] fetched ${kind} ${mbid} ok`);
 
   // 5) append-if-missing
   appendIfMissingByMbidSync(kind, mbid, merged);
@@ -224,8 +287,20 @@ async function resolveMB(kind: Kind, mbid: string, lastNetAt?: number): Promise<
     ensureCacheFileSync(payload.kind);
     const { data, netAt } = await resolveMB(payload.kind, payload.mbid, (payload as any).lastNetAt);
     parentPort?.postMessage({ ok: true, data, netAt });
-  } catch (e) {
-    const err = { ok: false, error: String(e) };
-    parentPort?.postMessage(err);
+  } catch (e: any) {
+    const payload = (workerData as any) || {};
+    console.error(`[MusicBrainzWorker] Error for ${payload?.kind ?? '?'} ${payload?.mbid ?? '?'}:`, e);
+    const errInfo = {
+      message: String(e?.message || e),
+      name: e?.name,
+      code: e?.code || e?.cause?.code,
+      errno: e?.errno || e?.cause?.errno,
+      syscall: e?.syscall || e?.cause?.syscall,
+      hostname: e?.hostname || e?.cause?.hostname,
+      kind: payload?.kind,
+      mbid: payload?.mbid,
+      stack: typeof e?.stack === "string" ? e.stack.split("\n").slice(0, 6).join("\n") : undefined,
+    };
+    parentPort?.postMessage({ ok: false, error: JSON.stringify(errInfo) });
   }
 })();
