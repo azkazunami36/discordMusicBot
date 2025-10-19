@@ -1,11 +1,11 @@
 import { Interaction, SlashCommandBuilder, CacheType, GuildMember, Message } from "discord.js";
 
-import { InteractionInputData } from "../interface.js";
+import { InteractionInputData } from "../funcs/interface.js";
 import { parseStrToNum } from "../createByChatGPT/parseTimeStrToNum.js";
 import { numberToTimeString } from "../createByChatGPT/numberToTimeString.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
-import { EnvData } from "../envJSON.js";
-import { messageEmbedGet } from "../embed.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { EnvData } from "../funcs/envJSON.js";
+import { messageEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("seek")

@@ -1,12 +1,12 @@
 import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
 
-import { InteractionInputData } from "../interface.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
-import { EnvData } from "../envJSON.js";
-import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
+import { InteractionInputData } from "../funcs/interface.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { EnvData } from "../funcs/envJSON.js";
+import { messageEmbedGet, videoInfoEmbedGet } from "../funcs/embed.js";
 import { progressBar } from "../createByChatGPT/progressBar.js";
-import { SumLog } from "../sumLog.js";
+import { SumLog } from "../class/sumLog.js";
 
 export const command = new SlashCommandBuilder()
     .setName("play")

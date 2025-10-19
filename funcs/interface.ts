@@ -1,4 +1,4 @@
-import { ServersDataClass } from "./serversData.js";
+import { ServersDataClass } from "../class/serversData.js";
 import { Player } from "./player.js";
 
 export interface ServersData {

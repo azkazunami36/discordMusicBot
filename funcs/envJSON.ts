@@ -1,9 +1,9 @@
 import fs from "fs";
 import yts from "yt-search";
 // ↑ 依存はそのまま。以下、挙動改善・バグ修正の差分のみ
-import { youtubeInfoGet } from "./worker/helper/createByChatGPT/youtubeInfoGetHelper.js";
-import { niconicoInfoGet } from "./worker/helper/createByChatGPT/niconicoInfoGetHelper.js";
-import { twitterInfoGet } from "./worker/helper/createByChatGPT/twitterInfoGetHelper.js";
+import { youtubeInfoGet } from "../worker/helper/createByChatGPT/youtubeInfoGetHelper.js";
+import { niconicoInfoGet } from "../worker/helper/createByChatGPT/niconicoInfoGetHelper.js";
+import { twitterInfoGet } from "../worker/helper/createByChatGPT/twitterInfoGetHelper.js";
 
 export interface Playlist {
     type: "videoId" | "originalFileId" | "nicovideoId" | "twitterId";

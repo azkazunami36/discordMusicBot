@@ -2,12 +2,12 @@ import { Interaction, SlashCommandBuilder, CacheType, Message } from "discord.js
 import ytdl from "ytdl-core";
 import yts from "yt-search";
 
-import { InteractionInputData } from "../interface.js";
-import { EnvData, Playlist, videoMetaCacheGet } from "../envJSON.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
-import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
-import { sourcePathManager } from "../sourcePathManager.js";
-import { SumLog } from "../sumLog.js";
+import { InteractionInputData } from "../funcs/interface.js";
+import { EnvData, Playlist, videoMetaCacheGet } from "../funcs/envJSON.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { messageEmbedGet, videoInfoEmbedGet } from "../funcs/embed.js";
+import { sourcePathManager } from "../class/sourcePathManager.js";
+import { SumLog } from "../class/sumLog.js";
 import { numberToTimeString } from "../createByChatGPT/numberToTimeString.js";
 import { appleChunkHelper } from "../worker/helper/createByChatGPT/appleChunkHelper.js";
 import { spotifyChunkHelper } from "../worker/helper/createByChatGPT/spotifyChunkHelper.js";

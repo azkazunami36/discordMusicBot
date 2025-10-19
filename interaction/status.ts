@@ -1,8 +1,8 @@
 import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, CommandInteraction, APIEmbedField, Message } from "discord.js";
 
-import { InteractionInputData } from "../interface.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
-import { statusEmbedGet } from "../embed.js";
+import { InteractionInputData } from "../funcs/interface.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { statusEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("status")

@@ -1,9 +1,9 @@
 import { Interaction, SlashCommandBuilder, CacheType, GuildMember, EmbedBuilder, Message } from "discord.js";
 import * as DiscordVoice from "@discordjs/voice";
 
-import { InteractionInputData } from "../interface.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
-import { messageEmbedGet } from "../embed.js";
+import { InteractionInputData } from "../funcs/interface.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { messageEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("nextseek")

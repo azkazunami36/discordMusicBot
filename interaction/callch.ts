@@ -1,8 +1,8 @@
 import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } from "discord.js";
-import { InteractionInputData } from "../interface.js";
-import { EnvData } from "../envJSON.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
-import { messageEmbedGet } from "../embed.js";
+import { InteractionInputData } from "../funcs/interface.js";
+import { EnvData } from "../funcs/envJSON.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { messageEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("callch")

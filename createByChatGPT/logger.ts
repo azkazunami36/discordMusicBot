@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import util from "util";
 import * as _log4js from "log4js";
-import { SumLog } from "../sumLog.js";
+import { SumLog } from "../class/sumLog.js";
 const log4js = ((_log4js as any).default ?? _log4js) as typeof _log4js;
 
 // ルート直下 log フォルダを保証

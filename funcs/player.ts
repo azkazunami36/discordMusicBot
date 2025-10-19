@@ -1,12 +1,12 @@
 import { DiscordGatewayAdapterCreator, getVoiceConnection, joinVoiceChannel, VoiceConnectionStatus, AudioPlayer, AudioPlayerStatus, createAudioResource, StreamType, entersState, PlayerSubscription, AudioResource, AudioPlayerState } from "@discordjs/voice";
 import { Playlist } from "./envJSON.js";
-import { SourcePathManager, sourcePathManager } from "./sourcePathManager.js";
+import { SourcePathManager, sourcePathManager } from "../class/sourcePathManager.js";
 import { ChildProcessByStdio, spawn } from "child_process";
 import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
 import Stream from "stream";
 import { EventEmitter } from "events";
-import { SumLog } from "./sumLog.js";
+import { SumLog } from "../class/sumLog.js";
 
 interface PlayerEvent {
     playStart: [guildId: string];

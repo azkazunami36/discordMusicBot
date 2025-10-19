@@ -86,7 +86,8 @@ async function fetchMeta(videoUrlOrId: string): Promise<VideoMetadataResult | un
   // yt-search で取得（構造化クローン不可な関数プロパティを含むことがある）
   let meta: VideoMetadataResult | undefined;
   try {
-    meta = (await yts({ videoId })) as unknown as VideoMetadataResult;
+    // 日本語のメタデータを優先的に取得するため、強制的に日本語ロケールを要求（yt-search は hl/gl を受け付ける）
+    meta = (await yts({ videoId, hl: "ja", gl: "JP" })) as unknown as VideoMetadataResult;
   } catch {
     meta = undefined;
   }

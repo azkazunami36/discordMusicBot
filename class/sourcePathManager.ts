@@ -2,9 +2,9 @@ import fs, { constants } from "fs";
 import fsPromise from "fs/promises";
 import { exec, execSync, spawn } from "child_process";
 import ffmpeg, { FfprobeData } from "fluent-ffmpeg";
-import { parseYtDlpProgressLine } from "./createByChatGPT/parseYtDlpProgressLine.js";
-import { Playlist } from "./envJSON.js";
-import { SumLog } from "./sumLog.js";
+import { parseYtDlpProgressLine } from "../createByChatGPT/parseYtDlpProgressLine.js";
+import { Playlist } from "../funcs/envJSON.js";
+import { SumLog } from "../sumLog.js";
 
 /**
  * 状況ごとにステータスが変動します。

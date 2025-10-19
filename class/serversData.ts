@@ -1,6 +1,6 @@
 import { Client, EmbedBuilder } from "discord.js";
 
-import { ServersData } from "./interface.js";
+import { ServersData } from "../funcs/interface.js";
 
 export class ServersDataClass {
     /** サーバーごとに記録する必要のある一時データです。 */
