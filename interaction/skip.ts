@@ -4,7 +4,7 @@ import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 import { EnvData } from "../envJSON.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
-import { progressBar } from "../progressBar.js";
+import { progressBar } from "../createByChatGPT/progressBar.js";
 import { SumLog } from "../sumLog.js";
 
 export const command = new SlashCommandBuilder()

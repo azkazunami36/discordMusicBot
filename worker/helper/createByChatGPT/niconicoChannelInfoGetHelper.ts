@@ -2,28 +2,36 @@ import { Worker } from "worker_threads";
 import path from "path";
 import url from "url";
 
-type ThumbRow = { videoId: string; thumbnailUrl: string };
-
-type Payload = { inputs: string[]; start: number };
-type WorkerResp =
-  | { ok: true; data: { type: "youtubeThumbnail"; body: ThumbRow }[] }
-  | { ok: false; error: string };
-
 // __dirname（ESM）
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
+/** env 側と整合するローカル型（import はしない） */
+export interface NicoChannelInfo {
+  id: string;
+  url: string;
+  name: string;
+  iconUrl: string;
+  source?: "og";
+  raw?: any;
+}
+
+type Payload = { inputs: string[]; start: number };
+type WorkerResp =
+  | { ok: true; data: { type: "niconicoChannelInfo"; body: NicoChannelInfo }[] }
+  | { ok: false; error: string };
+
 /** 単発（1件） */
-export async function youtubeThumbnailGet(input: string): Promise<string | undefined> {
-  const arr = await youtubeThumbnailGetBatch([input], 0);
-  return arr[0]?.thumbnailUrl;
+export async function niconicoChannelInfoGet(input: string): Promise<NicoChannelInfo | undefined> {
+  const arr = await niconicoChannelInfoGetBatch([input], 0);
+  return arr[0];
 }
 
 /** バッチ（複数件） */
-export async function youtubeThumbnailGetBatch(
+export async function niconicoChannelInfoGetBatch(
   inputs: string[],
   start = 0
-): Promise<(ThumbRow | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "youtubeThumbnailGetWorker.js"); // ビルド後 .js を参照
+): Promise<(NicoChannelInfo | undefined)[]> {
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "niconicoChannelInfoGetWorker.js"); // ビルド後 .js を参照
   const payload: Payload = { inputs, start };
 
   const result: WorkerResp = await new Promise((resolve) => {

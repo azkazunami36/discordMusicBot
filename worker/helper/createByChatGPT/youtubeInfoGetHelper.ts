@@ -1,29 +1,29 @@
 import { Worker } from "worker_threads";
 import path from "path";
 import url from "url";
-import type { NicoSnapshotItem } from "../../niconico.js";
+import type { VideoMetadataResult } from "yt-search";
 
-type Payload = { contentIds: string[]; start: number };
+type Payload = { videoIds: string[]; start: number };
 type WorkerResp =
-  | { ok: true; data: { type: "niconicoInfo"; body: NicoSnapshotItem }[] }
+  | { ok: true; data: { type: "youtubeInfo"; body: VideoMetadataResult }[] }
   | { ok: false; error: string };
 
 // __dirname（ESM）
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 /** 単発（1件） */
-export async function niconicoInfoGet(input: string): Promise<NicoSnapshotItem | undefined> {
-  const arr = await niconicoInfoGetBatch([input], 0);
+export async function youtubeInfoGet(videoIdOrUrl: string): Promise<VideoMetadataResult | undefined> {
+  const arr = await youtubeInfoGetBatch([videoIdOrUrl], 0);
   return arr[0];
 }
 
 /** バッチ（複数件） */
-export async function niconicoInfoGetBatch(
-  contentIds: string[],
+async function youtubeInfoGetBatch(
+  videoIds: string[],
   start = 0
-): Promise<(NicoSnapshotItem | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "niconicoInfoGetWorker.js"); // ビルド後 .js を参照
-  const payload: Payload = { contentIds, start };
+): Promise<(VideoMetadataResult | undefined)[]> {
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubeInfoGetWorker.js"); // ビルド後に .js を参照
+  const payload: Payload = { videoIds, start };
 
   const result: WorkerResp = await new Promise((resolve) => {
     const worker = new Worker(workerPath, { workerData: payload });
@@ -34,7 +34,7 @@ export async function niconicoInfoGetBatch(
     });
   });
 
-  if (!result.ok) return new Array(contentIds.length).fill(undefined);
+  if (!result.ok) return new Array(videoIds.length).fill(undefined);
   const bodies = result.data.map((d) => d.body);
   return bodies;
 }

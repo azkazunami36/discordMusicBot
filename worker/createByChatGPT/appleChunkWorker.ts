@@ -11,7 +11,7 @@ type Payload = { urls: string[]; start: number };
 type SortedOut = { type: "videoId"; body: string }[];
 
 // --- JSONL キャッシュ: cacheJSONs/appleMusicToVideoIdCache.jsonl ---
-const CACHE_DIR = path.join(__dirname, "..", "cacheJSONs");
+const CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
 const CACHE_FILE = path.join(CACHE_DIR, "appleMusicToVideoIdCache.jsonl");
 type CacheRow = { videoId: string; appleMusicId: string };
 

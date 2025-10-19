@@ -2,7 +2,7 @@ import fs, { constants } from "fs";
 import fsPromise from "fs/promises";
 import { exec, execSync, spawn } from "child_process";
 import ffmpeg, { FfprobeData } from "fluent-ffmpeg";
-import { parseYtDlpProgressLine } from "./parseYtDlpProgressLine.js";
+import { parseYtDlpProgressLine } from "./createByChatGPT/parseYtDlpProgressLine.js";
 import { Playlist } from "./envJSON.js";
 import { SumLog } from "./sumLog.js";
 

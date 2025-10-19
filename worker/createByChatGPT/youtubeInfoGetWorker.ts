@@ -11,7 +11,7 @@ type SortedOut = { type: "youtubeInfo"; body: VideoMetadataResult }[];
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 // --- JSONL キャッシュ: ./cacheJSONs/youtubeInfoCache.jsonl ---
-const CACHE_DIR = path.join(__dirname, "..", "cacheJSONs");
+const CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
 const CACHE_FILE = path.join(CACHE_DIR, "youtubeInfoCache.jsonl");
 
 function ensureCacheFileSync() {
@@ -83,7 +83,7 @@ async function fetchMeta(videoUrlOrId: string): Promise<VideoMetadataResult | un
   const cached = lookupByVideoIdSync(videoId);
   if (cached) return cached;
 
-  // yt-search で取得
+  // yt-search で取得（構造化クローン不可な関数プロパティを含むことがある）
   let meta: VideoMetadataResult | undefined;
   try {
     meta = (await yts({ videoId })) as unknown as VideoMetadataResult;
@@ -92,10 +92,39 @@ async function fetchMeta(videoUrlOrId: string): Promise<VideoMetadataResult | un
   }
   if (!meta || !(meta as any)?.videoId) return undefined;
 
-  // 保存（直前に再読込 → 重複ならスキップ）
-  appendIfMissingByVideoIdSync(meta);
+  // --- 重要: Worker postMessage / JSONL 保存のためプレーン化（関数等を除去）---
+  let plain: VideoMetadataResult | undefined;
+  try {
+    // stringifyで関数プロパティは落ちる → 構造化クローン可能に
+    plain = JSON.parse(JSON.stringify(meta)) as VideoMetadataResult;
+  } catch {
+    // stringify失敗時の最小フォールバック
+    const v: any = meta as any;
+    plain = {
+      title: v?.title,
+      description: v?.description,
+      url: v?.url,
+      videoId: v?.videoId,
+      seconds: v?.seconds,
+      timestamp: v?.timestamp,
+      // duration は toString を含むため最小限へ
+      duration: { seconds: v?.duration?.seconds, timestamp: v?.duration?.timestamp } as any,
+      views: v?.views,
+      genre: v?.genre,
+      uploadDate: v?.uploadDate,
+      ago: v?.ago,
+      image: v?.image,
+      thumbnail: v?.thumbnail,
+      author: v?.author,
+    } as unknown as VideoMetadataResult;
+  }
 
-  return meta;
+  if (!plain || !(plain as any)?.videoId) return undefined;
+
+  // 保存（直前に再読込 → 重複ならスキップ）
+  appendIfMissingByVideoIdSync(plain);
+
+  return plain;
 }
 
 async function processSlice(data: Payload): Promise<SortedOut> {

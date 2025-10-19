@@ -3,13 +3,13 @@ import { Worker } from "worker_threads";
 
 export type PlaylistData = { type: "videoId"; body: string };
 
-export function appleChunkHelper(
+export function spotifyChunkHelper(
   urls: string[],
   start: number
 ): Promise<PlaylistData[]> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
-      new URL("../appleChunkWorker.js", import.meta.url), // ←ビルド後のJSを指す
+      new URL("../../createByChatGPT/spotifyChunkWorker.js", import.meta.url), // ←ビルド後のJSを指す
       {
         type: "module", // ESMの場合
         workerData: { urls, start },

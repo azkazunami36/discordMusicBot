@@ -35,7 +35,7 @@ type Payload = { inputs: string[]; start: number };
 type SortedOut = { type: "niconicoUserInfo"; body: NicoUserInfo }[];
 
 // --- JSONL キャッシュ: ./cacheJSONs/niconicoUserInfoCache.jsonl ---
-const CACHE_DIR = path.join(__dirname, "..", "cacheJSONs");
+const CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
 const CACHE_FILE = path.join(CACHE_DIR, "niconicoUserInfoCache.jsonl");
 
 function ensureCacheFileSync() {

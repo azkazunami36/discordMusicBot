@@ -1,13 +1,13 @@
 import { APIEmbedField, Client, EmbedBuilder } from "discord.js";
 import fs from "fs";
 import { EnvData, Playlist, videoMetaCacheGet } from "./envJSON.js";
-import { numberToTimeString } from "./numberToTimeString.js";
-import { musicBrainz } from "./MusicBrainz.js";
+import { numberToTimeString } from "./createByChatGPT/numberToTimeString.js";
 import { SumLog } from "./sumLog.js";
-import { youtubeUserInfoGet } from "./worker/helper/youtubeUserInfoGetHelper.js";
-import { niconicoUserInfoGet } from "./worker/helper/niconicoInfoUserGetHelper.js";
-import { niconicoChannelInfoGet } from "./worker/helper/niconicoChannelInfoGetHelper.js";
-import { youtubeThumbnailGet } from "./worker/helper/youtubeThumbnailGetHelper.js";
+import { youtubeUserInfoGet } from "./worker/helper/createByChatGPT/youtubeUserInfoGetHelper.js";
+import { niconicoUserInfoGet } from "./worker/helper/createByChatGPT/niconicoInfoUserGetHelper.js";
+import { niconicoChannelInfoGet } from "./worker/helper/createByChatGPT/niconicoChannelInfoGetHelper.js";
+import { youtubeThumbnailGet } from "./worker/helper/createByChatGPT/youtubeThumbnailGetHelper.js";
+import { musicBrainz } from "./worker/helper/createByChatGPT/musicBrainzInfoHelper.js";
 
 export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: string, client: Client) {
     const startTime = Date.now();

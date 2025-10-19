@@ -2,8 +2,8 @@ import fs from "fs";
 
 import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, APIEmbedField, APIEmbed, Message } from "discord.js";
 import { InteractionInputData } from "../interface.js";
-import { musicBrainz } from "../MusicBrainz.js";
 import { messageEmbedGet } from "../embed.js";
+import { musicBrainz } from "../worker/helper/createByChatGPT/musicBrainzInfoHelper.js";
 
 export const command = new SlashCommandBuilder()
     .setName("mblink")

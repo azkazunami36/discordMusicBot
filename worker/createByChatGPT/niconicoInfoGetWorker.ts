@@ -2,8 +2,33 @@ import { parentPort, workerData } from "worker_threads";
 import fs from "fs";
 import path from "path";
 import url from "url";
-import { NicoSnapshotItem, searchNicoVideo } from "../niconico.js";
-
+import { searchNicoVideo } from "../helper/createByChatGPT/searchNicoVideoHelper.js";
+interface NicoSnapshotItem {
+    // 基本
+    contentId: string;
+    title: string;
+    description?: string;
+    // カウンタ類
+    viewCounter?: number;
+    mylistCounter?: number;
+    likeCounter?: number;
+    commentCounter?: number;
+    // 動画情報
+    lengthSeconds?: number;
+    startTime?: string;
+    lastResBody?: string;
+    // サムネ・ジャンル・タグ
+    thumbnailUrl?: string;
+    genre?: string;
+    tags?: string;
+    // ユーザー / チャンネル情報
+    userId?: string;
+    userNickname?: string;
+    channelId?: string;
+    channelName?: string;
+    // その他（APIが追加で返す可能性のある項目をキャッチ）
+    [key: string]: string | number | undefined;
+}
 type Payload = { contentIds: string[]; start: number };
 type SortedOut = { type: "niconicoInfo"; body: NicoSnapshotItem }[];
 
@@ -11,7 +36,7 @@ type SortedOut = { type: "niconicoInfo"; body: NicoSnapshotItem }[];
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 // --- JSONL キャッシュ: ./cacheJSONs/niconicoInfoCache.jsonl ---
-const CACHE_DIR = path.join(__dirname, "..", "cacheJSONs");
+const CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
 const CACHE_FILE = path.join(CACHE_DIR, "niconicoInfoCache.jsonl");
 
 function ensureCacheFileSync() {

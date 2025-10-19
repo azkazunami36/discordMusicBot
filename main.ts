@@ -1,7 +1,7 @@
 import * as Discord from "discord.js";
 import fs from "fs";
 import "dotenv/config";
-import "./logger.js"
+import "./createByChatGPT/logger.js"
 
 process.on("uncaughtException", (err) => {
     console.error("キャッチされずグローバルで発生した例外:", err);
@@ -19,7 +19,7 @@ import { InteractionInputData } from "./interface.js";
 import { WebPlayerAPI } from "./webAPI.js";
 import { Player } from "./player.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "./embed.js";
-import { progressBar } from "./progressBar.js";
+import { progressBar } from "./createByChatGPT/progressBar.js";
 import { getVoiceConnections, VoiceConnection } from "@discordjs/voice";
 import { SumLog } from "./sumLog.js";
 

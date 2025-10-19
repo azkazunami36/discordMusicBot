@@ -1,7 +1,40 @@
 import { Worker } from "worker_threads";
 import path from "path";
 import url from "url";
-import type { XPostInfo } from "../../twitter.js";
+
+interface XPostInfo {
+  id: string;
+  text?: string;
+  created_at?: string;
+  author?: {
+    id: string;
+    name: string;
+    username: string;
+    profile_image_url?: string;
+    verified?: boolean;
+  };
+  media?: Array<{
+    media_key: string;
+    type: "photo" | "video" | "animated_gif";
+    url?: string;
+    preview_image_url?: string;
+    duration_ms?: number;
+    variants?: Array<{
+      bitrate?: number;
+      content_type: string;
+      url: string;
+    }>;
+  }>;
+  public_metrics?: {
+    like_count?: number;
+    retweet_count?: number;
+    reply_count?: number;
+    quote_count?: number;
+    bookmark_count?: number;
+    view_count?: number; // 一部レベルでのみ返る
+  };
+  raw: any; // フルレスポンスをそのまま保持（将来の拡張用）
+}
 
 // __dirname（ESM）
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
@@ -22,7 +55,7 @@ export async function twitterInfoGetBatch(
   inputs: string[],
   start = 0
 ): Promise<(XPostInfo | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "twitterInfoGetWorker.js"); // ビルド後 .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "twitterInfoGetWorker.js"); // ビルド後 .js を参照
   const payload: Payload = { inputs, start };
 
   const result: WorkerResp = await new Promise((resolve) => {

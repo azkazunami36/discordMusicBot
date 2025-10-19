@@ -1,8 +1,8 @@
 import { Interaction, SlashCommandBuilder, CacheType, GuildMember, Message } from "discord.js";
 
 import { InteractionInputData } from "../interface.js";
-import { parseStrToNum } from "../parseTimeStrToNum.js";
-import { numberToTimeString } from "../numberToTimeString.js";
+import { parseStrToNum } from "../createByChatGPT/parseTimeStrToNum.js";
+import { numberToTimeString } from "../createByChatGPT/numberToTimeString.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 import { EnvData } from "../envJSON.js";
 import { messageEmbedGet } from "../embed.js";

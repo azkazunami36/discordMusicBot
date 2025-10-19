@@ -44,7 +44,7 @@ export async function niconicoUserInfoGetBatch(
   inputs: string[],
   start = 0
 ): Promise<(NicoUserInfo | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "niconicoInfoUserGetWorker.js"); // ビルド後 .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "niconicoInfoUserGetWorker.js"); // ビルド後 .js を参照
   const payload: Payload = { inputs, start };
 
   const result: WorkerResp = await new Promise((resolve) => {

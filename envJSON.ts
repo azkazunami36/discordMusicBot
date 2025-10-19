@@ -1,11 +1,9 @@
 import fs from "fs";
 import yts from "yt-search";
-import { NicoSnapshotItem, searchNicoVideo } from "./niconico.js";
 // ↑ 依存はそのまま。以下、挙動改善・バグ修正の差分のみ
-import { searchTweet, XPostInfo } from "./twitter.js";
-import { youtubeInfoGet } from "./worker/helper/youtubeInfoGetHelper.js";
-import { niconicoInfoGet } from "./worker/helper/niconicoInfoGetHelper.js";
-import { twitterInfoGet } from "./worker/helper/twitterInfoGetHelper.js";
+import { youtubeInfoGet } from "./worker/helper/createByChatGPT/youtubeInfoGetHelper.js";
+import { niconicoInfoGet } from "./worker/helper/createByChatGPT/niconicoInfoGetHelper.js";
+import { twitterInfoGet } from "./worker/helper/createByChatGPT/twitterInfoGetHelper.js";
 
 export interface Playlist {
     type: "videoId" | "originalFileId" | "nicovideoId" | "twitterId";
@@ -258,6 +256,66 @@ export class AlbumInfo {
     }) { }
 }
 
+interface NicoSnapshotItem {
+    // 基本
+    contentId: string;
+    title: string;
+    description?: string;
+    // カウンタ類
+    viewCounter?: number;
+    mylistCounter?: number;
+    likeCounter?: number;
+    commentCounter?: number;
+    // 動画情報
+    lengthSeconds?: number;
+    startTime?: string;
+    lastResBody?: string;
+    // サムネ・ジャンル・タグ
+    thumbnailUrl?: string;
+    genre?: string;
+    tags?: string;
+    // ユーザー / チャンネル情報
+    userId?: string;
+    userNickname?: string;
+    channelId?: string;
+    channelName?: string;
+    // その他（APIが追加で返す可能性のある項目をキャッチ）
+    [key: string]: string | number | undefined;
+}
+
+interface XPostInfo {
+  id: string;
+  text?: string;
+  created_at?: string;
+  author?: {
+    id: string;
+    name: string;
+    username: string;
+    profile_image_url?: string;
+    verified?: boolean;
+  };
+  media?: Array<{
+    media_key: string;
+    type: "photo" | "video" | "animated_gif";
+    url?: string;
+    preview_image_url?: string;
+    duration_ms?: number;
+    variants?: Array<{
+      bitrate?: number;
+      content_type: string;
+      url: string;
+    }>;
+  }>;
+  public_metrics?: {
+    like_count?: number;
+    retweet_count?: number;
+    reply_count?: number;
+    quote_count?: number;
+    bookmark_count?: number;
+    view_count?: number; // 一部レベルでのみ返る
+  };
+  raw: any; // フルレスポンスをそのまま保持（将来の拡張用）
+}
 
 export type CacheGetReturn = {
     type: "videoId";

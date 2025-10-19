@@ -10,7 +10,7 @@ type Payload = { urls: string[]; start: number };
 type SortedOut = { type: "videoId"; body: string }[];
 
 // --- JSONL キャッシュ: cacheJSONs/spotifyToVideoIdCache.jsonl ---
-const SPOTIFY_CACHE_DIR = path.join(__dirname, "..", "cacheJSONs");
+const SPOTIFY_CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
 const SPOTIFY_CACHE_FILE = path.join(SPOTIFY_CACHE_DIR, "spotifyToVideoIdCache.jsonl");
 type SpotifyCacheRow = { videoId: string; spotifyId: string };
 

@@ -13,7 +13,7 @@ type SortedOut = { type: "youtubeThumbnail"; body: ThumbRow }[];
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 // --- JSONL キャッシュ: ./cacheJSONs/youtubeThumbnailLinkCache.jsonl ---
-const CACHE_DIR = path.join(__dirname, "..", "cacheJSONs");
+const CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
 const CACHE_FILE = path.join(CACHE_DIR, "youtubeThumbnailLinkCache.jsonl");
 
 function ensureCacheFileSync() {

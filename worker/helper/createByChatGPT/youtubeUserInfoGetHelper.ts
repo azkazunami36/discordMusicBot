@@ -8,7 +8,7 @@ const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 type Payload = { inputs: string[]; start: number };
 type WorkerResp =
-  | { ok: true; data: { type: "youtubeUserInfo"; body: youtube_v3.Schema$Channel }[] }
+  | { ok: true; data: { type: "youtubeUserInfo"; body: any }[] }
   | { ok: false; error: string };
 
 /**
@@ -25,7 +25,7 @@ export async function youtubeUserInfoGet(input: string): Promise<youtube_v3.Sche
  * - ワーカーが中心処理。ヘルパーはワーカーを起動して結果を渡すだけ。
  */
 async function youtubeUserInfoGetBatch(inputs: string[], start = 0): Promise<(youtube_v3.Schema$Channel | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "youtubeUserInfoGetWorker.js"); // ビルド後 .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubeUserInfoGetWorker.js"); // ビルド後 .js を参照
   const payload: Payload = { inputs, start };
 
   const result: WorkerResp = await new Promise((resolve) => {
@@ -37,8 +37,21 @@ async function youtubeUserInfoGetBatch(inputs: string[], start = 0): Promise<(yo
     });
   });
 
-  if (!result.ok) return new Array(inputs.length).fill(undefined);
-  const bodies = result.data.map((d) => d.body);
-  // 返却はインデックス順（start の意味はワーカー内で処理順制御にのみ使用）
+  if (!result.ok) {
+    throw new Error(`[youtubeUserInfoGetBatch] worker failed: ${result.error || "unknown error"}`);
+  }
+  if (!Array.isArray(result.data)) {
+    throw new Error(`[youtubeUserInfoGetBatch] invalid worker payload: data is not an array`);
+  }
+  if (result.data.length !== inputs.length) {
+    throw new Error(`[youtubeUserInfoGetBatch] result length mismatch: inputs=${inputs.length} results=${result.data.length}`);
+  }
+  const bodies = result.data.map((d, i) => {
+    const body = (d && (d as any).body) as youtube_v3.Schema$Channel | undefined;
+    if (!body) {
+      throw new Error(`[youtubeUserInfoGetBatch] empty body at index ${i}`);
+    }
+    return body;
+  });
   return bodies;
 }
