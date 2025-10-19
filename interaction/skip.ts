@@ -2,7 +2,7 @@ import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } fr
 
 import { InteractionInputData } from "../interface.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
-import { EnvData, VideoMetaCache } from "../envJSON.js";
+import { EnvData } from "../envJSON.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
 import { progressBar } from "../progressBar.js";
 import { SumLog } from "../sumLog.js";

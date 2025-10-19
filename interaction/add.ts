@@ -3,7 +3,7 @@ import ytdl from "ytdl-core";
 import yts from "yt-search";
 
 import { InteractionInputData } from "../interface.js";
-import { EnvData, Playlist, VideoMetaCache } from "../envJSON.js";
+import { EnvData, Playlist, videoMetaCacheGet } from "../envJSON.js";
 import { VariableExistCheck } from "../variableExistCheck.js";
 import { getNicoMylistIds, parseNicoVideo, searchNicoVideo } from "../niconico.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../embed.js";
@@ -56,7 +56,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         let playlistCheckingStatusSendedIs = false;
         const addedPlaylist: Playlist[] = [];
         const envData = new EnvData(guildData.guildId);
-        const videoMetaCache = new VideoMetaCache();
         let wordCheckProcessed = 0;
         let sendTime = Date.now();
         const suminfo = { guildId: interaction.guildId || undefined, userId: interaction.user.id, functionName: "interaction add", textChannelId: interaction.channelId };
@@ -251,7 +250,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 SumLog.error(playlistData.body + "のダウンロードでエラーが発生しました。", suminfo);
                 console.error("addコマンドで次の動画のダウンロードができませんでした。", playlistData, e);
             });
-            if (await videoMetaCache.cacheGet(playlistData)) {
+            if (await videoMetaCacheGet(playlistData)) {
                 if (processTimes.length > 50) processTimes.pop();
                 processTimes.push(Date.now() - nowTime); truePlaylist.push(playlistData);
             }

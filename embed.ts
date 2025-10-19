@@ -1,16 +1,19 @@
 import { APIEmbedField, Client, EmbedBuilder } from "discord.js";
 import fs from "fs";
-import { EnvData, Playlist, VideoMetaCache } from "./envJSON.js";
+import { EnvData, Playlist, videoMetaCacheGet } from "./envJSON.js";
 import { numberToTimeString } from "./numberToTimeString.js";
 import { musicBrainz } from "./MusicBrainz.js";
 import { SumLog } from "./sumLog.js";
+import { youtubeUserInfoGet } from "./worker/helper/youtubeUserInfoGetHelper.js";
+import { niconicoUserInfoGet } from "./worker/helper/niconicoInfoUserGetHelper.js";
+import { niconicoChannelInfoGet } from "./worker/helper/niconicoChannelInfoGetHelper.js";
+import { youtubeThumbnailGet } from "./worker/helper/youtubeThumbnailGetHelper.js";
 
 export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: string, client: Client) {
     const startTime = Date.now();
-    const videoMetaCache = new VideoMetaCache();
     if (playlistDatas.length === 1) {
         const playlistData = playlistDatas[0];
-        const meta = await videoMetaCache.cacheGet(playlistData);
+        const meta = await videoMetaCacheGet(playlistData);
         let authorName = "取得ができませんでした。";
         let authorUrl: string | undefined;
         let authorIconUrl: string | undefined;
@@ -21,7 +24,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
         let serviceMessage = "エラー";
         let serviceIconUrl: string | undefined;
         if (meta?.body) if (meta.type === "videoId") {
-            const data = await videoMetaCache.youtubeUserInfoGet(meta.body.author.url);
+            const data = await youtubeUserInfoGet(meta.body.author.url);
             if (data) {
                 authorName = data?.snippet?.localized?.title || data?.snippet?.title || "取得に失敗";
                 authorUrl = data?.id ? "https://youtube.com/channel/" + data?.id : "";
@@ -46,13 +49,13 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
             }
 
             videoUrl = meta.body.url;
-            videoThumbnail = albumInfoJson.youtubeLink.videoId[playlistData.body] ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[playlistData.body].release + "/front" : await videoMetaCache.youtubeThumbnailGet(playlistData.body) || meta.body.thumbnail;
+            videoThumbnail = albumInfoJson.youtubeLink.videoId[playlistData.body] ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[playlistData.body].release + "/front" : await youtubeThumbnailGet(playlistData.body) || meta.body.thumbnail;
             serviceColor = "Red";
             serviceMessage = "Service by YouTube (ID: " + playlistData.body + ")";
             serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/yt_icon_red_digital.png";
         } else if (meta.type === "nicovideoId") {
             if (meta.body.userId) {
-                const userData = await videoMetaCache.niconicoUserInfoGet(meta.body.userId);
+                const userData = await niconicoUserInfoGet(meta.body.userId);
                 if (userData) {
                     authorName = (userData?.name.endsWith(" - ニコニコ") ? userData.name.slice(0, userData.name.length - 7) : userData.name) || "取得に失敗";
                     authorUrl = userData?.id ? "https://www.nicovideo.jp/user/" + userData?.id : "";
@@ -60,7 +63,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
                 }
             }
             if (meta.body.channelId) {
-                const channelData = await videoMetaCache.niconicoChannelInfoGet(meta.body.channelId.startsWith("ch") ? meta.body.channelId : "ch" + meta.body.channelId);
+                const channelData = await niconicoChannelInfoGet(meta.body.channelId.startsWith("ch") ? meta.body.channelId : "ch" + meta.body.channelId);
                 authorName = (channelData?.name.endsWith(" - ニコニコ") ? channelData.name.slice(0, channelData.name.length - 7) : channelData?.name) || "取得に失敗";
                 authorUrl = channelData?.id ? "https://www.nicovideo.jp/user/" + channelData?.id : "";
                 authorIconUrl = channelData?.iconUrl || "";
@@ -114,7 +117,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
                 i = playlistDatas.length - 2;
             }
             const playlistData = playlistDatas[i];
-            const meta = await videoMetaCache.cacheGet(playlistData);
+            const meta = await videoMetaCacheGet(playlistData);
             let videoTitle = (meta?.type !== "tweetId" ? meta?.body?.title : meta.body?.text) || "取得ができませんでした。";
             if (meta?.body) {
                 if (playlistData.type === "videoId") {
@@ -189,14 +192,13 @@ export async function statusEmbedGet(data: {
             }
         }
     } = JSON.parse(String(fs.readFileSync("albumInfo.json")));
-    const videoMetaCache = new VideoMetaCache();
     const playlistPage = Math.ceil(playlist.length / 5);
     const selectPlaylistPage = page < playlistPage ? page : playlistPage;
     const fields: APIEmbedField[] = [];
     const viewPlaylists = playlist.slice((selectPlaylistPage - 1) * 5, (selectPlaylistPage - 1) * 5 + 5);
     for (let i = 0; i < viewPlaylists.length; i++) {
         const playlistData = viewPlaylists[i];
-        const meta = await videoMetaCache.cacheGet(playlistData);
+        const meta = await videoMetaCacheGet(playlistData);
         if (meta?.body) if (meta.type === "videoId") {
             fields.push({
                 name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + (albumInfoJson.youtubeLink.videoId[playlistData.body] !== undefined ? (await musicBrainz.recordingInfoGet(albumInfoJson.youtubeLink.videoId[playlistData.body].recording)).title : meta.body.title),
@@ -272,9 +274,9 @@ export async function statusEmbedGet(data: {
         .addFields(fields)
         .setColor("Purple")
     if (data.playing?.playingPlaylist) {
-        const meta = await videoMetaCache.cacheGet(data.playing.playingPlaylist);
+        const meta = await videoMetaCacheGet(data.playing.playingPlaylist);
         if (meta?.body) {
-            const thumbnail = meta.type === "videoId" ? (albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body] !== undefined ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body].release + "/front" : await videoMetaCache.youtubeThumbnailGet(data.playing.playingPlaylist.body) || meta.body.thumbnail) : meta.type === "nicovideoId" ? meta.body.thumbnailUrl : "";
+            const thumbnail = meta.type === "videoId" ? (albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body] !== undefined ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body].release + "/front" : await youtubeThumbnailGet(data.playing.playingPlaylist.body) || meta.body.thumbnail) : meta.type === "nicovideoId" ? meta.body.thumbnailUrl : "";
             if (thumbnail) embed.setThumbnail(thumbnail);
             embed.setURL(data.playing.playingPlaylist.type === "videoId" ? "https://youtu.be/" + data.playing.playingPlaylist.body : data.playing.playingPlaylist.type === "nicovideoId" ? "https://www.nicovideo.jp/watch/" + data.playing.playingPlaylist.body : "https://www.x/com/i/web/status/" + data.playing.playingPlaylist.body);
         }

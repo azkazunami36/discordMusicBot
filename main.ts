@@ -22,7 +22,6 @@ import { messageEmbedGet, videoInfoEmbedGet } from "./embed.js";
 import { progressBar } from "./progressBar.js";
 import { getVoiceConnections, VoiceConnection } from "@discordjs/voice";
 import { SumLog } from "./sumLog.js";
-import { VariableExistCheck } from "./variableExistCheck.js";
 
 const client = new Discord.Client({
     intents: [

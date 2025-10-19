@@ -1,5 +1,3 @@
-import { EnvData, VideoMetaCache } from "./envJSON.js";
-import * as DiscordVoice from "@discordjs/voice";
 import { Client, EmbedBuilder } from "discord.js";
 
 import { ServersData } from "./interface.js";
