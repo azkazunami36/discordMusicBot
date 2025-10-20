@@ -486,7 +486,8 @@ client.on(Discord.Events.ClientReady, async () => {
                         playtime: envData.restartedPlayPoint,
                         tempo: envData.playTempo,
                         pitch: envData.playPitch,
-                        volume: envData.volume
+                        volume: envData.volume,
+                        reverbType: envData.reverbType
                     });
                     await channel.send({ embeds: [messageEmbedGet("音楽botは復帰しました。", client)] });
                     SumLog.log("再起動前に接続していたサーバーに参加しました。", { client, functionName: "client.on ready", guildId: guild.id, textChannelId: channel.id, voiceChannelId: voiceChannel.id });

@@ -138,6 +138,16 @@ export class EnvData {
     get restartedVoiceChannel() {
         return this.#envJSON("restartedVoiceChannel") || "";
     }
+    set reverbType(reverbType: "church" | "tunnel" | "ushapedvalley" | undefined) {
+        this.#envJSON("reverbType", reverbType || "");
+    }
+    get reverbType() {
+        switch (this.#envJSON("reverbType")) {
+            case "church": return "church";
+            case "tunnel": return "tunnel";
+            case "ushapedvalley": return "ushapedvalley";
+        }
+    }
 }
 
 export class AlbumInfo {
@@ -283,37 +293,37 @@ interface NicoSnapshotItem {
 }
 
 interface XPostInfo {
-  id: string;
-  text?: string;
-  created_at?: string;
-  author?: {
     id: string;
-    name: string;
-    username: string;
-    profile_image_url?: string;
-    verified?: boolean;
-  };
-  media?: Array<{
-    media_key: string;
-    type: "photo" | "video" | "animated_gif";
-    url?: string;
-    preview_image_url?: string;
-    duration_ms?: number;
-    variants?: Array<{
-      bitrate?: number;
-      content_type: string;
-      url: string;
+    text?: string;
+    created_at?: string;
+    author?: {
+        id: string;
+        name: string;
+        username: string;
+        profile_image_url?: string;
+        verified?: boolean;
+    };
+    media?: Array<{
+        media_key: string;
+        type: "photo" | "video" | "animated_gif";
+        url?: string;
+        preview_image_url?: string;
+        duration_ms?: number;
+        variants?: Array<{
+            bitrate?: number;
+            content_type: string;
+            url: string;
+        }>;
     }>;
-  }>;
-  public_metrics?: {
-    like_count?: number;
-    retweet_count?: number;
-    reply_count?: number;
-    quote_count?: number;
-    bookmark_count?: number;
-    view_count?: number; // 一部レベルでのみ返る
-  };
-  raw: any; // フルレスポンスをそのまま保持（将来の拡張用）
+    public_metrics?: {
+        like_count?: number;
+        retweet_count?: number;
+        reply_count?: number;
+        quote_count?: number;
+        bookmark_count?: number;
+        view_count?: number; // 一部レベルでのみ返る
+    };
+    raw: any; // フルレスポンスをそのまま保持（将来の拡張用）
 }
 
 export type CacheGetReturn = {

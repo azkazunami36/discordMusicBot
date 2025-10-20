@@ -46,7 +46,8 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             playtime: 0,
             tempo: envData.playTempo,
             pitch: envData.playPitch,
-            volume: envData.volume
+            volume: envData.volume,
+            reverbType: envData.reverbType
         }, async (status, percent) => {
             const temp = { status, percent }
             if (statusTemp && statusTemp === temp) return;

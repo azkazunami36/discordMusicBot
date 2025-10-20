@@ -58,6 +58,8 @@ export class Player extends EventEmitter {
             resource?: AudioResource;
             /** 再生開始位置です。現在の再生位置を取得するために使用します。FFmpegに依存しています。 */
             playtimeMargin?: number;
+            /** フィルターを適用します。 */
+            reverbType?: "church" | "tunnel" | "ushapedvalley";
         } | undefined;
     } = {};
     /** 
@@ -315,7 +317,7 @@ export class Player extends EventEmitter {
 
             // safe bypass for truly no-change case
             if (T === 1 && P0 === 0) {
-                return `aresample=${sampleRate}:resampler=soxr:precision=28`;
+                return `[0:a]aresample=${sampleRate}:resampler=soxr:precision=28,aformat=sample_rates=${sampleRate}:channel_layouts=stereo[dry]`;
             }
 
             // Refined: If pitchOnly at 1x, preserve stereo image (channels=together)
@@ -327,15 +329,48 @@ export class Player extends EventEmitter {
                         : optsHQ).join(":");
 
             // 仕上げ soxr（高品質リサンプル）
-            return `rubberband=${opts},aresample=${sampleRate}:resampler=soxr:precision=28`;
+            return `[0:a]rubberband=${opts},aresample=${sampleRate}:resampler=soxr:precision=28,aformat=sample_rates=${sampleRate}:channel_layouts=stereo[dry]`;
         }
         const currentTempo = this.status[guildId].tempo ?? 1;
         const currentPitch = this.status[guildId].pitch ?? 0;
         const opusBitrate = (Math.abs(currentPitch) >= 12 || currentTempo > 1.25) ? "160k" : "128k";
-        this.status[guildId].spawn = spawn("ffmpeg", [
+        const args = [];
+        args.push(
             "-hide_banner", "-loglevel", "error", "-nostdin",
             "-ss", toTimestamp(this.status[guildId].playtimeMargin || 0),
             "-i", data.meta.filePath,
+        );
+        const irfile = (() => {
+            switch (this.status[guildId]?.reverbType) {
+                case "church": return "./IRwav/church_48k.wav";
+                case "tunnel": return "./IRwav/tunnel_48k.wav";
+                default: return "./IRwav/ushapedvalley_48k.wav";
+            }
+        })();
+
+        const reverbVol = (() => {
+            switch (this.status[guildId]?.reverbType) {
+                case "church": return 9;
+                case "tunnel": return 6;
+                default: return 5;
+            }
+        })();
+        if (this.status[guildId].reverbType) args.push(
+            "-i", irfile
+        )
+        args.push(
+            "-filter_complex",
+            this.status[guildId].reverbType
+                ? `${buildTempoPitchFilter(this.status[guildId].tempo, this.status[guildId].pitch)};[1:a]aformat=sample_rates=48000:channel_layouts=stereo[ir];[dry][ir]afir=dry=${reverbVol}:wet=${reverbVol}[out]`
+                : buildTempoPitchFilter(this.status[guildId].tempo, this.status[guildId].pitch),
+        );
+        if (this.status[guildId].reverbType) args.push(
+            "-map", "[out]"
+        )
+        else args.push(
+            "-map", "[dry]"
+        )
+        args.push(
             "-ar", "48000",
             "-ac", "2",
             "-c:a", "libopus",
@@ -343,10 +378,11 @@ export class Player extends EventEmitter {
             "-vbr", "on",
             "-application", "audio",
             "-frame_duration", "20",
-            "-filter:a", buildTempoPitchFilter(this.status[guildId].tempo, this.status[guildId].pitch),
             "-f", "ogg",
             "pipe:1"
-        ], { stdio: ["ignore", "pipe", "pipe"] });
+        );
+        console.log(args)
+        this.status[guildId].spawn = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
         this.status[guildId].spawn.on("error", e => {
             SumLog.error("FFmpegを実行するspawnでエラーを受信しました。: " + e.message, { functionName: "ffmpegPlay" });
             console.log(e)
@@ -409,6 +445,7 @@ export class Player extends EventEmitter {
         voiceVolume?: number;
         /** 音量を決められます。100%にしたいときは100と入力します。0以上であれば無制限です。0以下は自動で補正されます。 */
         volume: number;
+        reverbType?: "church" | "tunnel" | "ushapedvalley";
     }, statusCallback?: (status: "loading" | "queue" | "formatchoosing" | "downloading" | "converting" | "done", percent: number) => void) {
         const meta = await this.#fileMetaGet(data.source, statusCallback || (() => { }));
         if (!meta) {
@@ -428,6 +465,7 @@ export class Player extends EventEmitter {
             throw new Error("想定外の挙動です。通常音楽botがVCに参加すると定義されるはずの、サーバーごとの再生状態データが定義されず、正しい処理が行えません。エラーが特定されるまで、他の操作をお試しください。");
         }
         this.status[guildId].playing = data.source;
+        this.status[guildId].reverbType = data.reverbType;
         // 7. FFmpeg再生ストリームを作成。
         this.status[guildId].playtimeMargin = (data.playtime > 0) ? (data.playtime < Number(meta.ffprobe.duration)) ? data.playtime : Number(meta.ffprobe.duration) : 0;
         this.status[guildId].tempo = (data.tempo > 0.1) ? (data.tempo < 20) ? data.tempo : 20 : 0.1;
@@ -468,6 +506,20 @@ export class Player extends EventEmitter {
             meta: meta,
         })
     }
+    async reverbSet(guildId: string, reverbType?: "church" | "tunnel" | "ushapedvalley") {
+        if (!this.status[guildId] || !this.status[guildId].playing) return;
+        this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
+        this.status[guildId].reverbType = reverbType;
+        const meta = await this.#fileMetaGet(this.status[guildId].playing, (() => { }));
+        if (!meta) {
+            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
+            throw new Error("音声データを取得できませんでした。再度試すか、`/delete range:1`で削除し、他の曲を再生してください。")
+        }
+        this.ffmpegPlay({
+            guildId: guildId,
+            meta: meta,
+        })
+    }
     /** 再生するファイルを変更します。FFmpeg依存のため、複雑なコードになっています。 */
     async sourceSet(guildId: string, source: Playlist, statusCallback?: (status: "loading" | "queue" | "formatchoosing" | "downloading" | "converting" | "done", percent: number) => void) {
         if (!this.status[guildId]) return;
@@ -476,7 +528,7 @@ export class Player extends EventEmitter {
         const meta = await this.#fileMetaGet(this.status[guildId].playing, statusCallback || (() => { }));
         if (!meta) {
             console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
-            throw new Error("音声ファイルが無効または音声ファイルのダウンロードに失敗しています。このエラーは管理者が気づき次第エラーを特定し修正されます。他の曲をお試しください。")
+            throw new Error("音声データを取得できませんでした。再度試すか、`/delete range:1`で削除し、他の曲を再生してください。")
         }
         this.ffmpegPlay({
             guildId: guildId,
@@ -501,7 +553,7 @@ export class Player extends EventEmitter {
         const meta = await this.#fileMetaGet(this.status[guildId].playing, () => { });
         if (!meta) {
             console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
-            throw new Error("音声ファイルが無効または音声ファイルのダウンロードに失敗しています。このエラーは管理者が気づき次第エラーを特定し修正されます。他の曲をお試しください。")
+            throw new Error("音声データを取得できませんでした。再度試すか、`/delete range:1`で削除し、他の曲を再生してください。")
         }
         this.ffmpegPlay({
             guildId: guildId,

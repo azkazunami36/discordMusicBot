@@ -264,7 +264,12 @@ export async function statusEmbedGet(data: {
             name: "リピート",
             value: (() => { switch (envData.playType) { case 1: return "オフ"; case 2: return "オン"; case 3: return "１曲のみ" } })(),
             inline: true
-        })
+        },
+        {
+            name: "リバーブ",
+            value: (() => { switch (envData.reverbType) { case "church": return "教会"; case "tunnel": return "トンネル"; case "ushapedvalley": return "U字谷"; default: return "オフ"; } })(),
+            inline: true
+        });
     const embed = new EmbedBuilder()
         .setAuthor({
             name: "音楽bot",
