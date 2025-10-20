@@ -241,11 +241,118 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
     };
 
     const normalizeShort = async (raw: string): Promise<string> => {
+        const SPOTIFY_DEBUG = true;
+        const H = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Referer': 'https://open.spotify.com/',
+            'Origin': 'https://open.spotify.com'
+        } as any;
+
+        const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+        const abortAfter = (ms: number) => {
+            const ctl = new AbortController();
+            const t = setTimeout(() => ctl.abort(), ms);
+            return { signal: ctl.signal, cancel: () => clearTimeout(t) };
+        };
+
+        const isShortHost = (host: string) => /^(spoti\.fi|spotify\.link)$/i.test(host) || /^(?:[a-z0-9-]+\.)?app\.link$/i.test(host);
+
+        const followManual = async (startUrl: string, maxHops = 5): Promise<string> => {
+            let current = startUrl;
+            for (let i = 0; i < maxHops; i++) {
+                let u: URL;
+                try { u = new URL(current); } catch { return current; }
+                if (!isShortHost(u.hostname)) return current; // reached final non-short URL
+                try {
+                    const a = abortAfter(8000);
+                    const res = await fetch(current, { redirect: 'manual' as any, headers: H, signal: a.signal }).catch(() => undefined);
+                    a.cancel();
+                    if (!res) break;
+                    if (REDIRECT_STATUSES.has(res.status)) {
+                        let loc = res.headers.get('location') || '';
+                        if (loc) {
+                            // absolute-ize relative Location
+                            try { loc = new URL(loc, current).toString(); } catch {}
+                            if (SPOTIFY_DEBUG) console.log('[Spotify][short] hop', i + 1, '->', loc);
+                            current = loc;
+                            continue; // next hop
+                        }
+                    }
+                    // Some CDNs still expose a fully followed URL on Response.url
+                    const ru = (res as any).url;
+                    if (typeof ru === 'string' && ru && ru !== current) {
+                        if (SPOTIFY_DEBUG) console.log('[Spotify][short] hop(url)', i + 1, '->', ru);
+                        current = ru;
+                        continue;
+                    }
+                    // If 200 at app.link with meta refresh, try to parse an open.spotify.com URL from body
+                    try {
+                        if (res.status === 200 && isShortHost(u.hostname)) {
+                            const html = await res.text();
+                            const m1 = html.match(/https:\/\/open\.spotify\.com\/[^"]+/i);
+                            if (m1 && m1[0]) {
+                                if (SPOTIFY_DEBUG) console.log('[Spotify][short] meta/html discovered ->', m1[0]);
+                                current = m1[0];
+                                continue;
+                            }
+                        }
+                    } catch { /* ignore */ }
+                    break; // nothing more we can do
+                } catch (e) {
+                    if (SPOTIFY_DEBUG) console.log('[Spotify][short] hop error', String(e));
+                    break;
+                }
+            }
+            return current;
+        };
+
         try {
             const u0 = new URL(raw);
-            if (!/^(?:spoti\.fi|spotify\.link)$/i.test(u0.hostname)) return raw;
-            const res = await fetch(raw, { redirect: "follow" as any }).catch(() => undefined);
-            return (res && typeof (res as any).url === "string" && (res as any).url) ? (res as any).url : raw;
+            if (!isShortHost(u0.hostname)) return raw;
+
+            // Try multi-hop manual following first (handles spotify.link -> spotify.app.link -> open.spotify.com)
+            let finalUrl = await followManual(raw, 6);
+
+            // If still short, try a normal follow (some Branch/app.link flows require it)
+            try {
+                const hu = new URL(finalUrl);
+                if (isShortHost(hu.hostname)) {
+                    const a = abortAfter(8000);
+                    const res2 = await fetch(finalUrl, { redirect: 'follow' as any, headers: H, signal: a.signal }).catch(() => undefined);
+                    a.cancel();
+                    const u = res2 && (res2 as any).url;
+                    if (typeof u === 'string' && u) finalUrl = u;
+                }
+            } catch { /* ignore */ }
+
+            // If we *still* didn't reach open.spotify.com, ask oEmbed to translate the short link
+            try {
+                const hu = new URL(finalUrl);
+                if (isShortHost(hu.hostname)) {
+                    const o = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(finalUrl)}`, {
+                        headers: {
+                            'User-Agent': H['User-Agent'],
+                            'Accept': 'application/json',
+                            'Accept-Language': H['Accept-Language'],
+                            'Origin': 'https://open.spotify.com',
+                            'Referer': 'https://open.spotify.com/'
+                        } as any
+                    }).catch(() => undefined);
+                    if (o && o.ok) {
+                        const js: any = await o.json().catch(() => undefined);
+                        const iframeUrl: string | undefined = js?.iframe_url || js?.html?.match(/src="([^"]+)"/)?.[1];
+                        if (iframeUrl) {
+                            if (SPOTIFY_DEBUG) console.log('[Spotify][short] oEmbed resolved ->', iframeUrl);
+                            finalUrl = iframeUrl;
+                        }
+                    }
+                }
+            } catch { /* ignore */ }
+
+            return finalUrl || raw;
         } catch {
             return raw;
         }
@@ -395,7 +502,7 @@ async function parseSpotifyUrl(url: string): Promise<string[] | undefined> {
         if (SPOTIFY_DEBUG) console.log('[Spotify][parse] resolved', resolved);
         let u: URL;
         try { u = new URL(resolved); } catch { return undefined; }
-        if (!/\.spotify\.com$/i.test(u.hostname) && !/^(?:spoti\.fi|spotify\.link)$/i.test(u.hostname)) return undefined;
+        if (!/\.spotify\.com$/i.test(u.hostname) && !/^(?:spoti\.fi|spotify\.link|(?:[a-z0-9-]+\.)?app\.link)$/i.test(u.hostname)) return undefined;
 
         const segs = u.pathname.split("/").filter(Boolean);
         let i = 0;

@@ -640,7 +640,7 @@ client.on(Discord.Events.MessageCreate, async message => {
 
         SumLog.log(message.content, { client, functionName: "client.on message", guildId: message.guildId || undefined, textChannelId: message.channelId, userId: message.member?.id });
     }
-    if (message.guildId === "926965020724691005") {
+    if (message.guildId === process.env.DISCORD_ADMIN_GUILD_ID || "926965020724691005") {
         if (message.content === client.user?.displayName + "のコマンドを再定義する") {
             // JSON へ変換（REST 配信用）
             function toJSONBody(builders: Discord.SlashCommandOptionsOnlyBuilder[]): Discord.RESTPostAPIApplicationCommandsJSONBody[] {
@@ -661,7 +661,7 @@ client.on(Discord.Events.MessageCreate, async message => {
             await rest.put(Discord.Routes.applicationCommands(clientId), { body: body });
 
             // サーバーのID一覧
-            const guildIds = ["926965020724691005"];
+            const guildIds = [process.env.DISCORD_ADMIN_GUILD_ID || "926965020724691005"];
             for (let i = 0; i < guildIds.length; i++) {
                 const guildId = guildIds[i];
                 botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」に登録しています...時間がかかります。");
