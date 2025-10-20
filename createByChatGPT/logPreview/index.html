@@ -291,8 +291,17 @@
               }else{
                 lastNumber = totalLines - (tbody.rows.length || 0);
               }
+
+              // 現在最下部付近かどうかを先に判定
+              const atBottom = (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 5);
+
               appendRowsFromLines(newLines, lastNumber);
-              window.scrollTo({top:document.body.scrollHeight});
+
+              // 最下部にいた場合のみ追従スクロール
+              if(atBottom){
+                window.scrollTo({top: document.body.scrollHeight});
+              }
+
               totalLines+=newLines.length;
               totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
               setPageInfo();
