@@ -16,6 +16,7 @@ import { fetchPlaylistVideoIdsFromUrl } from "../worker/helper/createByChatGPT/y
 import { youtubeUserInfoGet } from "../worker/helper/createByChatGPT/youtubeUserInfoGetHelper.js";
 import { niconicoUserInfoGet } from "../worker/helper/createByChatGPT/niconicoInfoUserGetHelper.js";
 import { niconicoChannelInfoGet } from "../worker/helper/createByChatGPT/niconicoChannelInfoGetHelper.js";
+import { parseTweetId } from "../worker/helper/createByChatGPT/parseTweetIdHelper.js";
 
 export async function urlToQueue(
     string: string,
@@ -26,13 +27,17 @@ export async function urlToQueue(
     },
     priority: "youtube" | "youtubePlaylist" | "niconico" | "twitter" | string | null,
     message: Message,
-    cb: (percent: number, status: "analyzing" | "searching" | "checkAndDownloading" | "done" | "failed", playlist?: Playlist[]) => void,
+    cb: (percent: number, status: "analyzing" | "searching" | "checkAndDownloading" | "done" | "failed", playlist: Playlist[], option: {
+        analyzed: number;
+    }) => void,
     option?: {
         soloAdd?: boolean;
         firstAdd?: boolean;
     }
 ) {
-    function callback(percent: number, status: "analyzing" | "searching" | "checkAndDownloading" | "done" | "failed", playlist?: Playlist[]) { try { cb(percent, status, playlist); } catch { } };
+    function callback(percent: number, status: "analyzing" | "searching" | "checkAndDownloading" | "done" | "failed", playlist: Playlist[], option: {
+        analyzed: number;
+    }) { try { cb(percent, status, playlist, option); } catch { } };
     if (string === "") return;
     /** まずスペースで分割 */
     const words = string.split(/[ 　]+/);
@@ -46,13 +51,14 @@ export async function urlToQueue(
         type: "youtube" | "niconico" | "applemusic" | "spotify" | "twitter";
         body: string;
         index: number;
+        twitterIndex?: number;
     }[] = [];
     /** 処理済み */
     const addedPlaylist: Playlist[] = [];
     SumLog.log("キューに追加するためにテキストの分析を行います。テキストを分割し、された後のテキスト数は" + words.length + "個です。", suminfo);
     for (const word of words) {
         wordCheckProcessed++;
-        callback((wordCheckProcessed / words.length) * 20, "analyzing", addedPlaylist);
+        callback((wordCheckProcessed / words.length) * 20, "analyzing", addedPlaylist, { analyzed: addQueue.length });
         if (word === "") continue;
         let videoIdData: string | undefined;
         const urlIs = word.startsWith("https://") || word.startsWith("http://");
@@ -71,6 +77,11 @@ export async function urlToQueue(
         if (nicovideoId) {
             addQueue.push({ type: "niconico", body: nicovideoId, index: addQueue.length });
             SumLog.log(word + "はニコニコ動画のIDとしてキューに追加されました。", suminfo);
+        }
+        const tweetId = await parseTweetId(word);
+        if (tweetId) {
+            addQueue.push({ type: "twitter", body: tweetId.id, twitterIndex: tweetId.index, index: addQueue.length });
+            SumLog.log(word + "はXのIDとしてキューに追加されました。", suminfo);
         }
         const spotifyUrls = await parseSpotifyUrl(word);
         if (spotifyUrls) {
@@ -97,21 +108,22 @@ export async function urlToQueue(
         searchWords += searchWords === "" ? word : " " + word;
     }
     if (searchWords) {
-        callback(30, "searching", addedPlaylist);
+        callback(30, "searching", addedPlaylist, { analyzed: addQueue.length });
         SumLog.log(searchWords + "はURLやIDとして分析できないため検索されます。", suminfo);
-        const youtubeResult = await yts(searchWords);
-        const youtubeData = youtubeResult.videos[0].videoId;
+        const youtubeData = (await yts(searchWords)).videos[0].videoId;
         const niconicoData = (await searchNicoVideo(searchWords))?.[0]?.contentId;
         if (priority === "niconico") niconicoData ? addQueue.push({ type: "niconico", body: niconicoData, index: addQueue.length }) : youtubeData ? addQueue.push({ type: "youtube", body: youtubeData, index: addQueue.length }) : "";
         else youtubeData ? addQueue.push({ type: "youtube", body: youtubeData, index: addQueue.length }) : niconicoData ? addQueue.push({ type: "niconico", body: niconicoData, index: addQueue.length }) : "";
     }
     // 追加
-    SumLog.log("解析・検索処理が完了したため、取得できたURLの変換・有効性チェック・動画ダウンロードを開始します。一覧です。: " + addQueue.map(data => data.body).join(", "), suminfo);
-    const parallelProcess = 5;
+    SumLog.log("解析・検索処理が完了したため、取得できたURL" + addQueue.length + "個の変換・有効性チェック・動画ダウンロードを開始します。一覧です。: " + addQueue.map(data => data.body).join(", "), suminfo);
+    let parallelProcess = 1;
     addQueue.sort((a, b) => a.index - b.index);
     let sendTime = 0;
-    for (let i = 0; i < addQueue.length; i += parallelProcess) {
+    let i = 0;
+    while (i < addQueue.length) {
         const procData = addQueue.slice(i, i + parallelProcess);
+        console.log(procData);
         const processedData: {
             index: number;
             playlist: Playlist;
@@ -121,7 +133,7 @@ export async function urlToQueue(
         function send() {
             const nowTime = Date.now();
             if (nowTime - sendTime > 1000) {
-                callback(40 + ((addedPlaylist.length + processedData.length + failed) / addQueue.length) * 59, "checkAndDownloading", addedPlaylist);
+                callback(40 + ((addedPlaylist.length + processedData.length + failed) / addQueue.length) * 59, "checkAndDownloading", addedPlaylist, { analyzed: addQueue.length });
                 sendTime = nowTime;
             }
         }
@@ -135,13 +147,24 @@ export async function urlToQueue(
             youtube.forEach(data => {
                 promise.push(async () => {
                     const playlist: Playlist = { type: "videoId", body: data.body };
-                    const meta = await videoMetaCacheGet(playlist);
-                    if (meta && meta.body && meta.type === "videoId") {
-                        await youtubeUserInfoGet(meta.body.author.url);
-                        await sourcePathManager.getAudioPath(playlist);
-                        processedData.push({ index: data.index, playlist });
-                        send();
+                    const promiseResults = await Promise.allSettled([(async () => {
+                        const meta = await videoMetaCacheGet(playlist);
+                        if (meta && meta.body && meta.type === "videoId") {
+                            await youtubeUserInfoGet(meta.body.author.url);
+                        } else {
+                            throw new Error("違う");
+                        }
+                    })(), sourcePathManager.getAudioPath(playlist).catch(e => console.error(e))]);
+                    let failedIs = false;
+                    for (const result of promiseResults) {
+                        if (result.status === "rejected") {
+                            failed++;
+                            failedIs = true;
+                            console.error(result.reason);
+                        }
                     }
+                    if (!failedIs) processedData.push({ index: data.index, playlist });
+                    send();
                 });
             });
         }
@@ -149,32 +172,53 @@ export async function urlToQueue(
             niconico.forEach(data => {
                 promise.push(async () => {
                     const playlist: Playlist = { type: "nicovideoId", body: data.body };
-                    const meta = await videoMetaCacheGet(playlist);
-                    if (meta && meta.body && meta.type === "nicovideoId") {
-                        if (meta.body.userId) await niconicoUserInfoGet(meta.body.userId);
-                        if (meta.body.channelId) await niconicoChannelInfoGet(meta.body.channelId);
-                        await sourcePathManager.getAudioPath(playlist);
-                        processedData.push({ index: data.index, playlist });
-                        send();
+                    const promiseResults = await Promise.allSettled([(async () => {
+                        const meta = await videoMetaCacheGet(playlist);
+                        if (meta && meta.body && meta.type === "nicovideoId") {
+                            if (meta.body.userId) await niconicoUserInfoGet(meta.body.userId);
+                            if (meta.body.channelId) await niconicoChannelInfoGet(meta.body.channelId);
+                        } else {
+                            throw new Error("違う");
+                        }
+                    })(), sourcePathManager.getAudioPath(playlist).catch(e => console.error(e))]);
+                    let failedIs = false;
+                    for (const result of promiseResults) {
+                        if (result.status === "rejected") {
+                            failed++;
+                            failedIs = true;
+                            console.error(result.reason);
+                        }
                     }
+                    if (!failedIs) processedData.push({ index: data.index, playlist });
+                    send();
                 });
             });
         }
         if (applemusic.length !== 0) {
             promise.push(async () => {
-                console.log(applemusic);
                 for (let i = 0; i < applemusic.length; i += parallelProcess) {
                     const slice = applemusic.slice(i, i + parallelProcess);
                     const sorted = await appleChunkHelper(slice.map(data => data.body), i);
                     for (let i = 0; i < sorted.length; i++) {
                         const playlist = sorted[i];
-                        const meta = await videoMetaCacheGet(playlist);
-                        if (meta && meta.body && meta.type === "videoId") {
-                            await youtubeUserInfoGet(meta.body.author.url);
-                            await sourcePathManager.getAudioPath(playlist);
-                            processedData.push({ index: slice[i]?.index || addedPlaylist.length + processedData.length, playlist });
-                            send();
+                        const promiseResults = await Promise.allSettled([(async () => {
+                            const meta = await videoMetaCacheGet(playlist);
+                            if (meta && meta.body && meta.type === "videoId") {
+                                await youtubeUserInfoGet(meta.body.author.url);
+                            } else {
+                                throw new Error("違う");
+                            }
+                        })(), sourcePathManager.getAudioPath(playlist).catch(e => console.error(e))]);
+                        let failedIs = false;
+                        for (const result of promiseResults) {
+                            if (result.status === "rejected") {
+                                failed++;
+                                failedIs = true;
+                                console.error(result.reason);
+                            }
                         }
+                        if (!failedIs) processedData.push({ index: slice[i]?.index || addedPlaylist.length + processedData.length, playlist });
+                        send();
                     }
                 }
             });
@@ -186,15 +230,50 @@ export async function urlToQueue(
                     const sorted = await spotifyChunkHelper(slice.map(data => data.body), i);
                     for (let i = 0; i < sorted.length; i++) {
                         const playlist = sorted[i];
-                        const meta = await videoMetaCacheGet(playlist);
-                        if (meta && meta.body && meta.type === "videoId") {
-                            await youtubeUserInfoGet(meta.body.author.url);
-                            await sourcePathManager.getAudioPath(playlist);
-                            processedData.push({ index: slice[i]?.index || addedPlaylist.length + processedData.length, playlist });
-                            send();
+                        const promiseResults = await Promise.allSettled([(async () => {
+                            const meta = await videoMetaCacheGet(playlist);
+                            if (meta && meta.body && meta.type === "videoId") {
+                                await youtubeUserInfoGet(meta.body.author.url);
+                            } else {
+                                throw new Error("違う");
+                            }
+                        })(), sourcePathManager.getAudioPath(playlist).catch(e => console.error(e))]);
+                        let failedIs = false;
+                        for (const result of promiseResults) {
+                            if (result.status === "rejected") {
+                                failed++;
+                                failedIs = true;
+                                console.error(result.reason);
+                            }
                         }
+                        if (!failedIs) processedData.push({ index: slice[i]?.index || addedPlaylist.length + processedData.length, playlist });
+                        send();
                     }
                 }
+            });
+        }
+        if (twitter.length !== 0) {
+            twitter.forEach(data => {
+                promise.push(async () => {
+                    const playlist: Playlist = { type: "twitterId", body: data.body };
+                    const meta = await videoMetaCacheGet(playlist);
+                    console.log(meta);
+                    if (meta && meta.body && meta.type === "tweetId") {
+                        let index = (data.twitterIndex || 0) - 1;
+                        if (meta.body.media?.[index]?.type === "photo") throw new Error("これは写真であるため、取得ができません。");
+                        if (index === -1) index = meta.body.media?.findIndex(data => data.type === "video" || data.type === "animated_gif") ?? -1;
+                        if (index !== -1) {
+                            const selected = meta.body.media?.[index];
+                            const plIndex = meta.body.media?.filter(data => data.type === "video" || data.type === "animated_gif").findIndex(data => data.media_key === selected?.media_key) ?? -1;
+                            if (plIndex !== -1) {
+                                playlist.number = plIndex + 1;
+                                await sourcePathManager.getAudioPath(playlist);
+                                processedData.push({ index: data.index, playlist });
+                            }
+                        }
+                    }
+                    send();
+                });
             });
         }
         const promiseResults = await Promise.allSettled(promise.map(fn => fn()));
@@ -205,17 +284,18 @@ export async function urlToQueue(
             }
         }
         const sorted = processedData.sort((a, b) => a.index - b.index).map(data => data.playlist);
+        console.log(sorted)
         addedPlaylist.push(...sorted);
-        const saveplaylist = envData.playlistGet() || [];
-        if (option?.firstAdd) saveplaylist.unshift(...addedPlaylist); else saveplaylist.push(...addedPlaylist);
-        envData.playlistSave(saveplaylist);
+        if (option?.firstAdd) { envData.playlist.unshift(sorted[0]); break; } else envData.playlist.push(...sorted);
+        i += parallelProcess;
+        if (i > 0) parallelProcess = 5;
     }
     if (addedPlaylist.length <= 0) {
         SumLog.error(string + "はどのような手段を用いても取得ができませんでした。", suminfo);
         console.error("認識失敗: ", string);
-        callback(100, "failed", addedPlaylist);
+        callback(100, "failed", addedPlaylist, { analyzed: addQueue.length });
         return;
     }
-    SumLog.log(string + "を追加する処理が完了しました。", suminfo);
-    callback(100, "done", addedPlaylist);
+    SumLog.log(string + "を追加する処理が完了しました。一覧です。: " + addedPlaylist.map(data => data.body).join(", "), suminfo);
+    callback(100, "done", addedPlaylist, { analyzed: addQueue.length });
 }

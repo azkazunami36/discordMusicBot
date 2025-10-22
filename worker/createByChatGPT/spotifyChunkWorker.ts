@@ -14,6 +14,23 @@ const SPOTIFY_CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
 const SPOTIFY_CACHE_FILE = path.join(SPOTIFY_CACHE_DIR, "spotifyToVideoIdCache.jsonl");
 type SpotifyCacheRow = { videoId: string; spotifyId: string };
 
+let SPOTIFY_CACHE_LOADED = false;
+let SPOTIFY_CACHE_BY_SPOTIFY = new Map<string, string>(); // spotifyId -> videoId
+let SPOTIFY_CACHE_BY_VIDEO = new Set<string>(); // videoId exists
+
+function loadSpotifyCacheIndexSync() {
+    if (SPOTIFY_CACHE_LOADED) return;
+    ensureSpotifyCacheFileSync();
+    const rows = readAllSpotifyCacheRowsSync();
+    for (const r of rows) {
+        if (r?.spotifyId && r?.videoId) {
+            SPOTIFY_CACHE_BY_SPOTIFY.set(r.spotifyId, r.videoId);
+            SPOTIFY_CACHE_BY_VIDEO.add(r.videoId);
+        }
+    }
+    SPOTIFY_CACHE_LOADED = true;
+}
+
 function ensureSpotifyCacheFileSync() {
     try { if (!fs.existsSync(SPOTIFY_CACHE_DIR)) fs.mkdirSync(SPOTIFY_CACHE_DIR, { recursive: true }); } catch {}
     try { if (!fs.existsSync(SPOTIFY_CACHE_FILE)) fs.writeFileSync(SPOTIFY_CACHE_FILE, ""); } catch {}
@@ -36,19 +53,20 @@ function readAllSpotifyCacheRowsSync(): SpotifyCacheRow[] {
 }
 
 function lookupBySpotifyIdSync(spotifyId: string): string | undefined {
-    ensureSpotifyCacheFileSync();
-    const rows = readAllSpotifyCacheRowsSync();
-    const hit = rows.find(r => r.spotifyId === spotifyId);
-    return hit?.videoId;
+    loadSpotifyCacheIndexSync();
+    return SPOTIFY_CACHE_BY_SPOTIFY.get(spotifyId);
 }
 
 function appendSpotifyIfMissingByVideoIdSync(row: SpotifyCacheRow) {
-    ensureSpotifyCacheFileSync();
-    // 直前のタイミングで必ず読み直し（別処理との整合性を担保）
-    const rows = readAllSpotifyCacheRowsSync();
-    if (rows.some(r => r.videoId === row.videoId)) return; // 同じ videoId が既にあるなら保存スキップ
+    loadSpotifyCacheIndexSync();
+    if (SPOTIFY_CACHE_BY_VIDEO.has(row.videoId)) return; // 同じ videoId が既にあるなら保存スキップ
+    if (SPOTIFY_CACHE_BY_SPOTIFY.has(row.spotifyId)) return; // 同じ spotifyId が既にあるなら保存スキップ
     try {
+        ensureSpotifyCacheFileSync();
         fs.appendFileSync(SPOTIFY_CACHE_FILE, JSON.stringify(row) + "\n");
+        // 追記に成功したらインメモリインデックスも更新
+        SPOTIFY_CACHE_BY_SPOTIFY.set(row.spotifyId, row.videoId);
+        SPOTIFY_CACHE_BY_VIDEO.add(row.videoId);
     } catch {}
 }
 
@@ -91,7 +109,10 @@ async function spotifyToYouTubeId(spotifyUrlOrId: string): Promise<string | unde
     // --- JSONL キャッシュ 事前ヒット確認（spotifyId ベース） ---
     {
         const cached = lookupBySpotifyIdSync(trackId);
-        if (cached) return cached;
+        if (cached) {
+            console.log(`[cache] spotifyToYouTubeId: hit spotifyId=${trackId} -> videoId=${cached}`);
+            return cached;
+        }
     }
     info(`[spotifyToYouTubeId] trackId:`, trackId);
 

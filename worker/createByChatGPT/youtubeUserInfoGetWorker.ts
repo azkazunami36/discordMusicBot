@@ -22,6 +22,18 @@ function ensureAliasFileSync() {
 
 type AliasRow = { key: string; channelId: string; kind?: "handle" | "user" | "custom" | "url"; resolvedAt?: string };
 
+// --- Alias インメモリインデックス ---
+let ALIAS_INDEX_LOADED = false;
+const ALIAS_BY_KEY = new Map<string, string>(); // key -> channelId
+function loadAliasIndexSync() {
+  if (ALIAS_INDEX_LOADED) return;
+  const rows = readAliasAllSync();
+  for (const r of rows) {
+    if (r?.key && r?.channelId) ALIAS_BY_KEY.set(r.key, r.channelId);
+  }
+  ALIAS_INDEX_LOADED = true;
+}
+
 function readAliasAllSync(): AliasRow[] {
   ensureAliasFileSync();
   try {
@@ -38,11 +50,8 @@ function readAliasAllSync(): AliasRow[] {
 }
 
 function findChannelIdByAliasKeySync(key: string): string | undefined {
-  const rows = readAliasAllSync();
-  for (let i = rows.length - 1; i >= 0; i--) { // 履歴優先（最後の行を優先）
-    if (rows[i].key === key) return rows[i].channelId;
-  }
-  return undefined;
+  loadAliasIndexSync();
+  return ALIAS_BY_KEY.get(key);
 }
 
 function appendAliasIfMissingSync(key: string, channelId: string, kind?: AliasRow["kind"]) {
@@ -52,6 +61,8 @@ function appendAliasIfMissingSync(key: string, channelId: string, kind?: AliasRo
   try {
     const row: AliasRow = { key, channelId, kind, resolvedAt: new Date().toISOString() };
     fs.appendFileSync(ALIAS_FILE, JSON.stringify(row) + "\n");
+    // 追記成功時はインメモリインデックスも更新
+    try { loadAliasIndexSync(); ALIAS_BY_KEY.set(key, channelId); } catch {}
   } catch {}
 }
 
@@ -102,16 +113,33 @@ function readAllCacheRowsSync(): any[] {
   } catch { return []; }
 }
 
-function lookupByChannelIdSync(channelId: string): any | undefined {
+// --- メインキャッシュ インメモリインデックス ---
+let MAIN_CACHE_LOADED = false;
+const MAIN_BY_CHANNEL_ID = new Map<string, any>(); // channelId -> data
+function loadMainCacheIndexSync() {
+  if (MAIN_CACHE_LOADED) return;
   const rows = readAllCacheRowsSync();
-  return rows.find((r: any) => r?.id === channelId);
+  for (const r of rows) {
+    if (r?.id) MAIN_BY_CHANNEL_ID.set(r.id, r);
+  }
+  MAIN_CACHE_LOADED = true;
+}
+
+function lookupByChannelIdSync(channelId: string): any | undefined {
+  loadMainCacheIndexSync();
+  return MAIN_BY_CHANNEL_ID.get(channelId);
 }
 
 function appendIfMissingByChannelIdSync(row: any) {
-  // 保存直前に必ず再読込し、同一 channelId があれば追記スキップ
-  const rows = readAllCacheRowsSync();
-  if (rows.some((r: any) => r?.id === (row as any)?.id)) return;
-  try { fs.appendFileSync(CACHE_FILE, JSON.stringify(row) + "\n"); } catch {}
+  loadMainCacheIndexSync();
+  const cid = (row as any)?.id;
+  if (!cid) return;
+  if (MAIN_BY_CHANNEL_ID.has(cid)) return; // 既に同一channelIdがある
+  try {
+    fs.appendFileSync(CACHE_FILE, JSON.stringify(row) + "\n");
+    // 追記成功時はインメモリも更新
+    MAIN_BY_CHANNEL_ID.set(cid, row);
+  } catch {}
 }
 
 // ---- 入力の正規化/判定 ----
@@ -209,7 +237,10 @@ async function fetchChannel(input: string): Promise<any | undefined> {
     if (idFromAlias) {
       // キャッシュヒット：直接 channelId 確定
       const cached = lookupByChannelIdSync(idFromAlias);
-      if (cached) return cached;
+      if (cached) {
+        console.log(`[cache] youtubeUserInfo: alias hit key=${alias.key} -> channelId=${idFromAlias}`);
+        return cached;
+      }
       // メインキャッシュに無ければ後段の API 取得で埋める
       // 後続処理で channelId として使う
       channelId = idFromAlias;
@@ -277,7 +308,10 @@ async function fetchChannel(input: string): Promise<any | undefined> {
 
   // キャッシュヒット
   const cached = lookupByChannelIdSync(channelId);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[cache] youtubeUserInfo: channel hit channelId=${channelId}`);
+    return cached;
+  }
 
   // 取得：API優先 → 失敗ならページ最小情報
   let data: any | undefined;

@@ -110,20 +110,14 @@ export class VariableExistCheck {
         }
         return vchannelId;
     }
-    /** キューを取得します。正しく取得できないと自動でユーザーに連絡されるので、undefinedだった場合の処理は不要です。 */
-    async playlist() {
-        const guildData = await this.guild();
-        if (guildData === undefined) return undefined;
-        const envData = new EnvData(guildData.guildId);
-        return envData.playlistGet();
-    }
     /** キューが空かどうかを検証します。からだったらfalse、じゃなければtrue、そもそも前提データがない場合はundefinedです。 */
     async playlistIsEmpty() {
         const guildData = await this.guild();
         if (guildData === undefined) return undefined;
-        const playlist = await this.playlist();
+        const envData = new EnvData(guildData.guildId);
+        const playlist = envData.playlist;
         if (!playlist) return undefined;
-        if (playlist.length === 0) {
+        if (playlist.length() === 0) {
             try { await this.interaction.editReply({ embeds: [messageEmbedGet("キューが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。", this.interaction.client)] }); } catch (e) { }
             SumLog.log("プレイリストが空でした。", { guildId: this.interaction.guildId || undefined, userId: this.interaction.user.id, functionName: "VariableExistCheck", textChannelId: this.interaction.channelId });
             return true;

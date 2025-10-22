@@ -36,10 +36,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         serverData.discord.calledChannel = interaction.channelId;
         let stopIs = false;
         if (text && !inputData.player.playingGet(guildData.guildId)) {
-            await urlToQueue(text, guildData, null, message, async (percent, status, playlist) => {
+            await urlToQueue(text, guildData, null, message, async (percent, status, playlist, option) => {
                 switch (status) {
                     case "analyzing": {
-                        await message.edit({ embeds: [messageEmbedGet("文字列を分析しています...\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
+                        await message.edit({ embeds: [messageEmbedGet("文字列を分析しています..." + option.analyzed + "個解析済みです。\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
                         break;
                     }
                     case "searching": {
@@ -47,7 +47,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                         break;
                     }
                     case "checkAndDownloading": {
-                        await message.edit({ embeds: [messageEmbedGet("取得したデータを解析・ダウンロードしています..." + (playlist || []).length + "曲はキューに追加済みで、再生が可能です。" + "\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
+                        await message.edit({ embeds: [messageEmbedGet("取得したデータ" + option.analyzed + "個を解析・ダウンロードしています..." + (playlist || []).length + "曲はキューに追加済みで、再生が可能です。" + "\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
                         break;
                     }
                     case "done": {
@@ -77,7 +77,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                         break;
                     }
                     case "done": {
-                        await message.edit({ embeds: [await videoInfoEmbedGet(playlist || [], "曲を追加しました。", interaction.client)] });
+                        await message.edit(await videoInfoEmbedGet(playlist || [], "曲を追加しました。", interaction.client));
                         break;
                     }
                     case "failed": {
@@ -88,27 +88,27 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 }
             });
         }
-        const playlist = envData.playlistGet();
         if (!stopIs && !inputData.player.playingGet(guildData.guildId)) {
-            if (!playlist[0]) {
-                SumLog.warn("通常この位置だとプレイリストに曲が存在するのに、取得できませんでした。" + JSON.stringify(playlist), {functionName: "play"})
-                return message.edit({embeds: [messageEmbedGet("通常存在する状況で、プレイリストに曲がありませんでした。", message.client)]});
+            const playlistData = envData.playlist.get(0);
+            if (!playlistData) {
+                SumLog.warn("通常この位置だとプレイリストに曲が存在するのに、取得できませんでした。" + JSON.stringify(playlistData), { functionName: "play" })
+                return message.edit({ embeds: [messageEmbedGet("通常存在する状況で、プレイリストに曲がありませんでした。", message.client)] });
             }
-            const metaEmbed = await videoInfoEmbedGet([playlist[0]], "再生準備中...\n0%`" + progressBar(0, 35) + "`", interaction.client);
-            await message.edit({ embeds: [metaEmbed] });
-            SumLog.log("再生処理を開始します。", { functionName: "play", guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, voiceChannelId: vchannelId, userId: interaction.user.id });
-            const envData = new EnvData(guildData.guildId);
+            let embed: EmbedBuilder | undefined;
+            const metaEmbed = await videoInfoEmbedGet([playlistData], "再生準備中...\n0%`" + progressBar(0, 35) + "`", interaction.client, eb => { embed = eb; });
+            await message.edit(metaEmbed);
+            SumLog.log(playlistData.body + "の再生処理を開始します。", { functionName: "play", guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, voiceChannelId: vchannelId, userId: interaction.user.id, client: interaction.client });
             let statusTemp: {
                 status: "loading" | "downloading" | "formatchoosing" | "converting" | "done" | "queue",
                 percent: number;
             }
             let statuscallTime: number = Date.now();
-            const type = playlist[0].type;
+            const type = playlistData.type;
             await inputData.player.forcedPlay({
                 guildId: guildData.guildId,
                 channelId: vchannelId,
                 adapterCreator: guildData.guild.voiceAdapterCreator,
-                source: playlist[0],
+                source: playlistData,
                 playtime: 0,
                 tempo: envData.playTempo,
                 pitch: envData.playPitch,
@@ -120,14 +120,16 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
                 statusTemp = temp;
                 statuscallTime = Date.now();
-                if (status === "loading") { metaEmbed.setDescription("音声ファイルを準備中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "downloading") { metaEmbed.setDescription("音声ファイルをダウンロード中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "converting") { metaEmbed.setDescription("音声ファイルを再生可能な形式に変換中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "formatchoosing") { metaEmbed.setDescription((type ? (type === "videoId" ? "YouTube" : type === "nicovideoId" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
-                if (status === "done") { metaEmbed.setDescription("再生開始処理中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
+                if (embed) {
+                    if (status === "loading") { embed.setDescription("音声ファイルを準備中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                    if (status === "downloading") { embed.setDescription("音声ファイルをダウンロード中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                    if (status === "converting") { embed.setDescription("音声ファイルを再生可能な形式に変換中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                    if (status === "formatchoosing") { embed.setDescription((type ? (type === "videoId" ? "YouTube" : type === "nicovideoId" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                    if (status === "done") { embed.setDescription("再生開始処理中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                }
             });
-            metaEmbed.setDescription("再生を開始しました。");
-            await message.edit({ embeds: [metaEmbed] });
+            if (embed) embed.setDescription("再生を開始しました。");
+            await message.edit(metaEmbed);
         }
     }
 }

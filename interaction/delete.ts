@@ -20,18 +20,15 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        const playlist = await variableExistCheck.playlist();
-        if (!playlist) return;
+        const envData = new EnvData(guildData.guildId);
         if (await variableExistCheck.playlistIsEmpty()) return;
         const number = interaction.options.getString("range")?.split("-");
         const start = Number(number ? number[0] : undefined);
         const end = Number(number ? number[1] : undefined);
         if (Number.isNaN(start)) return await message.edit({ embeds: [messageEmbedGet("番号が入力されていません。番号を入力してから再度実行してください。", interaction.client)] });
-        if (playlist[start - 1]) {
-            const playlistData = playlist.splice(start - 1, (!Number.isNaN(end) && end > start) ? end - (start - 1) : 1);
-            const envData = new EnvData(guildData.guildId);
-            envData.playlistSave(playlist);
-            await message.edit({ embeds: [await videoInfoEmbedGet(playlistData, "曲を削除しました。", interaction.client)] });
+        if (envData.playlist.get(start - 1)) {
+            const playlistData = envData.playlist.splice(start - 1, (!Number.isNaN(end) && end > start) ? end - (start - 1) : 1);
+            await message.edit(await videoInfoEmbedGet(playlistData, "曲を削除しました。", interaction.client));
         } else {
             await message.edit({ embeds: [messageEmbedGet("番号が無効です。`/status`を利用してどの番号にどの曲が入っているかを確認してください。", interaction.client)] });
         }

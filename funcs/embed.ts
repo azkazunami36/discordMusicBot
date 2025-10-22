@@ -1,4 +1,4 @@
-import { APIEmbedField, Client, EmbedBuilder } from "discord.js";
+import { APIEmbedField, Attachment, AttachmentBuilder, BaseMessageOptions, BufferResolvable, Client, EmbedBuilder } from "discord.js";
 import fs from "fs";
 import { EnvData, Playlist, videoMetaCacheGet } from "../class/envJSON.js";
 import { numberToTimeString } from "../createByChatGPT/numberToTimeString.js";
@@ -8,21 +8,25 @@ import { niconicoUserInfoGet } from "../worker/helper/createByChatGPT/niconicoIn
 import { niconicoChannelInfoGet } from "../worker/helper/createByChatGPT/niconicoChannelInfoGetHelper.js";
 import { youtubeThumbnailGet } from "../worker/helper/createByChatGPT/youtubeThumbnailGetHelper.js";
 import { musicBrainz } from "../worker/helper/createByChatGPT/musicBrainzInfoHelper.js";
+import { sourcePathManager } from "../class/sourcePathManager.js";
+import path from "path";
+import Stream from "stream";
 
-export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: string, client: Client) {
+export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: string, client: Client, callback: ((embed: EmbedBuilder) => void) = () => {}): Promise<BaseMessageOptions> {
     const startTime = Date.now();
-    if (playlistDatas.length === 1) {
+    if (playlistDatas[0] && playlistDatas.length === 1) {
         const playlistData = playlistDatas[0];
         const meta = await videoMetaCacheGet(playlistData);
         let authorName = "取得ができませんでした。";
         let authorUrl: string | undefined;
         let authorIconUrl: string | undefined;
-        let videoTitle = (meta?.type !== "tweetId" ? meta?.body?.title : meta.body?.text) || "取得ができませんでした。";
+        let videoTitle = (meta?.type !== "tweetId" ? meta?.body?.title.split("\n")[0].slice(0, 25) : meta.body?.text) || "取得ができませんでした。";
         let videoUrl: string | undefined;
         let videoThumbnail: string | undefined;
         let serviceColor: "NotQuiteBlack" | "Red" | "Grey" = "NotQuiteBlack";
         let serviceMessage = "エラー";
         let serviceIconUrl: string | undefined;
+        const files: (Attachment | AttachmentBuilder | BufferResolvable | Stream)[] = [];
         if (meta?.body) if (meta.type === "videoId") {
             const data = await youtubeUserInfoGet(meta.body.author.url);
             if (data) {
@@ -75,27 +79,32 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
             serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/nc296562_ニコニコ_シンボルマーク_白.png";
         } else if (meta.type === "tweetId") {
             if (meta.body.author?.id) {
-                const userData = undefined;
-                if (userData) {
-                    authorName = userData || "取得に失敗";
-                    authorUrl = userData ? "https://www.nicovideo.jp/user/" + userData : "";
-                    authorIconUrl = userData || "";
-                }
+                authorName = meta.body.author.name || "取得に失敗";
+                authorUrl = "https://www.nicovideo.jp/user/" + meta.body.author.id;
+                authorIconUrl = meta.body.author.profile_image_url || "";
             }
-            videoUrl = "https://www.x/com/i/web/status/" + meta.body.id;
-            videoThumbnail = "";
+            videoUrl = "https://www.x.com/i/web/status/" + meta.body.id;
+            const thumbnailPath = await sourcePathManager.getThumbnailPath({ type: "twitterThumbnail", body: playlistData.body, number: playlistData.number });
+
+            if (thumbnailPath) {
+                const filename = path.basename(thumbnailPath);
+                videoThumbnail = "attachment://" + filename;
+                const attachment = new AttachmentBuilder(fs.readFileSync(thumbnailPath));
+                attachment.setName(filename);
+                files.push(attachment);
+            }
             serviceColor = "Grey";
             serviceMessage = "Service by X (ID: " + playlistData.body + ")";
             serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/x-logo.png";
         }
         const embed = new EmbedBuilder()
-        if (authorIconUrl) embed.setAuthor({
+        if (authorName) embed.setAuthor({
             name: authorName,
             url: authorUrl,
             iconURL: authorIconUrl,
         })
         embed.setTitle(videoTitle);
-        if (videoUrl) embed.setURL(videoUrl);
+        if (videoUrl && /^https?:\/\//.test(videoUrl)) embed.setURL(videoUrl);
         embed.setDescription(message);
         embed.setColor(serviceColor);
         embed.setFooter({
@@ -104,8 +113,9 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
         });
         if (videoThumbnail) if (meta?.type === "videoId") embed.setImage(videoThumbnail);
         else embed.setThumbnail(videoThumbnail);
+        callback(embed);
         SumLog.log("動画のサムネイルを表示するEmbedを作成しました。作成にかかった時間は" + Math.floor((Date.now() - startTime) / 1000) + "秒です。", { functionName: "videoInfoEmbedGet" });
-        return embed;
+        return { embeds: [embed], files };
     } else {
         const fields: APIEmbedField[] = [];
         for (let i = 0; i < playlistDatas.length; i++) {
@@ -118,7 +128,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
             }
             const playlistData = playlistDatas[i];
             const meta = await videoMetaCacheGet(playlistData);
-            let videoTitle = (meta?.type !== "tweetId" ? meta?.body?.title : meta.body?.text) || "取得ができませんでした。";
+            let videoTitle = (meta?.type !== "tweetId" ? meta?.body?.title?.split("\n")[0].slice(0, 25) : meta.body?.text) || "取得ができませんでした。";
             if (meta?.body) {
                 if (playlistData.type === "videoId") {
                     const albumInfoJson: {
@@ -144,6 +154,11 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
                         name: (i + 1) + ". " + videoTitle,
                         value: "動画サービス: `ニコニコ動画` ID: `" + playlistData.body + "`"
                     });
+                } else if (playlistData.type === "twitterId") {
+                    fields.push({
+                        name: (i + 1) + ". " + videoTitle.split("\n")[0].slice(0, 25),
+                        value: "動画サービス: `X` ID: `" + playlistData.body + "`"
+                    });
                 } else {
                     fields.push({
                         name: (i + 1) + ". " + videoTitle,
@@ -165,8 +180,9 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
             .setDescription(message)
             .addFields(fields)
             .setColor("Purple");
+            callback(embed)
         SumLog.log("複数の動画の情報を示すEmbedを作成しました。作成にかかった時間は" + Math.floor((Date.now() - startTime) / 1000) + "秒です。", { functionName: "videoInfoEmbedGet" });
-        return embed;
+        return { embeds: [embed] };
     }
 }
 
@@ -213,7 +229,7 @@ export async function statusEmbedGet(data: {
             });
         } else if (meta.type === "tweetId") {
             fields.push({
-                name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + (meta.body.text),
+                name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + (meta.body.text?.split("\n")[0].slice(0, 25)),
                 value: "動画時間: `" + (!Number.isNaN(Number(meta.body.media ? (meta.body.media[playlistData.number || 0].duration_ms || 0) / 1000 : 0)) ? numberToTimeString(Number(meta.body.media ? (meta.body.media[playlistData.number || 0].duration_ms || 0) / 1000 : 0)) : "不明") + "` 動画サービス: `X` ID: `" + playlistData.body + "`",
                 inline: false
             });
@@ -285,7 +301,13 @@ export async function statusEmbedGet(data: {
             if (thumbnail) embed.setThumbnail(thumbnail);
             embed.setURL(data.playing.playingPlaylist.type === "videoId" ? "https://youtu.be/" + data.playing.playingPlaylist.body : data.playing.playingPlaylist.type === "nicovideoId" ? "https://www.nicovideo.jp/watch/" + data.playing.playingPlaylist.body : "https://www.x/com/i/web/status/" + data.playing.playingPlaylist.body);
         }
-        embed.setTitle("再生中 - " + ((meta?.type !== "tweetId" ? meta?.type === "videoId" ? (albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body] !== undefined ? (await musicBrainz.recordingInfoGet(albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body].recording)).title : meta.body?.title) : meta?.body?.title : meta.body?.text) || "タイトル取得エラー"));
+        embed.setTitle("再生中 - " + ((
+            meta?.type !== "tweetId" ?
+                meta?.type === "videoId" ? (albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body] !== undefined ?
+                    (await musicBrainz.recordingInfoGet(albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body].recording)).title
+                    : meta.body?.title)
+                    : meta?.body?.title
+                : meta.body?.text?.split("\n")[0].slice(0, 25)) || "タイトル取得エラー"));
     } else {
         embed.setTitle("再生していません");
     }

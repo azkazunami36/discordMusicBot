@@ -15,11 +15,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        const playlist = await variableExistCheck.playlist();
-        if (!playlist) return;
+        const envData = new EnvData(guildData.guildId);
         if (await variableExistCheck.playlistIsEmpty()) return;
         let result = "```";
-        for (const playlistData of playlist) {
+        for (const playlistData of envData.playlist) {
             switch (playlistData.type) {
                 case "videoId": result += "\nhttps://youtu.be/" + playlistData.body; break;
                 case "originalFileId": break;

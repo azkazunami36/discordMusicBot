@@ -15,6 +15,23 @@ const CACHE_DIR = path.join(__dirname, "..", "..", "cacheJSONs");
 const CACHE_FILE = path.join(CACHE_DIR, "appleMusicToVideoIdCache.jsonl");
 type CacheRow = { videoId: string; appleMusicId: string };
 
+let APPLE_CACHE_LOADED = false;
+let APPLE_CACHE_BY_APPLE = new Map<string, string>(); // appleMusicId -> videoId
+let APPLE_CACHE_BY_VIDEO = new Set<string>(); // videoId exists
+
+function loadAppleCacheIndexSync() {
+    if (APPLE_CACHE_LOADED) return;
+    ensureCacheFileSync();
+    const rows = readAllCacheRowsSync();
+    for (const r of rows) {
+        if (r?.appleMusicId && r?.videoId) {
+            APPLE_CACHE_BY_APPLE.set(r.appleMusicId, r.videoId);
+            APPLE_CACHE_BY_VIDEO.add(r.videoId);
+        }
+    }
+    APPLE_CACHE_LOADED = true;
+}
+
 function ensureCacheFileSync() {
     try { if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch { }
     try { if (!fs.existsSync(CACHE_FILE)) fs.writeFileSync(CACHE_FILE, ""); } catch { }
@@ -37,20 +54,20 @@ function readAllCacheRowsSync(): CacheRow[] {
 }
 
 function lookupByAppleIdSync(appleMusicId: string): string | undefined {
-    ensureCacheFileSync();
-    const rows = readAllCacheRowsSync();
-    const hit = rows.find(r => r.appleMusicId === appleMusicId);
-    return hit?.videoId;
+    loadAppleCacheIndexSync();
+    return APPLE_CACHE_BY_APPLE.get(appleMusicId);
 }
 
 function appendIfMissingByVideoIdSync(row: CacheRow) {
-    ensureCacheFileSync();
-    // 直前のタイミングで必ず読み直し（同時並行の別処理対策）
-    const rows = readAllCacheRowsSync();
-    if (rows.some(r => r.videoId === row.videoId)) return; // 同じ videoId が既にあるなら保存スキップ
+    loadAppleCacheIndexSync();
+    if (APPLE_CACHE_BY_VIDEO.has(row.videoId)) return; // videoId 重複
+    if (APPLE_CACHE_BY_APPLE.has(row.appleMusicId)) return; // appleMusicId 重複
     try {
+        ensureCacheFileSync();
         fs.appendFileSync(CACHE_FILE, JSON.stringify(row) + "\n");
-    } catch { }
+        APPLE_CACHE_BY_APPLE.set(row.appleMusicId, row.videoId);
+        APPLE_CACHE_BY_VIDEO.add(row.videoId);
+    } catch {}
 }
 
 async function appleMusicToYouTubeId(appleUrlOrId: string): Promise<string | undefined> {
@@ -83,7 +100,10 @@ async function appleMusicToYouTubeId(appleUrlOrId: string): Promise<string | und
     // --- JSONL キャッシュ 事前ヒット確認（appleId ベース） ---
     {
         const cached = lookupByAppleIdSync(trackId);
-        if (cached) return cached;
+        if (cached) {
+            console.log(`[cache] appleMusicToYouTubeId: hit appleMusicId=${trackId} -> videoId=${cached}`);
+            return cached;
+        }
     }
 
     // --- Apple Lookup（JP/US） ---

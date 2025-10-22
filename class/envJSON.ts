@@ -31,24 +31,89 @@ export class EnvData {
         }
         return json[this.guildId][name];
     }
-    /** キューデータを保存します。 */
-    playlistSave(playlist: Playlist[]) {
-        this.#envJSON("playlist", JSON.stringify(playlist));
-    }
-    /** キューデータを取得します。 */
-    playlistGet() {
-        const playlistJSONStr = this.#envJSON("playlist") || this.#envJSON("playlist", "[]");
-        try {
-            const playlist = JSON.parse(String(playlistJSONStr)) as Playlist[];
-            playlist.forEach(playlistData => {
-                if (!playlistData.type || playlistData.type !== "originalFileId" && playlistData.type !== "videoId" && playlistData.type !== "nicovideoId") throw "";
-                if (!playlistData.body || typeof playlistData.body !== "string") throw "";
-            })
-            return playlist;
-        } catch (e) {
-            return JSON.parse(String(this.#envJSON("playlist", "[]"))) as Playlist[];
+    playlist = new (class playlist {
+        #envData: EnvData;
+        constructor(envData: EnvData) {
+            this.#envData = envData;
         }
-    }
+        /** キューデータを保存します。 */
+        #playlistSave(playlist: Playlist[]) {
+            this.#envData.#envJSON("playlist", JSON.stringify(playlist));
+        }
+        /** キューデータを取得します。 */
+        #playlistGet() {
+            const playlistJSONStr = this.#envData.#envJSON("playlist") || this.#envData.#envJSON("playlist", "[]");
+            try {
+                const playlist = JSON.parse(String(playlistJSONStr)) as (Playlist)[];
+                playlist.forEach(playlistData => {
+                    if (!playlistData?.type || playlistData.type !== "originalFileId" && playlistData.type !== "videoId" && playlistData.type !== "nicovideoId" && playlistData.type !== "twitterId") throw "";
+                    if (!playlistData.body || typeof playlistData.body !== "string") throw "";
+                })
+                return playlist;
+            } catch (e) {
+                return JSON.parse(String(this.#envData.#envJSON("playlist", "[]"))) as (Playlist)[];
+            }
+        }
+        push(...playlist: Playlist[]) {
+            const pl = this.#playlistGet();
+            pl.push(...playlist);
+            this.#playlistSave(pl);
+        }
+        unshift(...playlist: Playlist[]) {
+            const pl = this.#playlistGet();
+            pl.unshift(...playlist);
+            this.#playlistSave(pl);
+        }
+        shift() {
+            const pl = this.#playlistGet();
+            const playlistData = pl.shift();
+            this.#playlistSave(pl);
+            return playlistData;
+        }
+        pop() {
+            const pl = this.#playlistGet();
+            const playlistData = pl.pop();
+            this.#playlistSave(pl);
+            return playlistData;
+        }
+        get(number: number): Playlist | undefined {
+            const pl = this.#playlistGet();
+            return pl[number];
+        }
+        length() {
+            const pl = this.#playlistGet();
+            return pl.length;
+        }
+        clear() {
+            const pl = this.#playlistGet();
+            pl.length = 0;
+            this.#playlistSave(pl);
+        }
+        splice(start: number, deleteCount: number = 1) {
+            const pl = this.#playlistGet();
+            const list = pl.splice(start, deleteCount);
+            this.#playlistSave(pl);
+            return list;
+        }
+        [Symbol.iterator](): Iterator<Playlist> {
+            let index = 0;
+            const pl = this.#playlistGet();
+
+            return {
+                next(): IteratorResult<Playlist> {
+                    if (index < pl.length) {
+                        return { value: pl[index++], done: false };
+                    } else {
+                        return { value: undefined as any, done: true };
+                    }
+                }
+            };
+        }
+        listGet() {
+            const pl = this.#playlistGet();
+            return pl;
+        }
+    })(this);
     /** オリジナルファイルに関する情報を保存します。 */
     originalFilesSave(originalFiles: OriginalFiles) {
         this.#envJSON("originalFiles", JSON.stringify(originalFiles));
@@ -357,7 +422,9 @@ export async function videoMetaCacheGet(data: Playlist): Promise<CacheGetReturn 
         };
     }
     if (data.type === "twitterId") {
+        console.log("twitterinfogetを実行します。", data.body);
         const body = await twitterInfoGet(data.body);
+        console.log("twitterinfogetを実行しました。");
         return {
             type: "tweetId",
             body

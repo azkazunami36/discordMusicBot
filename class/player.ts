@@ -347,7 +347,6 @@ export class Player extends EventEmitter {
                 default: return "./IRwav/ushapedvalley_48k.wav";
             }
         })();
-
         const reverbVol = (() => {
             switch (this.status[guildId]?.reverbType) {
                 case "church": return 9;
@@ -381,7 +380,6 @@ export class Player extends EventEmitter {
             "-f", "ogg",
             "pipe:1"
         );
-        console.log(args)
         this.status[guildId].spawn = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
         this.status[guildId].spawn.on("error", e => {
             SumLog.error("FFmpegを実行するspawnでエラーを受信しました。: " + e.message, { functionName: "ffmpegPlay" });

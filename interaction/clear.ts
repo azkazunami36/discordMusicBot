@@ -15,12 +15,9 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        const playlist = await variableExistCheck.playlist();
-        if (!playlist) return;
-        if (await variableExistCheck.playlistIsEmpty()) return;
-        playlist.length = 0;
         const envData = new EnvData(guildData.guildId);
-        envData.playlistSave(playlist);
+        if (await variableExistCheck.playlistIsEmpty()) return;
+        envData.playlist.clear();
         await message.edit({ embeds: [messageEmbedGet("キューから全ての曲を削除しました。", interaction.client)] });
     }
 }

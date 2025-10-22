@@ -17,11 +17,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
         const envData = new EnvData(guildData.guildId);
-        const playlist = envData.playlistGet();
+        const playlist = envData.playlist;
         if (!await variableExistCheck.voiceChannelId()) return;
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         if (envData.playType === 1) playlist.shift();
-        envData.playlistSave(playlist);
         inputData.player.stop(guildData.guildId);
         await message.edit({ embeds: [messageEmbedGet("曲を停止しました。", interaction.client)] });
     }

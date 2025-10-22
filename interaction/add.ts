@@ -47,14 +47,12 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        const playlist = await variableExistCheck.playlist();
-        if (!playlist) return;
         if (data === null) return await message.edit({ embeds: [messageEmbedGet("追加したい曲が指定されませんでした。入力してから追加を行なってください。", interaction.client)] });
         const priority = interaction.options.getString("service");
-        await urlToQueue(data, guildData, priority, message, async (percent, status, playlist) => {
-            switch(status) {
+        await urlToQueue(data, guildData, priority, message, async (percent, status, playlist, option) => {
+            switch (status) {
                 case "analyzing": {
-                    await message.edit({ embeds: [messageEmbedGet("文字列を分析しています...\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
+                    await message.edit({ embeds: [messageEmbedGet("文字列を分析しています..." + option.analyzed + "個解析済みです。\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
                     break;
                 }
                 case "searching": {
@@ -62,11 +60,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                     break;
                 }
                 case "checkAndDownloading": {
-                    await message.edit({ embeds: [messageEmbedGet("取得したデータを解析・ダウンロードしています..." + (playlist || []).length + "曲はキューに追加済みで、再生が可能です。" + "\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
+                    await message.edit({ embeds: [messageEmbedGet("取得したデータ" + option.analyzed + "個を解析・ダウンロードしています..." + (playlist || []).length + "曲はキューに追加済みで、再生が可能です。" + "\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
                     break;
                 }
                 case "done": {
-                    await message.edit({ embeds: [await videoInfoEmbedGet(playlist || [], "曲を追加しました。", interaction.client)] });
+                    await message.edit(await videoInfoEmbedGet(playlist || [], "曲を追加しました。", interaction.client));
                     break;
                 }
                 case "failed": {

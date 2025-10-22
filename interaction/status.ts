@@ -3,6 +3,7 @@ import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, CommandInter
 import { InteractionInputData } from "../funcs/interface.js";
 import { VariableExistCheck } from "../class/variableExistCheck.js";
 import { statusEmbedGet } from "../funcs/embed.js";
+import { EnvData } from "../class/envJSON.js";
 
 export const command = new SlashCommandBuilder()
     .setName("status")
@@ -18,8 +19,8 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        const playlist = await variableExistCheck.playlist();
-        if (!playlist) return;
+        const envData = new EnvData(guildData.guildId);
+        const playlist = envData.playlist.listGet();
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
         if (!serverData) return;
 
@@ -30,6 +31,6 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             playlist,
             playing: { playingPlaylist: inputData.player.playingGet(guildData.guildId), playingTime: inputData.player.playtimeGet(guildData.guildId) }
         });
-        await message.edit({embeds: [embed]});
+        await message.edit({ embeds: [embed] });
     }
 }

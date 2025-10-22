@@ -51,22 +51,21 @@ player.on("playAutoEnd", async (guildId) => {
     if (!serverData?.discord.calledChannel) return;
     const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
     const envData = new EnvData(guildId);
-    const playlist = envData.playlistGet();
+    const playlist = envData.playlist;
     const playType = envData.playType;
     switch (playType) {
         case 1: {
             playlist.shift();
-            envData.playlistSave(playlist);
             break;
         }
         case 2: {
             const videoId = playlist.shift();
             if (videoId) playlist.push(videoId);
-            envData.playlistSave(playlist);
             break;
         }
     }
-    if (playlist.length < 1) {
+    const playlistData = playlist.get(0);
+    if (!playlistData) {
         try {
             if (channel && channel.isTextBased()) {
                 await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
@@ -79,35 +78,37 @@ player.on("playAutoEnd", async (guildId) => {
         player.stop(guildId);
         return;
     }
-    const playlistData = playlist[0];
     if (envData.changeTellIs) {
         const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
         try {
             if (channel && channel.isTextBased()) {
-                const metaEmbed = await videoInfoEmbedGet([playlistData], "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`", client);
-                const message = await channel.send({ embeds: [metaEmbed] });
+                let embed: Discord.EmbedBuilder | undefined;
+                const metaEmbed = await videoInfoEmbedGet([playlistData], "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`", client, eb => { embed = eb; });
+                const message = await channel.send(metaEmbed);
                 try {
                     let statusTemp: {
                         status: "loading" | "downloading" | "formatchoosing" | "converting" | "done" | "queue",
                         percent: number;
                     }
                     let statuscallTime: number = Date.now();
-                    const type = playlist[0].type;
-                    await player.sourceSet(guildId, playlist[0], async (status, percent) => {
+                    const type = playlistData.type;
+                    await player.sourceSet(guildId, playlistData, async (status, percent) => {
                         const temp = { status, percent }
                         if (statusTemp && statusTemp === temp) return;
                         if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
                         statusTemp = temp;
                         statuscallTime = Date.now();
-                        if (status === "loading") { metaEmbed.setDescription("次の曲の音声ファイルを準備中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
-                        if (status === "downloading") { metaEmbed.setDescription("次の曲の音声ファイルをダウンロード中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
-                        if (status === "converting") { metaEmbed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
-                        if (status === "formatchoosing") { metaEmbed.setDescription("次の曲の" + (type ? (type === "videoId" ? "YouTube" : type === "nicovideoId" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
-                        if (status === "done") { metaEmbed.setDescription("次の曲の再生開始処理中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit({ embeds: [metaEmbed] }); }
+                        if (embed) {
+                            if (status === "loading") { embed.setDescription("次の曲の音声ファイルを準備中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                            if (status === "downloading") { embed.setDescription("次の曲の音声ファイルをダウンロード中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                            if (status === "converting") { embed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                            if (status === "formatchoosing") { embed.setDescription("次の曲の" + (type ? (type === "videoId" ? "YouTube" : type === "nicovideoId" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                            if (status === "done") { embed.setDescription("次の曲の再生開始処理中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                        }
                     });
                     player.volumeSet(guildId, envData.volume);
-                    metaEmbed.setDescription("次の曲の再生を開始しました。");
-                    await message.edit({ embeds: [metaEmbed] });
+                    if (embed) embed.setDescription("次の曲の再生を開始しました。");
+                    await message.edit(metaEmbed);
                 } catch (e) {
                     try {
                         await message.edit({
@@ -127,12 +128,12 @@ player.on("playAutoEnd", async (guildId) => {
                 }
             }
         } catch (e) {
-            await player.sourceSet(guildId, playlist[0]);
+            await player.sourceSet(guildId, playlistData);
             player.volumeSet(guildId, envData.volume);
             console.error(e);
         }
     } else {
-        await player.sourceSet(guildId, playlist[0]);
+        await player.sourceSet(guildId, playlistData);
     }
     SumLog.log("次の曲が存在したため、次の曲の再生を開始しました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
 })
@@ -476,13 +477,14 @@ client.on(Discord.Events.ClientReady, async () => {
                 const channel = await guild?.channels.fetch(envData.restartedCalledChannel);
                 const voiceChannel = await guild?.channels.fetch(envData.restartedVoiceChannel);
                 if (channel?.isTextBased() && voiceChannel?.isVoiceBased() && voiceChannel.members.size > 0) {
-                    const playlist = envData.playlistGet();
+                    const playlist = envData.playlist.get(0);
+                    if (!playlist) return;
                     serverData.discord.calledChannel = envData.restartedCalledChannel;
                     await player.forcedPlay({
                         guildId: data.id,
                         channelId: envData.restartedVoiceChannel,
                         adapterCreator: guild.voiceAdapterCreator,
-                        source: playlist[0],
+                        source: playlist,
                         playtime: envData.restartedPlayPoint,
                         tempo: envData.playTempo,
                         pitch: envData.playPitch,
