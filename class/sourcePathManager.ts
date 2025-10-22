@@ -185,6 +185,7 @@ export class SourcePathManager {
                                 "-o", folderPath + "/%(id)s" + (downloadingQueue.playlist.type === "twitterId" ? "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache.%(ext)s",
                                 "--progress-template", "%(progress)j",
                                 ...(() => {
+                                    if (type === "videoId") return ["--extractor-args", "youtube:player_client=android"]
                                     if (type === "nicovideoId") return ["--add-header", "Referer:https://www.nicovideo.jp/"]
                                     if (type === "twitterId") return ["--playlist-items", String(downloadingQueue.playlist.number || 1)]
                                     return []
