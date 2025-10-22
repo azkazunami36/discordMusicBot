@@ -181,12 +181,10 @@ export class SourcePathManager {
 
                             const cp = spawn(ytdlp, [
                                 "--progress", "--newline",
-                                "-f", audioformat?.format_id || "",
+                                "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
                                 "-o", folderPath + "/%(id)s" + (downloadingQueue.playlist.type === "twitterId" ? "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache.%(ext)s",
                                 "--progress-template", "%(progress)j",
-                                "--cookies-from-browser", "chrome",
                                 ...(() => {
-                                    if (type === "videoId") return ["--extractor-args", 'youtube:player_client=mweb']
                                     if (type === "nicovideoId") return ["--add-header", "Referer:https://www.nicovideo.jp/"]
                                     if (type === "twitterId") return ["--playlist-items", String(downloadingQueue.playlist.number || 1)]
                                     return []
@@ -208,7 +206,7 @@ export class SourcePathManager {
 
                             cp.on("close", code => {
                                 if (code === 0) resolve();
-                                else reject(new Error(`yt-dlp exited with code ${code}`));
+                                else reject(new Error(`yt-dlp exited with code ${code}: ` + errmsg, err));
                             });
 
                             cp.on("error", e => reject({ one: err, two: e, errmsg }));
@@ -242,10 +240,10 @@ export class SourcePathManager {
 
                         cp.on("close", code => {
                             if (code === 0) resolve();
-                            else retry();
+                            else retry(errmsg);
                         });
 
-                        cp.on("error", e => { retry(e) });
+                        cp.on("error", e => { retry(errmsg) });
                     });
                     const files = await fsPromise.readdir("./" + folderPath);
                     const cacheFilename = files.find(file => file.match(downloadingId + (downloadingQueue.playlist.type === "twitterId" ? "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache."));
