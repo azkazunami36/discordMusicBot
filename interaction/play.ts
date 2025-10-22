@@ -54,8 +54,8 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                         break;
                     }
                     case "failed": {
-                        await message.edit({ embeds: [messageEmbedGet("次のテキストは解析ができず、キューに追加できませんでした。\n`" + text + "`", interaction.client)] });
                         stopIs = true;
+                        await message.edit({ embeds: [messageEmbedGet("次のテキストは解析ができず、キューに追加できませんでした。\n`" + text + "`", interaction.client)] });
                         break;
                     }
                 }
@@ -81,8 +81,8 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                         break;
                     }
                     case "failed": {
-                        await message.edit({ embeds: [messageEmbedGet("次のテキストは解析ができず、キューに追加できませんでした。\n`" + text + "`", interaction.client)] });
                         stopIs = true;
+                        await message.edit({ embeds: [messageEmbedGet("次のテキストは解析ができず、キューに追加できませんでした。\n`" + text + "`", interaction.client)] });
                         break;
                     }
                 }

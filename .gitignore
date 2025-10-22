@@ -3,6 +3,7 @@ node_modules
 youtubeCache
 niconicoCache
 twitterCache
+twitterThumbnailCache
 videoInfoCache.json
 cache.jsonl
 env.json

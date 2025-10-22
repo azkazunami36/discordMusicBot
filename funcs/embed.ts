@@ -85,7 +85,6 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
             }
             videoUrl = "https://www.x.com/i/web/status/" + meta.body.id;
             const thumbnailPath = await sourcePathManager.getThumbnailPath({ type: "twitterThumbnail", body: playlistData.body, number: playlistData.number });
-
             if (thumbnailPath) {
                 const filename = path.basename(thumbnailPath);
                 videoThumbnail = "attachment://" + filename;
@@ -111,7 +110,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
             text: serviceMessage,
             iconURL: serviceIconUrl,
         });
-        if (videoThumbnail) if (meta?.type === "videoId") embed.setImage(videoThumbnail);
+        if (videoThumbnail) if (meta?.type === "videoId" || meta?.type === "tweetId") embed.setImage(videoThumbnail);
         else embed.setThumbnail(videoThumbnail);
         callback(embed);
         SumLog.log("動画のサムネイルを表示するEmbedを作成しました。作成にかかった時間は" + Math.floor((Date.now() - startTime) / 1000) + "秒です。", { functionName: "videoInfoEmbedGet" });
@@ -299,7 +298,7 @@ export async function statusEmbedGet(data: {
         if (meta?.body) {
             const thumbnail = meta.type === "videoId" ? (albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body] !== undefined ? "https://coverartarchive.org/release/" + albumInfoJson.youtubeLink.videoId[data.playing.playingPlaylist.body].release + "/front" : await youtubeThumbnailGet(data.playing.playingPlaylist.body) || meta.body.thumbnail) : meta.type === "nicovideoId" ? meta.body.thumbnailUrl : "";
             if (thumbnail) embed.setThumbnail(thumbnail);
-            embed.setURL(data.playing.playingPlaylist.type === "videoId" ? "https://youtu.be/" + data.playing.playingPlaylist.body : data.playing.playingPlaylist.type === "nicovideoId" ? "https://www.nicovideo.jp/watch/" + data.playing.playingPlaylist.body : "https://www.x/com/i/web/status/" + data.playing.playingPlaylist.body);
+            embed.setURL(data.playing.playingPlaylist.type === "videoId" ? "https://youtu.be/" + data.playing.playingPlaylist.body : data.playing.playingPlaylist.type === "nicovideoId" ? "https://www.nicovideo.jp/watch/" + data.playing.playingPlaylist.body : "https://www.x.com/i/web/status/" + data.playing.playingPlaylist.body);
         }
         embed.setTitle("再生中 - " + ((
             meta?.type !== "tweetId" ?

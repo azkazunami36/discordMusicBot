@@ -10,6 +10,7 @@ import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import { spawn } from "node:child_process";
 import { Playlist } from "../../class/envJSON.js";
 import { YtDlpInfo } from "../../createByChatGPT/ytDlp.js";
+import { Picture } from "../../class/sourcePathManager.js";
 
 /** WorkerData で受け取るデータの型 */
 interface JobData {
@@ -62,7 +63,7 @@ if (isMainThread) {
 });
 
 /** Playlist から yt-dlp の引数を作る */
-function buildArgs(playlist: Playlist): string[] {
+function buildArgs(playlist: Playlist | Picture): string[] {
   const { type, body } = playlist;
 
   // 既定オプション
@@ -76,7 +77,8 @@ function buildArgs(playlist: Playlist): string[] {
 
   // サイトごとの追加
   switch (type) {
-    case "twitterId": {
+    case "twitterId":
+    case "twitterThumbnail": {
       // X（Twitter）
       const url = `https://x.com/i/web/status/${body}`;
       args.push(url);

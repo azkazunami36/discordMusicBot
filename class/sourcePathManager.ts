@@ -155,7 +155,7 @@ export class SourcePathManager {
                     if (!thumbnails) throw new Error("サムネイルが１つもありませんでした。");
                     thumbnailformat = pickBestThumbnail(thumbnails);
                     if (!thumbnailformat?.url) throw new Error("サムネイルが１つもありませんでした。");
-                    const splitedUrl = thumbnailformat.url.split(".");
+                    const splitedUrl = thumbnailformat.url.split("?")[0].split(".");
                     const ext = splitedUrl[splitedUrl.length - 1];
                     if (!thumbnailformat?.url) throw new Error("サムネイルが１つもありませんでした。");
                     const res = await fetch(thumbnailformat.url);
