@@ -20,7 +20,7 @@ export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: stri
         let authorName = "取得ができませんでした。";
         let authorUrl: string | undefined;
         let authorIconUrl: string | undefined;
-        let videoTitle = (meta?.type !== "tweetId" ? meta?.body?.title.split("\n")[0].slice(0, 25) : meta.body?.text) || "取得ができませんでした。";
+        let videoTitle = (meta?.type !== "tweetId" ? meta?.body?.title : meta.body?.text?.split("\n")[0].slice(0, 25)) || "取得ができませんでした。";
         let videoUrl: string | undefined;
         let videoThumbnail: string | undefined;
         let serviceColor: "NotQuiteBlack" | "Red" | "Grey" = "NotQuiteBlack";
@@ -229,7 +229,7 @@ export async function statusEmbedGet(data: {
         } else if (meta.type === "tweetId") {
             fields.push({
                 name: ((selectPlaylistPage - 1) * 5 + i + 1) + ". " + (meta.body.text?.split("\n")[0].slice(0, 25)),
-                value: "動画時間: `" + (!Number.isNaN(Number(meta.body.media ? (meta.body.media[playlistData.number || 0].duration_ms || 0) / 1000 : 0)) ? numberToTimeString(Number(meta.body.media ? (meta.body.media[playlistData.number || 0].duration_ms || 0) / 1000 : 0)) : "不明") + "` 動画サービス: `X` ID: `" + playlistData.body + "`",
+                value: "動画時間: `" + (!Number.isNaN(Number(meta.body.media ? (meta.body.media[playlistData.number || 0]?.duration_ms || 0) / 1000 : 0)) ? numberToTimeString(Number(meta.body.media ? (meta.body.media[playlistData.number || 0]?.duration_ms || 0) / 1000 : 0)) : "不明") + "` 動画サービス: `X` ID: `" + playlistData.body + "`",
                 inline: false
             });
         } else {

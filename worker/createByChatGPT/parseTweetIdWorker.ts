@@ -66,7 +66,18 @@ function parseTweetId(input: string): { id?: string; index?: number } {
 }
 
 try {
-  const { input } = workerData as { input: string };
+  // さまざまな呼び出し元の形に対応
+  const wd: any = workerData;
+  const input: string = (
+    typeof wd === "string" ? wd :
+    typeof wd?.input === "string" ? wd.input :
+    (Array.isArray(wd?.inputs) && typeof wd.inputs[0] === "string") ? wd.inputs[0] :
+    typeof wd?.url === "string" ? wd.url :
+    typeof wd?.body === "string" ? wd.body :
+    typeof wd?.value === "string" ? wd.value :
+    ""
+  );
+
   const { id, index } = parseTweetId(input);
   if (id) {
     parentPort?.postMessage({ ok: true, data: { id, index } });

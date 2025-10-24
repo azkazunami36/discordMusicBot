@@ -3,6 +3,104 @@ import { parentPort, workerData } from "worker_threads";
 import { TwitterApi } from "twitter-api-v2";
 
 const LOG_PREFIX = "[searchTweetWorker]";
+// ---- FixTweet (FxTwitter) fallback helpers ----
+// Minimal shape of FixTweet response we use
+type FxStatus = {
+  code: number;
+  message?: string;
+  tweet?: {
+    id: string;
+    text: string;
+    created_at?: string;
+    created_timestamp?: number;
+    author?: { id?: string; name: string; screen_name: string; avatar_url?: string };
+    media?: {
+      photos?: Array<{ url: string }>;
+      videos?: Array<{ url: string; thumbnail_url?: string; format?: string }>;
+      gifs?:   Array<{ url: string; thumbnail_url?: string; format?: string }>;
+    };
+    likes?: number; retweets?: number; replies?: number; views?: number|null;
+  };
+};
+
+async function fetchFixTweetStatus(id: string): Promise<FxStatus | undefined> {
+  const url = `https://api.fxtwitter.com/status/${id}`;
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': 'discordMusicBot/1.0 (+fix-fallback)' } });
+    if (!r.ok) {
+      console.log(`${LOG_PREFIX} fx: http ${r.status}`);
+      return undefined;
+    }
+    const fx = (await r.json()) as FxStatus;
+    if (fx?.code !== 200 || !fx?.tweet) {
+      console.log(`${LOG_PREFIX} fx: bad payload code=${fx?.code}`);
+      return undefined;
+    }
+    return fx;
+  } catch (e: any) {
+    console.log(`${LOG_PREFIX} fx: fetch error ${e?.message || e}`);
+    return undefined;
+  }
+}
+
+function fxToXPostInfo(fx: FxStatus): XPostInfo | undefined {
+  const t = fx.tweet;
+  if (!t) return undefined;
+  const photos = t.media?.photos ?? [];
+  const videos = t.media?.videos ?? [];
+  const gifs   = t.media?.gifs   ?? [];
+  const media = [
+    ...photos.map(p => ({
+      media_key: '',
+      type: 'photo' as const,
+      url: p.url,
+    })),
+    ...videos.map(v => ({
+      media_key: '',
+      type: 'video' as const,
+      url: v.url,
+      preview_image_url: v.thumbnail_url,
+      variants: v.url ? [{ content_type: v.format ?? 'video/mp4', url: v.url }] : undefined,
+    })),
+    ...gifs.map(g => ({
+      media_key: '',
+      type: 'animated_gif' as const,
+      url: g.url,
+      preview_image_url: g.thumbnail_url,
+      variants: g.url ? [{ content_type: g.format ?? 'video/mp4', url: g.url }] : undefined,
+    })),
+  ];
+  const created_at = t.created_at ?? (t.created_timestamp ? new Date(t.created_timestamp * 1000).toISOString() : undefined);
+  const info: XPostInfo = {
+    id: t.id,
+    text: t.text,
+    created_at,
+    author: t.author ? {
+      id: t.author.id ?? '',
+      name: t.author.name,
+      username: t.author.screen_name,
+      profile_image_url: t.author.avatar_url,
+      verified: undefined,
+    } : undefined,
+    media: media.length ? media : undefined,
+    public_metrics: {
+      like_count: t.likes,
+      retweet_count: t.retweets,
+      reply_count: t.replies,
+      view_count: t.views ?? undefined,
+    },
+    raw: fx,
+  };
+  return info;
+}
+
+function assertVideoIfNeeded(info: XPostInfo | undefined, mustContainVideo: boolean): boolean {
+  if (!mustContainVideo) return true;
+  if (!info) return false;
+  const hasVideo = Array.isArray(info.media) && info.media.some(m => m?.type === 'video');
+  return hasVideo;
+}
+// ---- end FixTweet helpers ----
 function redact(v?: string | null) {
   if (!v) return v;
   const s = String(v);
@@ -181,7 +279,27 @@ async function searchTweet(input: string, videoOnly = false): Promise<XPostInfo 
       if (e?.headers) {
         try { console.log(`${LOG_PREFIX} error: headers=`, e.headers); } catch {}
       }
-      throw e;
+      // --- FixTweet fallback when v2.singleTweet fails (e.g., 429) ---
+      const fx = await fetchFixTweetStatus(id);
+      if (fx) {
+        const info = fxToXPostInfo(fx);
+        if (assertVideoIfNeeded(info, !!videoOnly)) {
+          console.log(`${LOG_PREFIX} fx: fallback success id=${id} media=${info?.media?.length ?? 0}`);
+          return info;
+        } else {
+          console.log(`${LOG_PREFIX} fx: fallback rejected (mustContainVideo but none)`);
+        }
+      } else {
+        console.log(`${LOG_PREFIX} fx: fallback unavailable`);
+      }
+      // --- end FixTweet fallback ---
+      // Rethrow with structured properties so caller can distinguish rate limit vs recognize failure
+      const err = new Error(e?.message || 'singleTweet failed');
+      (err as any).status = e?.code || e?.status;
+      (err as any).headers = e?.headers;
+      (err as any).rateLimit = e?.rateLimit;
+      (err as any).tweetId = id;
+      throw err;
     }
   }
 
@@ -253,7 +371,18 @@ async function searchTweet(input: string, videoOnly = false): Promise<XPostInfo 
     console.log(`${LOG_PREFIX} done: ok data=${data ? 'present' : 'undefined'}`);
     parentPort?.postMessage({ ok: true, data });
   } catch (err: any) {
+    const status = err?.status ?? err?.code ?? undefined;
+    const rateLimit = err?.rateLimit ?? undefined;
+    const reset = rateLimit?.reset ?? err?.headers?.['x-rate-limit-reset'] ?? undefined;
+    const tweetId = err?.tweetId ?? undefined;
     console.error(`${LOG_PREFIX} fatal:`, err?.message ?? err);
-    parentPort?.postMessage({ ok: false, error: String(err?.message ?? err) });
+    parentPort?.postMessage({
+      ok: false,
+      error: String(err?.message ?? err),
+      status,
+      rateLimit,
+      reset,
+      tweetId,
+    });
   }
 })();

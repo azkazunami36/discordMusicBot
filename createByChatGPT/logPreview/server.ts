@@ -92,39 +92,51 @@ function readLinesRange(
   startLine: number,
   endLine: number
 ): { text: string, firstLineNo: number, lastLineNo: number } {
-  const CHUNK = 1024 * 256; // 256KB チャンク
+  const CHUNK = 1024 * 256; // 256KB
   let off = startOff;
-  let fileSize = fs.fstatSync(fd).size;
+  const fileSize = fs.fstatSync(fd).size;
 
   const parts: string[] = [];
-  let lineNo = startLine - 1; // この直前が startLine-1
+  let lineNo = startLine - 1; // 完了した論理行番号
   let firstCaptured = -1;
   let lastCaptured = -1;
+  let pending = ""; // チャンクをまたぐ行の断片
 
   while (off < fileSize && lineNo < endLine) {
     const len = Math.min(CHUNK, fileSize - off);
     const buf = readSliceSync(fd, off, len);
-    let carry = "";
+
     forEachLineChunk(buf, off, (ls, le, hasNL) => {
-      const slice = buf.slice(ls - off, le - off).toString("utf-8");
-      lineNo += 1;
-      if (lineNo >= startLine && lineNo <= endLine) {
-        if (firstCaptured < 0) firstCaptured = lineNo;
-        parts.push(slice);
-        lastCaptured = lineNo;
-      }
-      if (!hasNL && lineNo <= endLine) {
-        // 次のチャンクにまたがる未完行
-        carry = slice;
+      const fragment = buf.slice(ls - off, le - off).toString("utf-8");
+
+      if (hasNL) {
+        // 改行に到達＝論理行が確定
+        lineNo += 1;
+        const full = pending ? (pending + fragment) : fragment;
+        if (lineNo >= startLine && lineNo <= endLine) {
+          if (firstCaptured < 0) firstCaptured = lineNo;
+          parts.push(full);
+          lastCaptured = lineNo;
+        }
+        pending = "";
       } else {
-        carry = "";
+        // 改行に達していない＝断片を貯める
+        pending += fragment;
       }
     });
-    // carry が残るのはファイル末尾が改行なしの場合。ページ境界では想定外だが一応対応。
-    if (carry && lineNo < endLine) {
-      // 次チャンクと連結されるのでここでは保持しない（partsに入れると壊れる）
-    }
+
     off += len;
+  }
+
+  // endLine に達していなくてもファイル末尾に至った場合、末尾改行なしの最終行を含める
+  if (pending && lineNo < endLine) {
+    lineNo += 1;
+    if (lineNo >= startLine && lineNo <= endLine) {
+      if (firstCaptured < 0) firstCaptured = lineNo;
+      parts.push(pending);
+      lastCaptured = lineNo;
+    }
+    pending = "";
   }
 
   return {
@@ -240,8 +252,8 @@ class LineIndex {
       });
       off += len;
     }
-    // 末尾が改行なしのとき、未完行を1行と数えるなら以下を解放
-    // if (!lastHadNL && fileSize > 0) lines += 1;
+    // 末尾が改行で終わらない場合は未完行を1行として数える
+    if (!lastHadNL && fileSize > 0) lines += 1;
     return lines;
   }
 
@@ -299,7 +311,7 @@ const indexer = new LineIndex(LOG_PATH);
 setInterval(async () => {
   const st = safeStat(LOG_PATH);
   if (!st) return;
-  if (st.size > indexer.lastScannedOffset) {
+  if (st.size !== indexer.lastScannedOffset) {
     await indexer.buildOrUpdate();
   }
 }, 1500);
@@ -368,6 +380,22 @@ const server = http.createServer(async (req, res) => {
       const pageSize  = Math.max(1, Number(parsed.searchParams.get("size")  || String(CFG_PAGE_SIZE)));
       const total = indexer.lineCount;
       const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+      // 追加: ファイルが存在しない場合や0行の場合、空の結果を返す
+      const stFile = safeStat(LOG_PATH);
+      if (!stFile || total === 0) {
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({
+          lines: "",
+          totalLines: total,
+          pageIndex,
+          pageSize,
+          totalPages,
+          size: stFile ? stFile.size : 0,
+          startIndex: 0
+        }));
+        return;
+      }
 
       // newest-first: 1ページ目が末尾
       const endLine   = Math.max(0, total - (pageIndex - 1) * pageSize);
@@ -634,7 +662,7 @@ async function streamEachLine(file: string, onLine: (line: string) => void | Pro
     while ((idx = buf.search(/\r?\n/)) !== -1) {
       const line = buf.slice(0, idx);
       buf = buf.slice(idx + (buf[idx] === "\r" && buf[idx + 1] === "\n" ? 2 : 1));
-      if (line) await onLine(line);
+      await onLine(line);
     }
   }
   if (buf) { await onLine(buf); } // 末尾に改行なしの場合
@@ -662,7 +690,7 @@ async function streamEachLineInRange(
       const line = buf.slice(0, idx);
       buf = buf.slice(idx + (m[0] === "\r\n" ? 2 : 1));
       lineNo += 1;
-      if (line) await onLine(line, lineNo);
+      await onLine(line, lineNo);
     }
   }
   if (buf.length > 0) {
