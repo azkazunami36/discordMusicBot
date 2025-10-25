@@ -215,6 +215,24 @@ export class EnvData {
     }
 }
 
+export class GlobalEnvData {
+    #envJSON(name: string, body?: string): string | undefined {
+        if (!fs.existsSync("globalEnv.json")) fs.writeFileSync("globalEnv.json", "{}");
+        const json = JSON.parse(String(fs.readFileSync("globalEnv.json")));
+        if (body !== undefined) {
+            json[name] = body;
+            fs.writeFileSync("globalEnv.json", JSON.stringify(json, null, "    "));
+        }
+        return json[name];
+    }
+    get botMessage() {
+        return this.#envJSON("botMessage") || "";
+    }
+    set botMessage(message: string) {
+        this.#envJSON("botMessage", message);
+    }
+}
+
 export class AlbumInfo {
     constructor() { }
     #readJSON(): {

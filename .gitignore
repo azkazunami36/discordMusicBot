@@ -7,6 +7,7 @@ twitterThumbnailCache
 videoInfoCache.json
 cache.jsonl
 env.json
+globalEnv.json
 *.d.ts
 *.js
 package-lock.json

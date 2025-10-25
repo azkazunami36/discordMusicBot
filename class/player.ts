@@ -154,6 +154,18 @@ export class Player extends EventEmitter {
         }
         // 2. 古い接続が正しい状態じゃなかったり存在しなかったら、新しい接続を始める。
         const connection = joinVoiceChannel({ guildId: guildId, channelId: channelId, adapterCreator: adapterCreator });
+        connection.on("stateChange", (oldState, newState) => {
+            if (newState.status === VoiceConnectionStatus.Destroyed) {
+                SumLog.log("VC接続の破棄ステータスを取得しました。", { functionName: "connection statechange", guildId: guildId, voiceChannelId: channelId });
+                try { connection.destroy(); } catch { };
+            }
+            if (newState.status === VoiceConnectionStatus.Disconnected) {
+                SumLog.log("VC接続の切断済みステータスを取得しました。", { functionName: "connection statechange", guildId: guildId, voiceChannelId: channelId });
+            }
+            if (newState.status === VoiceConnectionStatus.Ready) {
+                SumLog.log("VC接続の接続済みステータスを取得しました。", { functionName: "connection statechange", guildId: guildId, voiceChannelId: channelId });
+            }
+        })
         // 3. プレイヤーを作成し、VCの接続を待った後にプレイヤーを登録して返す。
         if (this.status[guildId]?.player) {
             const player = this.status[guildId].player;

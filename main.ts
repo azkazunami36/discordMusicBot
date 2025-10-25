@@ -13,7 +13,7 @@ process.on("unhandledRejection", (reason) => {
     SumLog.error("よくわからないけどunhandledRejectionっていうやつが発生しました。ログを見てください。", { functionName: "process.on" });
 });
 
-import { EnvData } from "./class/envJSON.js";
+import { EnvData, GlobalEnvData } from "./class/envJSON.js";
 import { ServersDataClass } from "./class/serversData.js";
 import { InteractionInputData } from "./funcs/interface.js";
 import { WebPlayerAPI } from "./class/webAPI.js";
@@ -464,9 +464,22 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         }
     }
 });
+client.on("shardResume", () => {
+    try {
+        const status: Discord.PresenceData = {};
+        status.status = "online";
+        status.activities = [{ name: (new GlobalEnvData()).botMessage }];
+        client.user?.setPresence(status);
+    } catch { }
+});
 client.on(Discord.Events.ClientReady, async () => {
     console.log("OK " + client.user?.displayName);
-    client.user?.setStatus("online");
+    try {
+        const status: Discord.PresenceData = {};
+        status.status = "online";
+        status.activities = [{ name: (new GlobalEnvData()).botMessage }];
+        client.user?.setPresence(status);
+    } catch { }
     (await client.guilds.fetch()).forEach(async data => {
         try {
             const guild = client.guilds.cache.get(data.id);
@@ -507,6 +520,8 @@ client.on(Discord.Events.ClientReady, async () => {
 });
 // VCの状態が変化したら実行します。
 client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
+    SumLog.log("VCの状態が変化しました。oldStateの情報を梱包しています。", { client, voiceChannelId: oldState.channelId || undefined, guildId: oldState.guild.id, userId: oldState.member?.id, functionName: "voicestatechange" });
+    SumLog.log("VCの状態が変化しました。newStateの情報を梱包しています。", { client, voiceChannelId: newState.channelId || undefined, guildId: newState.guild.id, userId: newState.member?.id, functionName: "voicestatechange" });
     /** 状態が変化したVCを取得 */
     const channel = newState.guild.channels.cache.get(newState.channelId || oldState.channelId || "");
     if (!channel || !channel.isVoiceBased() || !player.playingGet(channel.guildId)) return;
@@ -761,6 +776,17 @@ client.on(Discord.Events.MessageCreate, async message => {
             await botmessage.edit("再起動の準備が整いました。システムが終了しているか確認してください。");
             await client.destroy();
             process.exit(0);
+        }
+        if (message.content.startsWith(client.user?.displayName + "を再起動する")) {
+            const text = message.content.split("♡")[1];
+            const globalEnvData = new GlobalEnvData();
+            if (text) globalEnvData.botMessage = text
+            try {
+                const status: Discord.PresenceData = {};
+                status.status = "online";
+                status.activities = [{ name: globalEnvData.botMessage }];
+                client.user?.setPresence(status);
+            } catch { }
         }
     }
     // 1. bot呼び出しでないものをスキップする。
