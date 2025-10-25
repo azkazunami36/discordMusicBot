@@ -316,6 +316,67 @@ setInterval(async () => {
   }
 }, 1500);
 
+// ====== 検索ユーティリティ（複合条件 AND/OR 対応） ======
+type Condition = {
+  q: string;              // 検索語（部分一致・小文字比較）
+  field?: string;         // 列名: type | functionName | message | user | guild | textChannel | voiceChannel
+  exclude?: boolean;      // 除外条件（trueなら一致しないこと）
+};
+
+// 外側配列＝OR、内側配列＝AND
+// 例: [[{q:"error",field:"type"},{q:"join",field:"functionName"}], [{q:"fatal",field:"message"}]]
+//   → (typeに"error" AND functionNameに"join") OR (messageに"fatal")
+type ConditionSets = Condition[][];
+
+function buildFieldMapFromParsed(d: any): Record<string, string> {
+  const i = d?.info ?? {};
+  const g = i?.guild ?? {};
+  const tx = i?.textChannelId ?? {};
+  const vx = i?.voiceChannelId ?? {};
+  const u  = i?.userId ?? {};
+  return {
+    type: String(d?.type ?? ""),
+    functionName: String(i?.functionName ?? ""),
+    message: String(d?.message ?? ""),
+    user: String(u?.globalName ?? u?.displayName ?? u?.username ?? ""),
+    guild: String(g?.name ?? g?.id ?? ""),
+    textChannel: String(tx?.name ?? tx?.id ?? ""),
+    voiceChannel: String(vx?.name ?? vx?.id ?? ""),
+  };
+}
+
+function normalizeVal(v: unknown): string { return String(v ?? "").toLowerCase(); }
+
+function evaluateConditionSets(
+  sets: ConditionSets | null | undefined,
+  fieldMap: Record<string,string>,
+  fallback?: { field: string, q: string, exclude: boolean }
+): boolean {
+  // 後方互換：sets が無ければ単一条件で評価
+  if (!sets || !Array.isArray(sets) || sets.length === 0) {
+    if (!fallback) return true; // 条件なし
+    const val = normalizeVal(fieldMap[fallback.field] ?? "");
+    const hit = fallback.q ? val.includes(fallback.q.toLowerCase()) : true;
+    return fallback.exclude ? !hit : hit;
+  }
+  // 外側 OR、内側 AND
+  for (const andGroup of sets) {
+    if (!Array.isArray(andGroup)) continue;
+    let allOk = true;
+    for (const cond of andGroup) {
+      const field = (cond?.field ?? "message");
+      const q = String(cond?.q ?? "").toLowerCase();
+      const exclude = Boolean(cond?.exclude);
+      const val = normalizeVal(fieldMap[field] ?? "");
+      const hit = q ? val.includes(q) : true;
+      const ok = exclude ? !hit : hit;
+      if (!ok) { allOk = false; break; }
+    }
+    if (allOk) return true; // OR 成立
+  }
+  return false;
+}
+
 // ====== HTTP Server ======
 const server = http.createServer(async (req, res) => {
   try {
@@ -480,28 +541,22 @@ const server = http.createServer(async (req, res) => {
           endOff = indexer.getOffsetForLine(fd, endLine + 1);
         }
 
-        // 1パス：範囲内のマッチ（行テキスト＋実ファイル行番号）を収集
+        // 1パス：範囲内のマッチ（行テキスト＋実ファイル行番号）を収集（複合条件対応）
+        // 追加: conds=JSON（外側OR×内側AND）を受け付ける。例:
+        // [[{"q":"error","field":"type"},{"q":"join","field":"functionName"}], [{"q":"fatal","field":"message"}]]
+        let condSets: ConditionSets | null = null;
+        try {
+          const raw = parsed.searchParams.get("conds");
+          if (raw) condSets = JSON.parse(raw) as ConditionSets;
+        } catch {}
+        const fallback = { field, q, exclude };
+
         const matches: { line: string, lineNo: number }[] = [];
         await streamEachLineInRange(LOG_PATH, startOff, endOff, async (line, lineNoInFile) => {
           try {
             const d = JSON.parse(line);
-            const i = d.info || {};
-            const g = i.guild || {};
-            const tx = i.textChannelId || {};
-            const vx = i.voiceChannelId || {};
-            const u = i.userId || {};
-            const map: Record<string, string> = {
-              type: String(d.type || ""),
-              functionName: String(i.functionName || ""),
-              message: String(d.message || ""),
-              user: String(u.globalName || u.displayName || u.username || ""),
-              guild: String(g.name || g.id || ""),
-              textChannel: String(tx.name || tx.id || ""),
-              voiceChannel: String(vx.name || vx.id || ""),
-            };
-            const val = (map[field] || "").toLowerCase();
-            const hit = q ? val.includes(q.toLowerCase()) : true;
-            const ok = exclude ? !hit : hit;
+            const fieldMap = buildFieldMapFromParsed(d);
+            const ok = evaluateConditionSets(condSets, fieldMap, fallback);
             if (ok) matches.push({ line, lineNo: lineNoInFile });
           } catch {
             // 解析できない行はスキップ
@@ -546,28 +601,20 @@ const server = http.createServer(async (req, res) => {
       const page    = Math.max(1, Number(parsed.searchParams.get("index") || "1"));
       const size    = Math.max(1, Number(parsed.searchParams.get("size")  || String(CFG_PAGE_SIZE)));
 
-      // 1パス目：総ヒット数をカウント
+      // 1パス目：総ヒット数をカウント（複合条件対応）
+      let condSets: ConditionSets | null = null;
+      try {
+        const raw = parsed.searchParams.get("conds");
+        if (raw) condSets = JSON.parse(raw) as ConditionSets;
+      } catch {}
+      const fallback = { field, q, exclude };
+
       let totalHits = 0;
       await streamEachLine(LOG_PATH, (lineText) => {
         try {
           const d = JSON.parse(lineText);
-          const i = d.info || {};
-          const g = i.guild || {};
-          const tx = i.textChannelId || {};
-          const vx = i.voiceChannelId || {};
-          const u = i.userId || {};
-          const map: Record<string, string> = {
-            type: String(d.type || ""),
-            functionName: String(i.functionName || ""),
-            message: String(d.message || ""),
-            user: String(u.globalName || u.displayName || u.username || ""),
-            guild: String(g.name || g.id || ""),
-            textChannel: String(tx.name || tx.id || ""),
-            voiceChannel: String(vx.name || vx.id || ""),
-          };
-          const val = (map[field] || "").toLowerCase();
-          const hit = val.includes(q.toLowerCase());
-          if ((exclude && !hit) || (!exclude && hit)) totalHits += 1;
+          const fieldMap = buildFieldMapFromParsed(d);
+          if (evaluateConditionSets(condSets, fieldMap, fallback)) totalHits += 1;
         } catch {}
       });
 
@@ -589,7 +636,7 @@ const server = http.createServer(async (req, res) => {
       const endIdx   = Math.max(0, totalHits - (page - 1) * size) - 1;    // 0-based
       const startIdx = Math.max(0, endIdx - size + 1);
 
-      // 2パス目：指定レンジのマッチだけ拾う（かつ、実ライン番号も取得）
+      // 2パス目：指定レンジのマッチだけ拾う
       const picked: string[] = [];
       let firstPickedLineNo = -1;
       let hitNo = -1; // マッチの通し番号（0-based）
@@ -599,23 +646,8 @@ const server = http.createServer(async (req, res) => {
         lineNo += 1;
         try {
           const d = JSON.parse(lineText);
-          const i = d.info || {};
-          const g = i.guild || {};
-          const tx = i.textChannelId || {};
-          const vx = i.voiceChannelId || {};
-          const u = i.userId || {};
-          const map: Record<string, string> = {
-            type: String(d.type || ""),
-            functionName: String(i.functionName || ""),
-            message: String(d.message || ""),
-            user: String(u.globalName || u.displayName || u.username || ""),
-            guild: String(g.name || g.id || ""),
-            textChannel: String(tx.name || tx.id || ""),
-            voiceChannel: String(vx.name || vx.id || ""),
-          };
-          const val = (map[field] || "").toLowerCase();
-          const hit = val.includes(q.toLowerCase());
-          const ok = (exclude ? !hit : hit);
+          const fieldMap = buildFieldMapFromParsed(d);
+          const ok = evaluateConditionSets(condSets, fieldMap, fallback);
           if (ok) {
             hitNo += 1;
             if (hitNo >= startIdx && hitNo <= endIdx) {

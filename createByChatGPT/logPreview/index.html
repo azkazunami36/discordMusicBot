@@ -36,19 +36,43 @@
     <button id="next" class="btn">次へ →</button>
     <div id="pageInfo">Page 1 / 1</div>
 
-    <div style="display:flex; gap:6px; align-items:center;">
-      <input id="searchBox" type="text" placeholder="Search (全体検索)" style="padding:4px 6px; width: 320px;" />
-      <select id="searchField" style="padding:4px 6px;">
-        <option value="type">type</option>
-        <option value="functionName">functionName</option>
-        <option value="message" selected>message</option>
-        <option value="user">user</option>
-        <option value="guild">guild</option>
-        <option value="textChannel">textChannel</option>
-        <option value="voiceChannel">voiceChannel</option>
-      </select>
-      <label style="display:flex; gap:4px; align-items:center;"><input id="excludeToggle" type="checkbox" /> 除外</label>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button id="openSearchModal" class="btn" title="検索条件を編集">🔍</button>
+      <label style="display:flex; gap:6px; align-items:center;">
+        <input id="searchModeToggle" type="checkbox" /> 検索モード
+      </label>
     </div>
+  <style>
+    /* Modal 基本 */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index: 20; }
+    .modal { background:#fff; width:min(960px, 96vw); max-height: 86vh; overflow:auto; border:1px solid #888; border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+    .modal header { position: sticky; top:0; background:#f6f7f9; border-bottom:1px solid #ccc; padding:10px 12px; display:flex; gap:8px; align-items:center; z-index:1; }
+    .modal .content { padding:12px; display:flex; flex-direction:column; gap:12px; }
+    .chip { display:inline-flex; gap:6px; align-items:center; padding:6px 8px; border:1px solid #aaa; border-radius:6px; background:#fff; }
+    .group { border:1px dashed #bbb; padding:10px; border-radius:8px; background:#fafafa; display:flex; flex-direction:column; gap:8px; }
+    .group > .title { font-size:12px; color:#666; }
+    .hstack { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .vstack { display:flex; gap:8px; flex-direction:column; }
+    .sm { padding:4px 6px; }
+    .muted { color:#666; font-size:12px; }
+    .btn-icon { padding:4px 8px; border:1px solid #aaa; background:#fff; cursor:pointer; border-radius:6px; }
+  </style>
+
+  <div id="searchModalBackdrop" class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="searchModalTitle">
+      <header>
+        <strong id="searchModalTitle">検索条件（OR グループ × AND 条件）</strong>
+        <span class="spacer"></span>
+        <button id="addOrGroupBtn" class="btn">OR グループ追加</button>
+        <button id="applySearchBtn" class="btn">適用</button>
+        <button id="closeSearchBtn" class="btn">閉じる</button>
+      </header>
+      <div class="content">
+        <div class="muted">※ グループ＝OR。各グループ内の条件は AND。クエリが空の条件は無視され、空グループは自動で削除されます。全条件が空なら検索は実行されません。</div>
+        <div id="orGroups" class="vstack"></div>
+      </div>
+    </div>
+  </div>
 
     <!-- 検索中のみ表示する範囲UI -->
     <div id="rangeUI" style="display:none; gap:6px; align-items:center;">
@@ -107,6 +131,10 @@
         windowIndex: 0, windowCount: 1, windowStartLine: 0, windowEndLine: 0
       };
 
+      let searchMode = false; // false=通常, true=検索
+      /** @type {Array<Array<{q:string, field?:string, exclude?:boolean}>>} */
+      let condSets = []; // 外側OR × 内側AND
+
       let lastPos=0,pending="",currentPage=1,totalPages=1,totalLines=0,fileSize=0,onLatestPage=true;
       const tbody=document.querySelector("#table tbody"),
             pageInfo=document.getElementById("pageInfo"),
@@ -114,13 +142,18 @@
             bytesStat=document.getElementById("bytesStat"),
             prevBtn=document.getElementById("prev"),
             nextBtn=document.getElementById("next"),
-            searchBox=document.getElementById("searchBox"),
-            searchFieldSel=document.getElementById("searchField"),
-            excludeToggle=document.getElementById("excludeToggle"),
             rangeUI=document.getElementById("rangeUI"),
             wprevBtn=document.getElementById("wprev"),
             wnextBtn=document.getElementById("wnext"),
             winfo=document.getElementById("winfo");
+
+      const openSearchModalBtn = document.getElementById("openSearchModal");
+      const searchModeToggle = document.getElementById("searchModeToggle");
+      const modalBackdrop = document.getElementById("searchModalBackdrop");
+      const addOrGroupBtn = document.getElementById("addOrGroupBtn");
+      const applySearchBtn = document.getElementById("applySearchBtn");
+      const closeSearchBtn = document.getElementById("closeSearchBtn");
+      const orGroupsEl = document.getElementById("orGroups");
 
       function setRangeUIVisible(v){
         rangeUI.style.display = v ? "flex" : "none";
@@ -172,6 +205,50 @@
         return y+'/'+pad(m)+'/'+pad(da)+' '+pad(h)+':'+pad(mi)+':'+pad(s);
       }
       function normalize(v){ return (v==null?"":String(v)).toLowerCase(); }
+
+      const FIELDS = ["message","type","functionName","user","guild","textChannel","voiceChannel"]; // message を既定
+
+      function openModal(){ modalBackdrop.style.display = 'flex'; renderOrGroups(); }
+      function closeModal(){ modalBackdrop.style.display = 'none'; }
+
+      function renderOrGroups(){
+        orGroupsEl.innerHTML = "";
+        if(!Array.isArray(condSets) || condSets.length===0){ condSets = [[]]; }
+        condSets.forEach((andList, gi)=>{
+          const group = document.createElement('div'); group.className = 'group';
+          const title = document.createElement('div'); title.className='title'; title.textContent = `ORグループ #${gi+1}`; group.appendChild(title);
+
+          const addCondBtn = document.createElement('button'); addCondBtn.className='btn-icon'; addCondBtn.textContent = 'AND 条件追加';
+          addCondBtn.onclick = ()=>{ andList.push({q:"", field:"message", exclude:false}); renderOrGroups(); };
+
+          const removeGroupBtn = document.createElement('button'); removeGroupBtn.className='btn-icon'; removeGroupBtn.textContent = 'グループ削除';
+          removeGroupBtn.onclick = ()=>{ condSets.splice(gi,1); if(condSets.length===0) condSets=[[]]; renderOrGroups(); };
+
+          const header = document.createElement('div'); header.className='hstack'; header.append(addCondBtn, removeGroupBtn);
+          group.appendChild(header);
+
+          const list = document.createElement('div'); list.className='vstack';
+          andList.forEach((c, ci)=>{
+            const row = document.createElement('div'); row.className='hstack';
+            const q = document.createElement('input'); q.className='sm'; q.placeholder='query'; q.value = c.q||""; q.oninput=()=>{ c.q=q.value; };
+            const sel = document.createElement('select'); sel.className='sm'; FIELDS.forEach(f=>{ const o=document.createElement('option'); o.value=f; o.textContent=f; if((c.field||'message')===f) o.selected=true; sel.appendChild(o); }); sel.onchange=()=>{ c.field=sel.value; };
+            const ex = document.createElement('label'); ex.className='hstack';
+            const exi = document.createElement('input'); exi.type='checkbox'; exi.checked=!!c.exclude; exi.onchange=()=>{ c.exclude=exi.checked; };
+            const ext = document.createElement('span'); ext.textContent='除外'; ex.append(exi, ext);
+            const del = document.createElement('button'); del.className='btn-icon'; del.textContent='削除'; del.onclick=()=>{ andList.splice(ci,1); renderOrGroups(); };
+            row.append(q, sel, ex, del);
+            list.appendChild(row);
+          });
+          group.appendChild(list);
+          orGroupsEl.appendChild(group);
+        });
+      }
+
+      function effectiveConds(){
+        // 空クエリを除外、空グループを除外
+        const cleaned = (condSets||[]).map(g=> (g||[]).filter(c=> (c && typeof c.q==='string' && c.q.trim()!==''))).filter(g=> g.length>0);
+        return cleaned;
+      }
 
       // ★ lines配列と、実JSONL開始行番号(offsetBase)またはnumbers配列から描画
       function appendRowsFromLines(lines, offsetBase, numbers){
@@ -231,7 +308,7 @@
         tbody.appendChild(f);
 
         // 1ページ目（最新）＆通常モード時は PAGE_SIZE 超過で上から削除
-        if(mode==='normal' && (onLatestPage && (searchBox.value.trim()===''))){
+        if (mode === 'normal' && onLatestPage && !searchMode) {
           while(tbody.rows.length > PAGE_SIZE) tbody.deleteRow(0);
         }
       }
@@ -338,39 +415,34 @@
       //  検索（サーバー全体 /search-window）
       // =============================
       async function runSearch(page){
-        const q = searchBox.value.trim();
-        const field = searchFieldSel.value || "message";
-        const exclude = excludeToggle.checked ? 1 : 0;
-
-        if(q===""){
-          mode='normal';
-          setRangeUIVisible(false);
-          return initialLoad();
+        if(!searchMode){
+          mode='normal'; setRangeUIVisible(false); return initialLoad();
         }
-        mode='search';
-
-        // 範囲UIの表示ON
-        setRangeUIVisible(true);
-
+        const conds = effectiveConds();
+        if(conds.length===0){
+          // 条件が1つもなければ検索しない（通常表示へ）
+          mode='normal'; setRangeUIVisible(false); return initialLoad();
+        }
+        mode='search'; setRangeUIVisible(true);
         const windex = searchParams.windowIndex || 0;
+        const qs = new URLSearchParams();
+        qs.set('windex', String(windex));
+        qs.set('index', String(page||1));
+        qs.set('size', String(PAGE_SIZE));
+        qs.set('conds', encodeURIComponent(JSON.stringify(conds)));
         try{
-          const d=await fetchJSON(`/search-window?field=${encodeURIComponent(field)}&q=${encodeURIComponent(q)}&exclude=${exclude}&windex=${windex}&index=${page||1}&size=${PAGE_SIZE}`);
+          const d = await fetchJSON(`/search-window?${qs.toString()}`);
           const t=d.lines||""; const l=t?splitLinesNoRegex(t):[];
-
-          // サーバーからの window 情報で状態を更新
           const w = d.window || {};
           searchParams = {
-            field, q, exclude: !!exclude,
+            field: 'message', q: '', exclude: false,
             page: d.pageIndex||1, totalPages: d.totalPages||1, total: d.total||l.length,
             windowIndex: (w.index!=null ? Number(w.index): (windex||0)),
             windowCount: (w.windowCount!=null ? Number(w.windowCount): 1),
             windowStartLine: (w.startLine!=null ? Number(w.startLine): 0),
             windowEndLine: (w.endLine!=null ? Number(w.endLine): 0)
           };
-
-          setPageInfo();
-          updateRangeUIState();
-
+          setPageInfo(); updateRangeUIState();
           clearBody();
           const nums = Array.isArray(d.numbers) ? d.numbers : null;
           appendRowsFromLines(l, 0, nums);
@@ -386,9 +458,6 @@
       // UI イベント
       document.getElementById("prev").onclick=()=>{ if(mode==='search') goSearchPage((searchParams.page||1)-1); else goPage(currentPage-1); };
       document.getElementById("next").onclick=()=>{ if(mode==='search') goSearchPage((searchParams.page||1)+1); else goPage(currentPage+1); };
-      searchBox.addEventListener("input", ()=> runSearch(1));
-      searchFieldSel.addEventListener("change", ()=> runSearch(1));
-      excludeToggle.addEventListener("change", ()=> runSearch(1));
 
       // 範囲UIボタン
       wprevBtn.addEventListener("click", ()=>{
@@ -404,7 +473,7 @@
         }
       });
 
-      // クリック→検索に反映（#, date, message は除外）
+      // クリック→検索条件に追加（検索モード時はAND条件追加してモーダルを開く）
       // 0:#, 1:date, 2:type, 3:functionName, 4:message, 5:user, 6:guild, 7:textChannel, 8:voiceChannel
       function fieldByColIndex(idx){
         switch(idx){
@@ -418,18 +487,28 @@
         }
       }
       document.querySelector("#table tbody").addEventListener("click",(ev)=>{
-        const tdEl = ev.target.closest("td");
-        if(!tdEl) return;
+        const tdEl = ev.target.closest("td"); if(!tdEl) return;
         const idx = tdEl.cellIndex;
         const field = fieldByColIndex(idx);
         if(!field) return;
-        const value = (tdEl.textContent||"").trim();
-        if(!value) return;
-        searchFieldSel.value = field;
-        searchBox.value = value;
-        // ウィンドウは最新側（0）から検索を開始
-        searchParams.windowIndex = 0;
-        runSearch(1);
+        const value = (tdEl.textContent||"").trim(); if(!value) return;
+        // 検索モードで AND 条件を1つ追加してモーダルを開く
+        if(!Array.isArray(condSets) || condSets.length===0) condSets=[[]];
+        condSets[0].push({ q:value, field:field, exclude:false });
+        openModal();
+      });
+
+      // 検索モーダル制御
+      openSearchModalBtn.onclick = ()=>{ openModal(); };
+      closeSearchBtn.onclick = ()=>{ closeModal(); };
+      modalBackdrop.addEventListener('click', (e)=>{ if(e.target===modalBackdrop) closeModal(); });
+      addOrGroupBtn.onclick = ()=>{ condSets.push([]); renderOrGroups(); };
+      applySearchBtn.onclick = ()=>{ closeModal(); searchParams.windowIndex = 0; runSearch(1); };
+
+      searchModeToggle.addEventListener('change', ()=>{
+        searchMode = !!searchModeToggle.checked;
+        if(!searchMode){ mode='normal'; setRangeUIVisible(false); initialLoad(); }
+        else { runSearch(1); }
       });
 
       // 起動

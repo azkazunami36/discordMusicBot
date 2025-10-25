@@ -161,6 +161,7 @@ export class Player extends EventEmitter {
             }
             if (newState.status === VoiceConnectionStatus.Disconnected) {
                 SumLog.log("VC接続の切断済みステータスを取得しました。", { functionName: "connection statechange", guildId: guildId, voiceChannelId: channelId });
+                try { connection.destroy(); } catch { };
             }
             if (newState.status === VoiceConnectionStatus.Ready) {
                 SumLog.log("VC接続の接続済みステータスを取得しました。", { functionName: "connection statechange", guildId: guildId, voiceChannelId: channelId });
