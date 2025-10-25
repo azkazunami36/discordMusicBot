@@ -777,7 +777,7 @@ client.on(Discord.Events.MessageCreate, async message => {
             await client.destroy();
             process.exit(0);
         }
-        if (message.content.startsWith(client.user?.displayName + "を再起動する")) {
+        if (message.content.startsWith(client.user?.displayName + "のステータスメッセージ")) {
             const text = message.content.split("♡")[1];
             const globalEnvData = new GlobalEnvData();
             if (text) globalEnvData.botMessage = text
