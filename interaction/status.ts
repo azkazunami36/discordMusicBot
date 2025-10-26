@@ -29,7 +29,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             page: interaction.options.getNumber("page") || 1,
             client: interaction.client,
             playlist,
-            playing: { playingPlaylist: inputData.player.playingGet(guildData.guildId), playingTime: inputData.player.playtimeGet(guildData.guildId) }
+            playing: { playingPlaylist: inputData.player.playingGet(guildData.guildId)?.playlist, playingTime: inputData.player.playtimeGet(guildData.guildId) }
         });
         await message.edit({ embeds: [embed] });
     }

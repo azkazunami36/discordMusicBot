@@ -139,18 +139,36 @@ export class VariableExistCheck {
     async playerIsPlaying(player: Player) {
         const guildData = await this.guild();
         if (!guildData) return;
-        if (player.playingGet(guildData.guildId)) {
+        if (player.playStatusGet(guildData.guildId) === "play") {
             try { await this.interaction.editReply({ embeds: [messageEmbedGet("すでに再生中です。`/help`で使い方をみることができます。", this.interaction.client)] }); } catch (e) { };
             SumLog.log("既に再生中です。", { guildId: this.interaction.guildId || undefined, userId: this.interaction.user.id, functionName: "VariableExistCheck", textChannelId: this.interaction.channelId });
+            return true;
+        } else return false;
+    }
+    async playerIsStopping(player: Player) {
+        const guildData = await this.guild();
+        if (!guildData) return;
+        if (player.playStatusGet(guildData.guildId) === "stop") {
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("停止されているためその操作はできません。`/help`で使い方をみることができます。", this.interaction.client)] }); } catch (e) { };
+            SumLog.log("停止中でした。", { guildId: this.interaction.guildId || undefined, userId: this.interaction.user.id, functionName: "VariableExistCheck", textChannelId: this.interaction.channelId });
             return true;
         } else return false;
     }
     async playerIsNotPlaying(player: Player) {
         const guildData = await this.guild();
         if (!guildData) return;
-        if (!player.playingGet(guildData.guildId)) {
+        if (player.playStatusGet(guildData.guildId) !== "play") {
             try { await this.interaction.editReply({ embeds: [messageEmbedGet("再生されていないためその操作はできません。`/help`で使い方をみることができます。", this.interaction.client)] }); } catch (e) { };
             SumLog.log("再生されていませんでした。", { guildId: this.interaction.guildId || undefined, userId: this.interaction.user.id, functionName: "VariableExistCheck", textChannelId: this.interaction.channelId });
+            return true;
+        } else return false;
+    }
+    async playerIsNotStopping(player: Player) {
+        const guildData = await this.guild();
+        if (!guildData) return;
+        if (player.playStatusGet(guildData.guildId) !== "stop") {
+            try { await this.interaction.editReply({ embeds: [messageEmbedGet("停止されていないためその操作はできません。`/help`で使い方をみることができます。", this.interaction.client)] }); } catch (e) { };
+            SumLog.log("停止中ではありませんでした。", { guildId: this.interaction.guildId || undefined, userId: this.interaction.user.id, functionName: "VariableExistCheck", textChannelId: this.interaction.channelId });
             return true;
         } else return false;
     }

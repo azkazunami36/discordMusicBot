@@ -7,6 +7,8 @@ import fs from "fs";
 import Stream from "stream";
 import { EventEmitter } from "events";
 import { SumLog } from "./sumLog.js";
+import { Client } from "discord.js";
+import { voiceChatRecorder } from "./voiceChatRecorder.js";
 
 interface PlayerEvent {
     playStart: [guildId: string];
@@ -42,23 +44,31 @@ export class Player extends EventEmitter {
         [guildId: string]: {
             /** このサーバーで使用するプレイヤーです。 */
             player: AudioPlayer;
-            /** playerGetで使用します。プレイヤーがconnectionに登録されているかどうかの状態検出ようです。 */
-            subscription?: PlayerSubscription;
-            /** 再生が終了したとコールバックするまでの猶予です。 */
-            endCallbackTimeout?: NodeJS.Timeout;
-            playing?: Playlist;
-            volume?: number;
-            /** 再生速度です。 */
-            tempo?: number;
-            /** 音程です。 */
-            pitch?: number;
-            /** FFmpegに依存しています。 */
+            /** FFmpegプロセスです。 */
             spawn?: ChildProcessByStdio<null, Stream.Readable, Stream.Readable>;
-            /** 再生の際に使用します。FFmpegに依存しています。 */
+            /** 再生の際に使用します。 */
             resource?: AudioResource;
-            /** 再生開始位置です。現在の再生位置を取得するために使用します。FFmpegに依存しています。 */
+            /** playerGetで使用します。プレイヤーがconnectionに登録されているかどうかの状態検出用です。 */
+            subscription?: PlayerSubscription;
+            /** 残りの再生時間を計測するタイムアウトです。再生が終了したと同時に発火される仕様なはずです。 */
+            playEndTimeout?: NodeJS.Timeout;
+            /** 再生に使用しているデータです。未設定だと再生不可です。 */
+            playing?: {
+                playlist: Playlist;
+                meta: {
+                    filePath: string;
+                    ffprobe: ffmpeg.FfprobeStream;
+                }
+            };
+            /** 音量です。未設定だと100です。 */
+            volume?: number;
+            /** 再生速度です。未設定だと1です。 */
+            tempo?: number;
+            /** 音程です。未設定だと0です。 */
+            pitch?: number;
+            /** 再生開始位置です。現在の再生位置を取得するために使用します。未設定だと0です。 */
             playtimeMargin?: number;
-            /** フィルターを適用します。 */
+            /** フィルターを適用します。未設定だとオフです。 */
             reverbType?: "church" | "tunnel" | "ushapedvalley";
         } | undefined;
     } = {};
@@ -68,8 +78,10 @@ export class Player extends EventEmitter {
      * プレイヤー内でクラスを管理します。
      */
     sourcePathManager: SourcePathManager;
-    constructor() {
+    #client: Client;
+    constructor(client: Client) {
         super();
+        this.#client = client;
         this.sourcePathManager = sourcePathManager;
     }
     /** ファイルパスやメタデータを取得します。undefinedだとファイルが存在しないか正しい内容でないか、壊れたファイルです。 */
@@ -97,39 +109,20 @@ export class Player extends EventEmitter {
      * channelIdなどを入力しない場合、新しいVC接続はされないため、undefinedの場合、botがVCに接続していないことになります。
      */
     async #playerGet(guildId: string, channelId?: string, adapterCreator?: DiscordGatewayAdapterCreator) {
-        function playerIdleEvent(this: Player) {
-            if (this.status[guildId]) {
-                this.status[guildId].playing = undefined;
-                /** もしプロセス内部で回避のできないPlayerによるIdleイベントであった場合を加味して、1秒返信を遅らせます。 */
-                this.status[guildId].endCallbackTimeout = setTimeout(() => { this.emit("playAutoEnd", guildId); }, 500);
-            }
-        };
-        function playerNotIdleEvent(this: Player, newState: AudioPlayerState) {
-            if (newState.status !== AudioPlayerStatus.Idle) {
-                if (this.status[guildId]?.endCallbackTimeout) {
-                    clearTimeout(this.status[guildId].endCallbackTimeout);
-                    this.status[guildId].endCallbackTimeout = undefined;
-                }
-            }
-        };
         // 1. 古い接続を取得する。
         const oldConnection = getVoiceConnection(guildId);
         if (oldConnection) {
             // 1. 古い接続が接続したいチャンネルに参加している場合はそのまま利用する。
             if (!channelId || channelId && (oldConnection.joinConfig.channelId === channelId)) {
                 const player = this.status[guildId]?.player;
-                if (player) return player;
+                if (player) {
+                    return player;
+                }
                 else {
                     SumLog.warn("プレイヤーが存在するはずなのに存在しませんでした。注意する必要があります。", { functionName: "Player playerGet" });
                     console.warn("Player.playerGet: ボイスチャンネルの取得に成功し、すでにプレイヤーが用意されていることが確定している状態で、プレイヤーを取得することができませんでした。挙動が不安定になる可能性があります。");
                     // プレイヤーが存在しなかったらプレイヤーを作成し、登録をした上で返す。これはあまり使われないコード。
                     const player = new AudioPlayer();
-                    player.on(AudioPlayerStatus.Idle, (oldState, newState) => {
-                        playerIdleEvent.call(this);
-                    });
-                    player.on("stateChange", (oldState, newState) => {
-                        playerNotIdleEvent.call(this, newState);
-                    });
                     const stats = (() => {
                         const stats = this.status[guildId] || { player };
                         if (!this.status[guildId]) this.status[guildId] = stats;
@@ -173,23 +166,18 @@ export class Player extends EventEmitter {
             try {
                 await entersState(connection, VoiceConnectionStatus.Ready, 10000);
             } catch (e) {
-                SumLog.error("プレイヤーの準備２時間がかかりすぎたためタイムアウトになりました。", { functionName: "Player playerGet" });
-                console.error("Player.playerGet: ボイスチャンネルが準備できるまでに時間がかかりすぎてしまい、エラー処理となりました。");
-                connection.destroy();
+                SumLog.error("プレイヤーの準備に時間がかかりすぎたためタイムアウトになりました。この時のステータスは" + connection.state.status + "でした。", { functionName: "Player playerGet" });
+                console.error("Player.playerGet: ボイスチャンネルが準備できるまでに時間がかかりすぎてしまい、エラー処理となりました。", connection.state.status);
+                try { connection.destroy(); } catch { }
                 if (this.status[guildId]?.playing) this.status[guildId].playing = undefined;
                 return undefined;
             }
             const stats = this.status[guildId];
             stats.subscription = connection.subscribe(player);
+            voiceChatRecorder(guildId, this.#client, connection);
             return player;
         }
         const player = new AudioPlayer();
-        player.on(AudioPlayerStatus.Idle, (oldState, newState) => {
-            playerIdleEvent.call(this);
-        });
-        player.on("stateChange", (oldState, newState) => {
-            playerNotIdleEvent.call(this, newState);
-        });
         player.on("error", e => {
             SumLog.error("プレイヤーでエラーが発生しました。ログを確認してください。簡易メッセージです: " + e.message, { functionName: "Player playerGet" });
             console.log("player", e);
@@ -197,8 +185,9 @@ export class Player extends EventEmitter {
         try {
             await entersState(connection, VoiceConnectionStatus.Ready, 10000);
         } catch (e) {
-            console.error("Player.playerGet: ボイスチャンネルが準備できるまでに時間がかかりすぎてしまい、エラー処理となりました。");
-            connection.destroy();
+            SumLog.error("プレイヤーの準備に時間がかかりすぎたためタイムアウトになりました。この時のステータスは" + connection.state.status + "でした。", { functionName: "Player playerGet" });
+            console.error("Player.playerGet: ボイスチャンネルが準備できるまでに時間がかかりすぎてしまい、エラー処理となりました。", connection.state.status);
+            try { connection.destroy(); } catch { }
             if (this.status[guildId]?.playing) this.status[guildId].playing = undefined;
             return undefined;
         }
@@ -215,9 +204,12 @@ export class Player extends EventEmitter {
                     this.status[guildId].subscription?.unsubscribe();
                     this.status[guildId].subscription = undefined;
                     if (this.status[guildId].playing) this.status[guildId].playing = undefined;
+                    if (this.status[guildId].playEndTimeout) clearTimeout(this.status[guildId].playEndTimeout);
+                    this.stop(guildId);
                 }
             }
-        })
+        });
+        voiceChatRecorder(guildId, this.#client, connection);
         return player;
     }
     ffmpegPlay(data: {
@@ -227,13 +219,10 @@ export class Player extends EventEmitter {
         channelId?: string;
         /** もしVCに参加していなかったらこれが必要です。指定しない場合、VCに参加できません。 */
         adapterCreator?: DiscordGatewayAdapterCreator;
-        meta: {
-            filePath: string;
-            ffprobe: ffmpeg.FfprobeStream;
-        }
     }) {
         const guildId = data.guildId;
         if (!this.status[guildId]) return console.warn("Player.ffmpegPlay: playerGetで定義されたはずのstatus内変数が取得できませんでした。再生はできません。");
+        if (!this.status[guildId].playing) return SumLog.log("playingデータを取得できなかったため、再生されません。", { functionName: "Player ffmpegPlay", guildId: data.guildId, voiceChannelId: data.channelId })
         if (this.status[guildId].player.state.status === AudioPlayerStatus.Playing) this.status[guildId].player.stop();
         if (this.status[guildId].spawn) this.status[guildId].spawn.kill();
         if (this.status[guildId].resource) this.status[guildId].resource = undefined;
@@ -351,7 +340,7 @@ export class Player extends EventEmitter {
         args.push(
             "-hide_banner", "-loglevel", "error", "-nostdin",
             "-ss", toTimestamp(this.status[guildId].playtimeMargin || 0),
-            "-i", data.meta.filePath,
+            "-i", this.status[guildId].playing.meta.filePath,
         );
         const irfile = (() => {
             switch (this.status[guildId]?.reverbType) {
@@ -396,11 +385,11 @@ export class Player extends EventEmitter {
         this.status[guildId].spawn = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
         this.status[guildId].spawn.on("error", e => {
             SumLog.error("FFmpegを実行するspawnでエラーを受信しました。: " + e.message, { functionName: "ffmpegPlay" });
-            console.log(e)
+            console.log(e);
         });
         this.status[guildId].spawn.stderr.on("error", e => {
             SumLog.error("FFmpegを実行するspawnでエラーを受信しました。: " + e.message, { functionName: "ffmpegPlay" });
-            console.log(e)
+            console.log(e);
         });
         // === FFmpeg 出力バッファ（約1分相当を想定）===
         // Ogg/Opus は可変ビットレートのため厳密な秒数ではありませんが、
@@ -433,6 +422,11 @@ export class Player extends EventEmitter {
         this.status[guildId].resource.volume?.setVolume((this.status[guildId].volume || 100) / 750);
         // 9. 再生を開始。
         this.status[guildId].player.play(this.status[guildId].resource);
+        if (this.status[guildId].playEndTimeout) clearTimeout(this.status[guildId].playEndTimeout);
+        if (!this.status[guildId].playing.meta.ffprobe.duration) SumLog.warn("次のFFprobe情報にはdurationがなく、かなり危険な状態です。現在続行可能な処理がないため、続きの曲が再生できません。", { guildId, voiceChannelId: data.channelId, functionName: "Player ffmpegPlay" });
+        this.status[guildId].playEndTimeout = setTimeout(() => {
+            this.emit("playAutoEnd", guildId);
+        }, ((Number(this.status[guildId].playing.meta.ffprobe.duration) ?? 0) - (this.status[guildId].playtimeMargin || 0)) * 1000);
     }
     /** 
      * 指定した内容に強制的に切り替えます。
@@ -475,7 +469,7 @@ export class Player extends EventEmitter {
             } catch { }
             throw new Error("想定外の挙動です。通常音楽botがVCに参加すると定義されるはずの、サーバーごとの再生状態データが定義されず、正しい処理が行えません。エラーが特定されるまで、他の操作をお試しください。");
         }
-        this.status[guildId].playing = data.source;
+        this.status[guildId].playing = { playlist: data.source, meta };
         this.status[guildId].reverbType = data.reverbType;
         // 7. FFmpeg再生ストリームを作成。
         this.status[guildId].playtimeMargin = (data.playtime > 0) ? (data.playtime < Number(meta.ffprobe.duration)) ? data.playtime : Number(meta.ffprobe.duration) : 0;
@@ -485,10 +479,34 @@ export class Player extends EventEmitter {
         this.ffmpegPlay({
             guildId: data.guildId,
             channelId: data.channelId,
-            adapterCreator: data.adapterCreator,
-            meta: meta,
+            adapterCreator: data.adapterCreator
         })
-
+    }
+    async join(data: {
+        /** どのサーバーで参加するかを決めます。 */
+        guildId: string;
+        /** どのVCに参加するかを決めます。 */
+        channelId: string;
+        /** もしVCに参加していなかったらこれが必要です。 */
+        adapterCreator: DiscordGatewayAdapterCreator;
+    }) {
+        const player = await this.#playerGet(data.guildId, data.channelId, data.adapterCreator);
+        if (!player) {
+            throw new Error("VCに参加することができませんでした。このエラーは管理者が気づき次第エラーを特定して修正されます。他の曲を試すか、サーバーの設定をご確認ください。")
+        };
+        SumLog.log("音声データを持たずにボイスチャンネルに参加しました。", { guildId: data.guildId, voiceChannelId: data.channelId, functionName: "Player join" });
+    }
+    /** 再生を開始します。joinやsourceSetなどがされていないとうまく動作しません。vc参加済み、 */
+    play(guildId: string) {
+        this.ffmpegPlay({ guildId });
+    }
+    pause(guildId: string) {
+        if (this.status[guildId]) {
+            this.status[guildId].player.stop();
+            if (this.status[guildId].spawn) this.status[guildId].spawn.kill();
+            if (this.status[guildId].playEndTimeout) clearTimeout(this.status[guildId].playEndTimeout);
+            this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
+        }
     }
     /** 再生を停止します。サーバー内のどのチャンネルであっても停止をします。 */
     stop(guildId: string) {
@@ -496,6 +514,7 @@ export class Player extends EventEmitter {
             this.status[guildId].player.stop();
             if (this.status[guildId].spawn) this.status[guildId].spawn.kill();
             if (this.status[guildId].playing) this.status[guildId].playing = undefined;
+            if (this.status[guildId].playEndTimeout) clearTimeout(this.status[guildId].playEndTimeout);
         }
         const oldConnection = getVoiceConnection(guildId);
         if (oldConnection) oldConnection.destroy(); // destroyedイベントでplayerの登録は解除されます。
@@ -504,51 +523,56 @@ export class Player extends EventEmitter {
     playtimeGet(guildId: string) {
         return (this.status[guildId]?.playtimeMargin || 0) + (this.status[guildId]?.resource ? this.status[guildId].resource.playbackDuration / 1000 * (this.status[guildId].tempo || 1) : 0);
     }
-    async playtimeSet(guildId: string, playtime: number) {
+    /**
+     * playerの状態を返します。
+     * - VCに参加しているかしていないか
+     * - 再生データが保持されているかされていないか
+     * - playerのステータスがアイドルかどうか
+     * 
+     * これらを使用し、条件が重なるとさまざまなことがわかります。
+     * - VCに参加していなければstop中
+     * - VCに参加しているが再生データが保持されていなければjoined(forcedPlay必須)
+     * - VCに参加していて再生データが保持されているがplayerのステータスがアイドルである時はpause中(playで再生可能)
+     * - VCに参加していて再生データが保持されていてplayerのステータスがアイドルでない時はplay中
+     */
+    playStatusGet(guildId: string) {
+        const vcJoinedIs = getVoiceConnection(guildId);
+        const playdataIs = this.status[guildId]?.playing;
+        const playIs = this.status[guildId]?.player.state.status !== AudioPlayerStatus.Idle;
+        return vcJoinedIs ? playdataIs ? playIs ? "play" : "pause" : "joined" : "stop";
+    }
+    /** 現在の再生しているメディアを出力します。 */
+    playingGet(guildId: string) {
+        return this.status[guildId]?.playing;
+    }
+    playtimeSet(guildId: string, playtime: number) {
         if (!this.status[guildId] || !this.status[guildId].playing) return;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing, (() => { }));
-        if (!meta) {
-            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
-            throw new Error("音声ファイルが無効または音声ファイルのダウンロードに失敗しています。このエラーは管理者が気づき次第エラーを特定し修正されます。他の曲をお試しください。")
-        }
-        this.status[guildId].playtimeMargin = (playtime > 0) ? (playtime < Number(meta.ffprobe.duration)) ? playtime : Number(meta.ffprobe.duration) : 0;
-        this.ffmpegPlay({
-            guildId: guildId,
-            meta: meta,
+        this.status[guildId].playtimeMargin = (playtime > 0) ? (playtime < Number(this.status[guildId].playing.meta.ffprobe.duration)) ? playtime : Number(this.status[guildId].playing.meta.ffprobe.duration) : 0;
+        if (this.playStatusGet(guildId) === "play") this.ffmpegPlay({
+            guildId: guildId
         })
     }
-    async reverbSet(guildId: string, reverbType?: "church" | "tunnel" | "ushapedvalley") {
+    reverbSet(guildId: string, reverbType?: "church" | "tunnel" | "ushapedvalley") {
         if (!this.status[guildId] || !this.status[guildId].playing) return;
         this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
         this.status[guildId].reverbType = reverbType;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing, (() => { }));
-        if (!meta) {
-            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
-            throw new Error("音声データを取得できませんでした。再度試すか、`/delete range:1`で削除し、他の曲を再生してください。")
-        }
-        this.ffmpegPlay({
-            guildId: guildId,
-            meta: meta,
+        if (this.playStatusGet(guildId) === "play") this.ffmpegPlay({
+            guildId: guildId
         })
     }
     /** 再生するファイルを変更します。FFmpeg依存のため、複雑なコードになっています。 */
     async sourceSet(guildId: string, source: Playlist, statusCallback?: (status: "loading" | "queue" | "formatchoosing" | "downloading" | "converting" | "done", percent: number) => void) {
         if (!this.status[guildId]) return;
-        this.status[guildId].playing = source;
-        this.status[guildId].playtimeMargin = 0;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing, statusCallback || (() => { }));
+        const meta = await this.#fileMetaGet(source, statusCallback || (() => { }));
         if (!meta) {
             console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
             throw new Error("音声データを取得できませんでした。再度試すか、`/delete range:1`で削除し、他の曲を再生してください。")
         }
-        this.ffmpegPlay({
-            guildId: guildId,
-            meta: meta,
+        this.status[guildId].playing = { playlist: source, meta };
+        this.status[guildId].playtimeMargin = 0;
+        if (this.playStatusGet(guildId) === "play") this.ffmpegPlay({
+            guildId: guildId
         })
-    }
-    /** 現在の再生しているメディアを出力します。VC情報が取得できないと再生していない判定として、undefinedを返します。 */
-    playingGet(guildId: string) {
-        return getVoiceConnection(guildId) ? this.status[guildId]?.playing : undefined;
     }
     /** 音量を設定します。 */
     volumeSet(guildId: string, volume: number) {
@@ -557,33 +581,21 @@ export class Player extends EventEmitter {
         this.status[guildId].resource?.volume?.setVolume((this.status[guildId].volume || 100) / 750);
     }
     /** 速度を設定します。FFmpeg依存のため、複雑なコードになっています。新しいAPIになったら簡単になります。 */
-    async speedSet(guildId: string, tempo: number) {
+    speedSet(guildId: string, tempo: number) {
         if (!this.status[guildId] || !this.status[guildId].playing) return;
         this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
         this.status[guildId].tempo = (tempo > 0.1) ? (tempo < 20) ? tempo : 20 : 0.1;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing, () => { });
-        if (!meta) {
-            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
-            throw new Error("音声データを取得できませんでした。再度試すか、`/delete range:1`で削除し、他の曲を再生してください。")
-        }
-        this.ffmpegPlay({
-            guildId: guildId,
-            meta: meta,
-        })
+        if (this.playStatusGet(guildId) === "play") this.ffmpegPlay({
+            guildId: guildId
+        });
     }
     /** 音程を設定します。FFmpeg依存のため、複雑なコードになっています。新しいAPIになったら簡単になります。 */
-    async pitchSet(guildId: string, pitch: number) {
+    pitchSet(guildId: string, pitch: number) {
         if (!this.status[guildId] || !this.status[guildId].playing) return;
         this.status[guildId].playtimeMargin = this.playtimeGet(guildId);
         this.status[guildId].pitch = (pitch > -100) ? (pitch < 100) ? pitch : 100 : -100;
-        const meta = await this.#fileMetaGet(this.status[guildId].playing, () => { });
-        if (!meta) {
-            console.warn("Player.forcedPlay: metaが取得できませんでした。再生はできません。");
-            throw new Error("音声データを取得できませんでした。再度試すか、`/delete range:1`で削除し、他の曲を再生してください。")
-        }
-        this.ffmpegPlay({
-            guildId: guildId,
-            meta: meta,
+        if (this.playStatusGet(guildId) === "play") this.ffmpegPlay({
+            guildId: guildId
         })
     }
 }

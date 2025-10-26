@@ -6,8 +6,8 @@ import { EnvData } from "../class/envJSON.js";
 import { messageEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()
-    .setName("stop")
-    .setDescription("再生を停止します。")
+    .setName("pause")
+    .setDescription("再生を一時停止します。")
 export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
@@ -16,13 +16,9 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        const envData = new EnvData(guildData.guildId);
-        const playlist = envData.playlist;
         if (!await variableExistCheck.voiceChannelId()) return;
-        if (await variableExistCheck.playerIsStopping(inputData.player)) return;
-        if (envData.playType === 1) playlist.shift();
-        inputData.player.stop(guildData.guildId);
-        await message.edit({ embeds: [messageEmbedGet("曲を停止しました。", interaction.client)] });
-        envData.manualStartedIs = false;
+        if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
+        inputData.player.pause(guildData.guildId);
+        await message.edit({ embeds: [messageEmbedGet("曲を一時停止しました。", interaction.client)] });
     }
 }

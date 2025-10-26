@@ -17,3 +17,4 @@ package-lock.json
 musicBrainzCache.json
 log
 cacheJSONs
+voiceFolder

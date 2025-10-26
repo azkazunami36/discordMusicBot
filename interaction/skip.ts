@@ -28,12 +28,12 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const envData = new EnvData(guildData.guildId);
         let skipnumber = ((interaction.options.getNumber("skipnum") || 2) - 1);
         while (skipnumber >= envData.playlist.length()) skipnumber = - envData.playlist.length();
-        if (skipnumber <= 0) return message.edit({ embeds: [messageEmbedGet("プレイリストに次の曲がないため、スキップすることができません。", interaction.client)] });
+        if (skipnumber < 0) return message.edit({ embeds: [messageEmbedGet("プレイリストに次の曲がないため、スキップすることができません。", interaction.client)] });
         const play = envData.playlist.get(skipnumber);
         if (!play) return message.edit({ embeds: [messageEmbedGet("プレイリストに次の曲がないため、スキップすることができません。", interaction.client)] });
         for (let i = 0; i < skipnumber; i++) {
             const startPlaylistData = envData.playlist.shift();
-            if (i !== 0 && startPlaylistData) envData.playlist.push(startPlaylistData);
+            if ((envData.playType !== 1 || i !== 0) && startPlaylistData) envData.playlist.push(startPlaylistData);
         }
         let embed: EmbedBuilder | undefined;
         const metaEmbed = await videoInfoEmbedGet([play], "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`", interaction.client, eb => { embed = eb; });

@@ -6,8 +6,8 @@ import { EnvData } from "../class/envJSON.js";
 import { messageEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()
-    .setName("stop")
-    .setDescription("再生を停止します。")
+    .setName("join")
+    .setDescription("VCに参加します。")
 export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
@@ -16,13 +16,15 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
+        const voiceChannelId = await variableExistCheck.voiceChannelId()
+        if (!voiceChannelId) return;
+        if (await variableExistCheck.playerIsNotStopping(inputData.player)) return;
+        const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
+        if (!serverData) return;
+        serverData.discord.calledChannel = interaction.channelId;
+        inputData.player.join({guildId: guildData.guildId, channelId: voiceChannelId, adapterCreator: guildData.guild.voiceAdapterCreator});
+        await message.edit({ embeds: [messageEmbedGet("ボイスチャットに接続しました。", interaction.client)] });
         const envData = new EnvData(guildData.guildId);
-        const playlist = envData.playlist;
-        if (!await variableExistCheck.voiceChannelId()) return;
-        if (await variableExistCheck.playerIsStopping(inputData.player)) return;
-        if (envData.playType === 1) playlist.shift();
-        inputData.player.stop(guildData.guildId);
-        await message.edit({ embeds: [messageEmbedGet("曲を停止しました。", interaction.client)] });
-        envData.manualStartedIs = false;
+        envData.manualStartedIs = true;
     }
 }

@@ -191,6 +191,13 @@ export class EnvData {
     get restartedPlayPoint() {
         return Number(this.#envJSON("restartedPlayPoint") || -1);
     }
+    /** 初期値はfalseです */
+    set restartedPlayIs(playIs: boolean) {
+        this.#envJSON("restartedPlayIs", playIs ? "true" : "false");
+    }
+    get restartedPlayIs() {
+        return this.#envJSON("restartedPlayIs") === "true" ? true : false;
+    }
     set restartedCalledChannel(point: string) {
         this.#envJSON("restartedCalledChannel", point);
     }
@@ -212,6 +219,19 @@ export class EnvData {
             case "tunnel": return "tunnel";
             case "ushapedvalley": return "ushapedvalley";
         }
+    }
+    set recordedAudioFileSaveChannelTo(channelId: string) {
+        this.#envJSON("recordedAudioFileSaveChannelTo", channelId);
+    }
+    get recordedAudioFileSaveChannelTo() {
+        return this.#envJSON("recordedAudioFileSaveChannelTo") || "";
+    }
+    /** 初期値はfalse */
+    set manualStartedIs(boolean: boolean) {
+        this.#envJSON("manualStartedIs", boolean ? "true" : "false");
+    }
+    get manualStartedIs() {
+        return this.#envJSON("manualStartedIs") === "true";
     }
 }
 

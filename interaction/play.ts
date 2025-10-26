@@ -26,7 +26,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!text && await variableExistCheck.playlistIsEmpty()) return;
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        if (!text && inputData.player.playingGet(guildData.guildId)) return message.edit({ embeds: [messageEmbedGet("すでに再生中です。`/help`で使い方をみることができます。", interaction.client)] });
+        if (!text && inputData.player.playStatusGet(guildData.guildId) === "play") return message.edit({ embeds: [messageEmbedGet("すでに再生中です。`/help`で使い方をみることができます。", interaction.client)] });
         const vchannelId = await variableExistCheck.voiceChannelId();
         if (!vchannelId) return;
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
@@ -35,7 +35,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         console.log(text)
         serverData.discord.calledChannel = interaction.channelId;
         let stopIs = false;
-        if (text && !inputData.player.playingGet(guildData.guildId)) {
+        if (text && inputData.player.playStatusGet(guildData.guildId) !== "play") {
             await urlToQueue(text, guildData, null, message, async (percent, status, playlist, option) => {
                 switch (status) {
                     case "analyzing": {
@@ -61,7 +61,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 }
             }, { soloAdd: true, firstAdd: true });
         }
-        if (text && inputData.player.playingGet(guildData.guildId)) {
+        if (text && inputData.player.playStatusGet(guildData.guildId) === "play") {
             await urlToQueue(text, guildData, null, message, async (percent, status, playlist) => {
                 switch (status) {
                     case "analyzing": {
@@ -88,7 +88,10 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 }
             });
         }
-        if (!stopIs && !inputData.player.playingGet(guildData.guildId)) {
+        if (!text && inputData.player.playStatusGet(guildData.guildId) === "pause") {
+            inputData.player.play(guildData.guildId);
+            await message.edit({ embeds: [messageEmbedGet("再生を再開しました。", interaction.client)] });
+        } else if (!stopIs && inputData.player.playStatusGet(guildData.guildId) !== "play") {
             const playlistData = envData.playlist.get(0);
             if (!playlistData) {
                 SumLog.warn("通常この位置だとプレイリストに曲が存在するのに、取得できませんでした。" + JSON.stringify(playlistData), { functionName: "play" })

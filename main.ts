@@ -41,7 +41,7 @@ const serversDataClass = new ServersDataClass(client);
 const serversData = serversDataClass.serversData;
 const webPlayerAPI = new WebPlayerAPI(serversDataClass, client);
 /** 全てのVCの動作を追いかけるクラスです。 */
-const player = new Player();
+const player = new Player(client);
 
 
 /** 再生をしきったあとにする操作です。たいていリピート操作や再生停止操作などが行われます。 */
@@ -67,15 +67,22 @@ player.on("playAutoEnd", async (guildId) => {
     const playlistData = playlist.get(0);
     if (!playlistData) {
         try {
-            if (channel && channel.isTextBased()) {
-                await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
+            if (envData.manualStartedIs) {
+                if (channel && channel.isTextBased()) {
+                    await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため再生を一時停止中です。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
+                }
+                SumLog.log("プレイリストが空になりました。しかしjoinを使っているため退出はしていません。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
+            } else {
+                if (channel && channel.isTextBased()) {
+                    await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
+                }
+                SumLog.log("プレイリストが空になり、退出の連絡をしました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
             }
-            SumLog.log("プレイリストが空になり、退出の連絡をしました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
         } catch (e) {
             SumLog.error("プレイリストが空になりましたが、エラーが発生しました。再生は停止できたはずです。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
             console.error(e);
         }
-        player.stop(guildId);
+        if (!envData.manualStartedIs) player.stop(guildId);
         return;
     }
     if (envData.changeTellIs) {
@@ -107,6 +114,7 @@ player.on("playAutoEnd", async (guildId) => {
                         }
                     });
                     player.volumeSet(guildId, envData.volume);
+                    player.play(guildId);
                     if (embed) embed.setDescription("次の曲の再生を開始しました。");
                     await message.edit(metaEmbed);
                 } catch (e) {
@@ -130,10 +138,12 @@ player.on("playAutoEnd", async (guildId) => {
         } catch (e) {
             await player.sourceSet(guildId, playlistData);
             player.volumeSet(guildId, envData.volume);
+            player.play(guildId);
             console.error(e);
         }
     } else {
         await player.sourceSet(guildId, playlistData);
+        player.play(guildId);
     }
     SumLog.log("次の曲が存在したため、次の曲の再生を開始しました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
 })
@@ -486,24 +496,25 @@ client.on(Discord.Events.ClientReady, async () => {
             const envData = new EnvData(data.id);
             if (!serversDataClass.serversData[data.id]) serversDataClass.serverDataInit(data.id);
             const serverData = serversDataClass.serversData[data.id];
-            if (guild && serverData && envData.restartedPlayPoint !== -1 && envData.restartedCalledChannel && envData.restartedVoiceChannel) {
+            if (guild && serverData && envData.restartedPlayPoint >= -1 && envData.restartedCalledChannel && envData.restartedVoiceChannel) {
                 const channel = await guild?.channels.fetch(envData.restartedCalledChannel);
                 const voiceChannel = await guild?.channels.fetch(envData.restartedVoiceChannel);
                 if (channel?.isTextBased() && voiceChannel?.isVoiceBased() && voiceChannel.members.size > 0) {
                     const playlist = envData.playlist.get(0);
                     if (!playlist) return;
                     serverData.discord.calledChannel = envData.restartedCalledChannel;
-                    await player.forcedPlay({
+                    await player.join({
                         guildId: data.id,
                         channelId: envData.restartedVoiceChannel,
-                        adapterCreator: guild.voiceAdapterCreator,
-                        source: playlist,
-                        playtime: envData.restartedPlayPoint,
-                        tempo: envData.playTempo,
-                        pitch: envData.playPitch,
-                        volume: envData.volume,
-                        reverbType: envData.reverbType
-                    });
+                        adapterCreator: guild.voiceAdapterCreator
+                    })
+                    await player.sourceSet(data.id, playlist);
+                    player.playtimeSet(data.id, envData.restartedPlayPoint);
+                    player.pitchSet(data.id, envData.playPitch);
+                    player.speedSet(data.id, envData.playTempo);
+                    player.volumeSet(data.id, envData.volume);
+                    player.reverbSet(data.id, envData.reverbType);
+                    if (envData.restartedPlayIs) player.play(data.id);
                     await channel.send({ embeds: [messageEmbedGet("音楽botは復帰しました。", client)] });
                     SumLog.log("再起動前に接続していたサーバーに参加しました。", { client, functionName: "client.on ready", guildId: guild.id, textChannelId: channel.id, voiceChannelId: voiceChannel.id });
                 } else {
@@ -512,6 +523,7 @@ client.on(Discord.Events.ClientReady, async () => {
                 envData.restartedPlayPoint = -1;
                 envData.restartedCalledChannel = "";
                 envData.restartedVoiceChannel = "";
+                envData.restartedPlayIs = false;
             }
         } catch (e) {
             console.error("再生停止処理中にエラー(処理は続行されます)", e)
@@ -520,26 +532,37 @@ client.on(Discord.Events.ClientReady, async () => {
 });
 // VCの状態が変化したら実行します。
 client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
+    await newState.guild.fetch();
     SumLog.log("VCの状態が変化しました。oldStateの情報を梱包しています。", { client, voiceChannelId: oldState.channelId || undefined, guildId: oldState.guild.id, userId: oldState.member?.id, functionName: "voicestatechange" });
     SumLog.log("VCの状態が変化しました。newStateの情報を梱包しています。", { client, voiceChannelId: newState.channelId || undefined, guildId: newState.guild.id, userId: newState.member?.id, functionName: "voicestatechange" });
     /** 状態が変化したVCを取得 */
-    const channel = newState.guild.channels.cache.get(newState.channelId || oldState.channelId || "");
-    if (!channel || !channel.isVoiceBased() || !player.playingGet(channel.guildId)) return;
-    // 1. VCにいる人数がBotを含め1人以下になったら退出します。
-    if (channel.members.size <= 1) {
-        const serverData = serversData[newState.guild.id];
-        // 退出チャットが表示できそうなら表示します。
-        if (serverData && serverData.discord.calledChannel) {
-            const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
-            if (channel && channel.isTextBased()) {
-                channel.send({
-                    embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。", client)]
-                });
+    const channel = await newState.guild.channels.fetch(newState.channelId || oldState.channelId || "");
+    const newChannel = await newState.channel?.fetch(false);
+    if (!channel || !channel.isVoiceBased?.()) return;
+    if (newChannel && player.playStatusGet(newChannel.guildId) === "stop") {
+        if (newChannel.members.filter(member => member.user.bot === false).size >= 1) {
+            const envData = new EnvData(newState.guild.id);
+            if (envData.recordedAudioFileSaveChannelTo) {
+                await player.join({ guildId: newState.guild.id, channelId: newChannel.id, adapterCreator: newState.guild.voiceAdapterCreator });
             }
         }
-        SumLog.log("VCからメンバーが退出し、botも退出しました。", { client, functionName: "client.on voiceupdate", guildId: newState.guild.id, voiceChannelId: newState.channelId || undefined });
-        // 実際に退出します。
-        player.stop(channel.guildId);
+    } else if (player.playStatusGet(channel.guildId) !== "stop") {
+        // 1. VCにいる人数がBotを含め1人以下になったら退出します。
+        if (channel.members.size <= 1) {
+            const serverData = serversData[newState.guild.id];
+            // 退出チャットが表示できそうなら表示します。
+            if (serverData && serverData.discord.calledChannel) {
+                const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
+                if (channel && channel.isTextBased()) {
+                    channel.send({
+                        embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。", client)]
+                    });
+                }
+            }
+            SumLog.log("VCからメンバーが退出し、botも退出しました。", { client, functionName: "client.on voiceupdate", guildId: newState.guild.id, voiceChannelId: newState.channelId || undefined });
+            // 実際に退出します。
+            player.stop(channel.guildId);
+        }
     }
 });
 
@@ -765,6 +788,7 @@ client.on(Discord.Events.MessageCreate, async message => {
                             await channel.send({ embeds: [messageEmbedGet("お楽しみ中のところ大変申し訳ありません。音楽botは再起動を開始します。音楽botがオンラインになるまでしばらくお待ちください。再起動後に音楽botはVCに再接続します。" + (adminMessage ? "管理者から再起動理由について説明されています。\n\n**〜管理者よりメッセージ〜**\n\n" + adminMessage : "\n\n現在のメッセージから５分経ってもこのbotのオンラインステータスが復帰しない場合、X(旧Twitter)で@kazunami36_sum1のツイート情報をご確認ください。"), client)] });
                         }
                         envData.restartedPlayPoint = player.playtimeGet(data.joinConfig.guildId);
+                        envData.restartedPlayIs = player.playStatusGet(data.joinConfig.guildId) === "play";
                         envData.restartedCalledChannel = serverData.discord.calledChannel;
                         envData.restartedVoiceChannel = data.joinConfig.channelId;
                     }
@@ -773,9 +797,8 @@ client.on(Discord.Events.MessageCreate, async message => {
                     console.error("再生停止処理中にエラー(処理は続行されます)", e)
                 }
             }
-            await botmessage.edit("再起動の準備が整いました。システムが終了しているか確認してください。");
+            await botmessage.edit("再起動の準備が整いました。システムが終了しているか確認してください。終了していない場合、手動でCtrl+Cを行なってください。");
             await client.destroy();
-            process.exit(0);
         }
         if (message.content.startsWith(client.user?.displayName + "のステータスメッセージ")) {
             const text = message.content.split("♡")[1];
