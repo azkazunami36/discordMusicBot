@@ -116,6 +116,7 @@ export function voiceChatRecorder(guildId: string, client: Client, connection: V
             joined[member.id] = startRecording(receiver, member, textChannel);
         }
         function voiceStateUpdate(oldState: VoiceState, newState: VoiceState) {
+            if ((oldState.guild.id || newState.guild.id) !== guildId) return;
             const joinMember = oldState.channelId === null && newState.channelId !== null ? newState.member : undefined;
             const leaveMember = oldState.channelId !== null && newState.channelId === null ? newState.member : undefined;
             if (joinMember && !joinMember.user.bot && textChannel?.isTextBased() && !joined[joinMember.id]) {
