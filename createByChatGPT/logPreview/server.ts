@@ -5,6 +5,12 @@ import fsp from "fs/promises";
 import path from "path";
 import url from "url";
 
+// ==== debug helpers ====
+const DBG = "[logPreview:server]";
+const dbg = (...a: any[]) => console.log(DBG, ...a);
+const dgw = (...a: any[]) => console.warn(DBG, ...a);
+const dge = (...a: any[]) => console.error(DBG, ...a);
+
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 
 // ====== 環境変数（サーバーのみ） ======
@@ -377,11 +383,35 @@ function evaluateConditionSets(
   return false;
 }
 
+// Robustly decode conds (accept raw JSON, once- or double-encoded)
+function decodeCondsParam(raw: string | null): any[] {
+  if (!raw) return [];
+  let s = raw;
+  for (let i = 0; i < 2; i++) {
+    try { JSON.parse(s); break; } catch {
+      try {
+        const dec = decodeURIComponent(s);
+        if (dec === s) break;
+        s = dec;
+      } catch { break; }
+    }
+  }
+  try {
+    const v = JSON.parse(s);
+    if (Array.isArray(v)) return v;
+    return [];
+  } catch (e) {
+    dgw("decodeCondsParam: JSON parse failed; returning []", { sample: s.slice(0, 120) });
+    return [];
+  }
+}
+
 // ====== HTTP Server ======
 const server = http.createServer(async (req, res) => {
   try {
     const parsed = new URL(req.url!, "http://localhost");
     const pathname = parsed.pathname;
+    dbg("REQ", { method: req.method, path: pathname, qs: parsed.searchParams.toString() });
 
     if (pathname === "/") {
       // 静的 index.html を配信（パスを堅牢化）
@@ -437,6 +467,7 @@ const server = http.createServer(async (req, res) => {
     // newest-first ページング
     if (pathname === "/page") {
       await indexer.buildOrUpdate(); // 念のため最新化
+      dbg("/page begin", { index: parsed.searchParams.get("index"), size: parsed.searchParams.get("size"), totalLines: indexer.lineCount });
       const pageIndex = Math.max(1, Number(parsed.searchParams.get("index") || "1"));
       const pageSize  = Math.max(1, Number(parsed.searchParams.get("size")  || String(CFG_PAGE_SIZE)));
       const total = indexer.lineCount;
@@ -445,6 +476,7 @@ const server = http.createServer(async (req, res) => {
       // 追加: ファイルが存在しない場合や0行の場合、空の結果を返す
       const stFile = safeStat(LOG_PATH);
       if (!stFile || total === 0) {
+        dbg("/page done", { pageIndex, pageSize, totalPages, total });
         res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify({
           lines: "",
@@ -474,6 +506,7 @@ const server = http.createServer(async (req, res) => {
           firstLineNo = f;
         }
 
+        dbg("/page done", { pageIndex, pageSize, totalPages, total });
         res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify({
           lines: linesText,
@@ -492,6 +525,7 @@ const server = http.createServer(async (req, res) => {
     // tail は page(index=1) 相当
     if (pathname === "/tail") {
       parsed.searchParams.set("index", "1");
+      dbg("/tail redirect -> /page?"+parsed.searchParams.toString());
       req.url = "/page?" + parsed.searchParams.toString();
       server.emit("request", req, res);
       return;
@@ -511,6 +545,10 @@ const server = http.createServer(async (req, res) => {
       const windowSize = SEARCH_WINDOW_SIZE;
       const windowCount = Math.max(1, Math.ceil(totalLines / windowSize));
 
+      // Logging: start
+      console.time("[/search-window]");
+      dbg("/search-window begin", { field, q, exclude, windex, page, size, rawConds: parsed.searchParams.get("conds")?.slice(0,120) || "" });
+
       // 範囲の行レンジ（1-based, inclusive）
       const endLine   = Math.max(0, totalLines - windex * windowSize);
       const startLine = Math.max(1, endLine - windowSize + 1);
@@ -528,6 +566,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      dbg("/search-window window", { startLine, endLine, totalLines, windowSize, windowCount });
+
       const fd = openFdSync(LOG_PATH);
       try {
         // オフセット範囲を決定
@@ -540,15 +580,12 @@ const server = http.createServer(async (req, res) => {
         } else {
           endOff = indexer.getOffsetForLine(fd, endLine + 1);
         }
+        dbg("/search-window offsets", { startOff, endOff });
 
         // 1パス：範囲内のマッチ（行テキスト＋実ファイル行番号）を収集（複合条件対応）
-        // 追加: conds=JSON（外側OR×内側AND）を受け付ける。例:
-        // [[{"q":"error","field":"type"},{"q":"join","field":"functionName"}], [{"q":"fatal","field":"message"}]]
-        let condSets: ConditionSets | null = null;
-        try {
-          const raw = parsed.searchParams.get("conds");
-          if (raw) condSets = JSON.parse(raw) as ConditionSets;
-        } catch {}
+        // conds param parse
+        const condSets = decodeCondsParam(parsed.searchParams.get("conds")) as ConditionSets;
+        dbg("/search-window conds", { decodedOrGroups: Array.isArray(condSets) ? condSets.length : 0 });
         const fallback = { field, q, exclude };
 
         const matches: { line: string, lineNo: number }[] = [];
@@ -562,6 +599,7 @@ const server = http.createServer(async (req, res) => {
             // 解析できない行はスキップ
           }
         }, startLine);
+        dbg("/search-window matches", { total: matches.length });
 
         const totalHits = matches.length;
         const totalPages = Math.max(1, Math.ceil(totalHits / size));
@@ -575,6 +613,8 @@ const server = http.createServer(async (req, res) => {
         const firstLineNo = pageItems.length > 0 ? pageItems[0].lineNo : 0;
         const numbers = pageItems.map(m => m.lineNo);
 
+        dbg("/search-window response", { pageIndex: safePage, totalPages, pageItems: pageItems.length });
+        console.timeEnd("[/search-window]");
         res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify({
           lines,
@@ -601,12 +641,12 @@ const server = http.createServer(async (req, res) => {
       const page    = Math.max(1, Number(parsed.searchParams.get("index") || "1"));
       const size    = Math.max(1, Number(parsed.searchParams.get("size")  || String(CFG_PAGE_SIZE)));
 
+      console.time("[/search]");
+      dbg("/search begin", { field, q, exclude, page, size, rawConds: parsed.searchParams.get("conds")?.slice(0,120) || "" });
+
       // 1パス目：総ヒット数をカウント（複合条件対応）
-      let condSets: ConditionSets | null = null;
-      try {
-        const raw = parsed.searchParams.get("conds");
-        if (raw) condSets = JSON.parse(raw) as ConditionSets;
-      } catch {}
+      const condSets = decodeCondsParam(parsed.searchParams.get("conds")) as ConditionSets;
+      dbg("/search conds", { decodedOrGroups: Array.isArray(condSets) ? condSets.length : 0 });
       const fallback = { field, q, exclude };
 
       let totalHits = 0;
@@ -619,6 +659,7 @@ const server = http.createServer(async (req, res) => {
       });
 
       const totalPages = Math.max(1, Math.ceil(totalHits / size));
+      dbg("/search count done", { totalHits, totalPages });
       if (totalHits === 0) {
         res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
         res.end(JSON.stringify({
@@ -629,6 +670,7 @@ const server = http.createServer(async (req, res) => {
           total: 0,
           startIndex: 0
         }));
+        console.timeEnd("[/search]");
         return;
       }
 
@@ -660,6 +702,8 @@ const server = http.createServer(async (req, res) => {
 
       // newest-first で返すために末尾基準で切ったが、クライアントでは受け取った順をそのまま描画する。
       // ここでは「startIndex = (最初に返す実行番号-1)」を返す。
+      dbg("/search response", { pageIndex: Math.min(page, totalPages), items: picked.length });
+      console.timeEnd("[/search]");
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({
         lines: picked.join("\n"),
@@ -684,8 +728,9 @@ const server = http.createServer(async (req, res) => {
 
 // ストリームで 1 行ずつコールバック（低メモリ）
 async function streamEachLine(file: string, onLine: (line: string) => void | Promise<void>) {
+  dbg("streamEachLine start");
   const st = safeStat(file);
-  if (!st) return;
+  if (!st) { dbg("streamEachLine done"); return; }
   const stream = fs.createReadStream(file, { encoding: "utf-8", highWaterMark: 1024 * 256 });
   let buf = "";
   for await (const chunk of stream) {
@@ -698,6 +743,7 @@ async function streamEachLine(file: string, onLine: (line: string) => void | Pro
     }
   }
   if (buf) { await onLine(buf); } // 末尾に改行なしの場合
+  dbg("streamEachLine done");
 }
 
 // 指定バイト範囲をストリームして1行ずつ処理（CR/LF/CRLF対応）
@@ -708,8 +754,9 @@ async function streamEachLineInRange(
   onLine: (line: string, lineNoInFile: number) => void | Promise<void>,
   startLineNo: number
 ) {
+  dbg("streamEachLineInRange start", { startOff, endOff, startLineNo });
   const st = safeStat(file);
-  if (!st) return;
+  if (!st) { dbg("streamEachLineInRange done", { lastLineNo: startLineNo - 1 }); return; }
   const to = Math.min(endOff, st.size);
   const stream = fs.createReadStream(file, { encoding: "utf-8", start: startOff, end: to - 1, highWaterMark: 1024 * 256 });
   let buf = "";
@@ -729,6 +776,7 @@ async function streamEachLineInRange(
     lineNo += 1;
     await onLine(buf, lineNo);
   }
+  dbg("streamEachLineInRange done", { lastLineNo: lineNo });
 }
 
 server.listen(PORT, () => {
