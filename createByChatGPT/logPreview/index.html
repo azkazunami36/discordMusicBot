@@ -122,6 +122,14 @@
       const PAGE_SIZE = Number(cfg.pageSize || 2500);
       const POLL_MS = Number(cfg.pollMs || 1000);
       const SEARCH_WINDOW_SIZE = Number(cfg.searchWindowSize || 50000);
+      // ==== Debug helpers ====
+      const DBG_PREFIX = "[logPreview]";
+      const dbg = (...args) => console.log(DBG_PREFIX, ...args);
+      const dgw = (...args) => console.warn(DBG_PREFIX, ...args);
+      const dge = (...args) => console.error(DBG_PREFIX, ...args);
+      const time = (label) => console.time(DBG_PREFIX + " " + label);
+      const timeEnd = (label) => console.timeEnd(DBG_PREFIX + " " + label);
+      dbg("boot start", { PAGE_SIZE, POLL_MS, SEARCH_WINDOW_SIZE });
 
       let mode = 'normal'; // 'normal' | 'search'
       let searchParams = {
@@ -187,6 +195,7 @@
         return v.toFixed(1)+u[i];
       }
       function splitLinesNoRegex(t){
+        const len = (t||"").length;
         const o=[]; let s=0;
         for(let i=0;i<t.length;i++){
           const c=t.charCodeAt(i);
@@ -194,6 +203,7 @@
           else if(c===13){ o.push(t.slice(s,i)); if(i+1<t.length && t.charCodeAt(i+1)===10) i++; s=i+1; }
         }
         if(s<t.length) o.push(t.slice(s));
+        dbg("splitLinesNoRegex", { inLen: len, outCount: o.length, endsWithNL: (len>0 ? (t.at(-1)==="\n" || t.at(-1)==="\r") : false) });
         return o;
       }
       function endsWithNewline(t){ if(!t) return false; const l=t.charCodeAt(t.length-1); return l===10||l===13; }
@@ -208,8 +218,8 @@
 
       const FIELDS = ["message","type","functionName","user","guild","textChannel","voiceChannel"]; // message を既定
 
-      function openModal(){ modalBackdrop.style.display = 'flex'; renderOrGroups(); }
-      function closeModal(){ modalBackdrop.style.display = 'none'; }
+      function openModal(){ dbg("openModal"); modalBackdrop.style.display = 'flex'; renderOrGroups(); }
+      function closeModal(){ dbg("closeModal"); modalBackdrop.style.display = 'none'; }
 
       function renderOrGroups(){
         orGroupsEl.innerHTML = "";
@@ -245,13 +255,16 @@
       }
 
       function effectiveConds(){
+        dbg("effectiveConds: raw", JSON.parse(JSON.stringify(condSets||[])));
         // 空クエリを除外、空グループを除外
         const cleaned = (condSets||[]).map(g=> (g||[]).filter(c=> (c && typeof c.q==='string' && c.q.trim()!==''))).filter(g=> g.length>0);
+        dbg("effectiveConds: cleaned", JSON.parse(JSON.stringify(cleaned)));
         return cleaned;
       }
 
       // ★ lines配列と、実JSONL開始行番号(offsetBase)またはnumbers配列から描画
       function appendRowsFromLines(lines, offsetBase, numbers){
+        dbg("appendRowsFromLines: start", { linesLen: lines?.length||0, offsetBase, hasNumbers: Array.isArray(numbers) });
         const f=document.createDocumentFragment();
         // when numbers is provided (search mode), use it directly; otherwise derive from offsetBase
         const useNumbers = Array.isArray(numbers) && numbers.length === lines.length;
@@ -305,6 +318,7 @@
             f.appendChild(tr);
           }catch{}
         }
+        dbg("appendRowsFromLines: appended rows", { count: f.childNodes.length });
         tbody.appendChild(f);
 
         // 1ページ目（最新）＆通常モード時は PAGE_SIZE 超過で上から削除
@@ -323,36 +337,90 @@
 
       function clearBody(){ tbody.innerHTML=""; }
 
-      async function fetchJSON(u){ const r=await fetch(u,{cache:'no-store'}); if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); }
+      async function fetchJSON(u){
+        dbg("fetchJSON: start", u);
+        time("fetch " + u);
+        let r;
+        try{
+          r = await fetch(u, { cache: 'no-store' });
+        }catch(err){
+          dge("fetchJSON: network error", { url: u, err });
+          throw err;
+        } finally {
+          // no-op
+        }
+        timeEnd("fetch " + u);
+        dbg("fetchJSON: status", { url: u, status: r?.status, ok: r?.ok });
+        if(!r.ok){
+          const text = await r.text().catch(()=>"(read body failed)");
+          dge("fetchJSON: not ok", { url: u, status: r.status, body: text.slice(0, 500) });
+          throw new Error("HTTP " + r.status);
+        }
+        const text = await r.text();
+        dbg("fetchJSON: body length", { url: u, length: text.length });
+        try{
+          const json = JSON.parse(text);
+          return json;
+        }catch(parseErr){
+          dge("fetchJSON: JSON parse error", { url: u, err: parseErr, sample: text.slice(0, 300) });
+          throw parseErr;
+        }
+      }
+
+      function buildSearchQS(conds, page, windex, size){
+        const qs = new URLSearchParams();
+        qs.set('windex', String(windex||0));
+        qs.set('index', String(page||1));
+        qs.set('size', String(size||PAGE_SIZE));
+        const payload = JSON.stringify(conds||[]);
+        qs.set('conds', payload); // send RAW JSON (no encodeURIComponent)
+        const url = `/search-window?${qs.toString()}`;
+        dbg("buildSearchQS", { url, payloadLen: payload.length });
+        return { url, payload };
+      }
+
+      async function fetchSearchWindow(conds, page, windex){
+        const built = buildSearchQS(conds, page, windex, PAGE_SIZE);
+        dbg("fetchSearchWindow", built);
+        return await fetchJSON(built.url);
+      }
 
       // ---- 通常表示：page=1（最新）をロード ----
       async function initialLoad(){
-        const d=await fetchJSON("/page?index=1&size="+PAGE_SIZE);
-        const t=d.lines||""; const l=t?splitLinesNoRegex(t):[];
-        totalLines=d.totalLines||l.length;
-        totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
-        currentPage=1; onLatestPage=true;
-        lastPos=d.size??0; fileSize=d.size??0; pending="";
-        clearBody();
+        dbg("initialLoad: start");
+        try{
+          const d=await fetchJSON("/page?index=1&size="+PAGE_SIZE);
+          dbg("initialLoad: response meta", { totalLines: d.totalLines, totalPages: d.totalPages, size: d.size, startIndex: d.startIndex });
+          const t=d.lines||""; const l=t?splitLinesNoRegex(t):[];
+          totalLines=d.totalLines||l.length;
+          totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
+          currentPage=1; onLatestPage=true;
+          lastPos=d.size??0; fileSize=d.size??0; pending="";
+          clearBody();
 
-        const base = (d.startIndex!=null)
-          ? Number(d.startIndex)||0
-          : computeStartBaseNewestFirst(totalLines, currentPage, l.length);
+          const base = (d.startIndex!=null)
+            ? Number(d.startIndex)||0
+            : computeStartBaseNewestFirst(totalLines, currentPage, l.length);
 
-        appendRowsFromLines(l, base);
-        bytesStat.textContent="size: "+humanBytes(fileSize); setPageInfo();
-        setRowsStatVal();
-        window.scrollTo({top:document.body.scrollHeight});
+          appendRowsFromLines(l, base);
+          bytesStat.textContent="size: "+humanBytes(fileSize); setPageInfo();
+          setRowsStatVal();
+          window.scrollTo({top:document.body.scrollHeight});
+          dbg("initialLoad: done", { rowsRendered: l.length });
+        }catch(err){
+          dge("initialLoad: error", err);
+        }
       }
 
       // ---- 追記監視（検索モード中は停止）----
       async function poll(){
-        if(mode==='search') return;
+        if(mode==='search') { dbg("poll: skipped (search mode)"); return; }
         try{
           const h=await fetch("/head",{cache:'no-store'}).then(r=>r.json());
           const s=h.size??0; bytesStat.textContent="size: "+humanBytes(s);
-          if(s===fileSize) return;
+          if(s===fileSize) { dbg("poll: no size change", { size: s }); return; }
 
+          dbg("poll: file size changed", { from: fileSize, to: s, onLatestPage, currentPage });
           if(onLatestPage && currentPage===1){
             const d=await fetchJSON("/data?pos="+lastPos), chunk=d.chunk||""; fileSize=d.size??s;
             let text=pending+chunk;
@@ -360,6 +428,7 @@
             let tail=""; if(!endsWithNewline(text)) tail=parts.pop()||"";
             if(tail){ try{ JSON.parse(tail); parts.push(tail); pending=""; } catch{ pending=tail; } } else { pending=""; }
             const newLines=parts.filter(x=>x.length>0);
+            dbg("poll: new content", { chunkLen: chunk.length, parts: parts.length, newLines: newLines.length, pendingLen: pending.length });
             if(newLines.length>0){
               let lastNumber = 0;
               const lastTr = tbody.lastElementChild;
@@ -369,30 +438,29 @@
                 lastNumber = totalLines - (tbody.rows.length || 0);
               }
 
-              // 現在最下部付近かどうかを先に判定
               const atBottom = (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 5);
-
               appendRowsFromLines(newLines, lastNumber);
-
-              // 最下部にいた場合のみ追従スクロール
-              if(atBottom){
-                window.scrollTo({top: document.body.scrollHeight});
-              }
+              if(atBottom){ window.scrollTo({top: document.body.scrollHeight}); }
 
               totalLines+=newLines.length;
               totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
               setPageInfo();
               setRowsStatVal();
+              dbg("poll: appended", { totalLines, totalPages });
             }
             lastPos=fileSize;
           }else{
             fileSize=s; lastPos=s;
+            dbg("poll: not on latest page; update pointers only", { fileSize, lastPos });
           }
-        }catch{}
+        }catch(err){
+          dge("poll: error", err);
+        }
       }
 
       // ---- 通常ページ移動（newest-first）----
       async function goPage(i){
+        dbg("goPage: request", { i, mode, currentPage, totalPages });
         if(mode==='search'){ return goSearchPage(i); }
         i=Math.max(1,i);
         try{
@@ -408,31 +476,35 @@
           appendRowsFromLines(l, base);
           window.scrollTo({ top: document.body.scrollHeight });
           setRowsStatVal();
-        }catch{}
+          dbg("goPage: done", { page: i, rowsRendered: l.length });
+        }catch(err){
+          dge("goPage: error", err);
+        }
       }
 
       // =============================
       //  検索（サーバー全体 /search-window）
       // =============================
       async function runSearch(page){
+        dbg("runSearch: start", { requestedPage: page, searchMode, mode, condSets });
         if(!searchMode){
+          dbg("runSearch: searchMode=false → initialLoad()");
           mode='normal'; setRangeUIVisible(false); return initialLoad();
         }
         const conds = effectiveConds();
+        dbg("runSearch: effectiveConds", conds);
         if(conds.length===0){
-          // 条件が1つもなければ検索しない（通常表示へ）
+          dbg("runSearch: no conditions → initialLoad()");
           mode='normal'; setRangeUIVisible(false); return initialLoad();
         }
         mode='search'; setRangeUIVisible(true);
         const windex = searchParams.windowIndex || 0;
-        const qs = new URLSearchParams();
-        qs.set('windex', String(windex));
-        qs.set('index', String(page||1));
-        qs.set('size', String(PAGE_SIZE));
-        qs.set('conds', encodeURIComponent(JSON.stringify(conds)));
+        const pageIndex = page || 1;
         try{
-          const d = await fetchJSON(`/search-window?${qs.toString()}`);
+          const d = await fetchSearchWindow(conds, pageIndex, windex);
+          dbg("runSearch: response meta", { total: d.total, totalPages: d.totalPages, pageIndex: d.pageIndex, window: d.window });
           const t=d.lines||""; const l=t?splitLinesNoRegex(t):[];
+          dbg("runSearch: payload sizes", { textLen: t.length, lines: l.length, numbersLen: Array.isArray(d.numbers)? d.numbers.length : null });
           const w = d.window || {};
           searchParams = {
             field: 'message', q: '', exclude: false,
@@ -448,9 +520,13 @@
           appendRowsFromLines(l, 0, nums);
           setRowsStatVal();
           window.scrollTo({top:document.body.scrollHeight});
-        }catch{}
+          dbg("runSearch: done", { rendered: l.length });
+        }catch(err){
+          dge("runSearch: error", err);
+        }
       }
       async function goSearchPage(i){
+        dbg("goSearchPage: request", { i, totalPages: searchParams.totalPages });
         i=Math.max(1,Math.min(searchParams.totalPages||1,i));
         searchParams.page=i; await runSearch(i);
       }
@@ -500,12 +576,18 @@
 
       // 検索モーダル制御
       openSearchModalBtn.onclick = ()=>{ openModal(); };
+      dbg("UI handlers bound");
       closeSearchBtn.onclick = ()=>{ closeModal(); };
+      dbg("UI handlers bound");
       modalBackdrop.addEventListener('click', (e)=>{ if(e.target===modalBackdrop) closeModal(); });
+      dbg("UI handlers bound");
       addOrGroupBtn.onclick = ()=>{ condSets.push([]); renderOrGroups(); };
+      dbg("UI handlers bound");
       applySearchBtn.onclick = ()=>{ closeModal(); searchParams.windowIndex = 0; runSearch(1); };
+      dbg("UI handlers bound");
 
       searchModeToggle.addEventListener('change', ()=>{
+        dbg("searchModeToggle changed", { checked: !!searchModeToggle.checked });
         searchMode = !!searchModeToggle.checked;
         if(!searchMode){ mode='normal'; setRangeUIVisible(false); initialLoad(); }
         else { runSearch(1); }
@@ -514,6 +596,7 @@
       // 起動
       await initialLoad();
       setInterval(poll, POLL_MS);
+      dbg("boot complete; polling started", { POLL_MS });
     })();
   </script>
 </body>
