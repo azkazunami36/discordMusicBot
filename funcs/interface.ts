@@ -1,10 +1,16 @@
 import { ServersDataClass } from "../class/serversData.js";
 import { Player } from "../class/player.js";
+import { Playlist } from "../class/envJSON.js";
 
 export interface ServersData {
     [guildId: string]: {
         discord: {
             calledChannel?: string;
+            /** 最後に検索されたデータです。timeが5分以上の場合は失効としましょう。 */
+            search?: {
+                time: number;
+                list: Playlist[];
+            }
         }
         users?: {
             [userId: string]: {

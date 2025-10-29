@@ -32,11 +32,22 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
         if (!serverData) return;
         const envData = new EnvData(guildData.guildId);
-        console.log(text)
         serverData.discord.calledChannel = interaction.channelId;
         let stopIs = false;
         if (text && inputData.player.playStatusGet(guildData.guildId) !== "play") {
-            await urlToQueue(text, guildData, null, message, async (percent, status, playlist, option) => {
+            const focus = Number(text.replace(/[！-～]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)));
+            const playlist = serverData.discord.search?.list[focus - 1];
+            /** 指定方法が数字であり、かつ検索結果がまだ有効な場合 */
+            if (focus) {
+                if (focus > 0 && playlist && Date.now() - (serverData.discord.search?.time || 0) < 5 * 60 * 60 * 1000) {
+                    const envData = new EnvData(guildData.guildId);
+                    envData.playlist.unshift(playlist);
+                }
+                else {
+                    stopIs = true;
+                    await message.edit({ embeds: [messageEmbedGet("この指定は認識することができませんでした。検索結果に一致する番号を選択すること、また`/search`コマンドを再度実行することをお試しください。", interaction.client)] });
+                }
+            } else await urlToQueue(text, guildData, null, message, async (percent, status, playlist, option) => {
                 switch (status) {
                     case "analyzing": {
                         await message.edit({ embeds: [messageEmbedGet("文字列を分析しています..." + option.analyzed + "個解析済みです。\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
@@ -62,7 +73,17 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             }, { soloAdd: true, firstAdd: true });
         }
         if (text && inputData.player.playStatusGet(guildData.guildId) === "play") {
-            await urlToQueue(text, guildData, null, message, async (percent, status, playlist) => {
+            const focus = Number(text.replace(/[！-～]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)));
+            const playlist = serverData.discord.search?.list[focus - 1];
+            /** 指定方法が数字であり、かつ検索結果がまだ有効な場合 */
+            if (focus) {
+                if (focus > 0 && playlist && Date.now() - (serverData.discord.search?.time || 0) < 5 * 60 * 60 * 1000) {
+                    const envData = new EnvData(guildData.guildId);
+                    envData.playlist.push(playlist);
+                    await message.edit(await videoInfoEmbedGet([playlist], "曲を追加しました。", interaction.client));
+                }
+                else await message.edit({ embeds: [messageEmbedGet("この指定は認識することができませんでした。検索結果に一致する番号を選択すること、また`/search`コマンドを再度実行することをお試しください。", interaction.client)] });
+            } else await urlToQueue(text, guildData, null, message, async (percent, status, playlist) => {
                 switch (status) {
                     case "analyzing": {
                         await message.edit({ embeds: [messageEmbedGet("文字列を分析しています...\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });

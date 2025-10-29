@@ -33,6 +33,8 @@ export async function urlToQueue(
     option?: {
         soloAdd?: boolean;
         firstAdd?: boolean;
+        urlOnly?: boolean;
+        searchOnly?: boolean;
     }
 ) {
     function callback(percent: number, status: "analyzing" | "searching" | "checkAndDownloading" | "done" | "failed", playlist: Playlist[], option: {
@@ -56,7 +58,7 @@ export async function urlToQueue(
     /** 処理済み */
     const addedPlaylist: Playlist[] = [];
     SumLog.log("キューに追加するためにテキストの分析を行います。テキストを分割し、された後のテキスト数は" + words.length + "個です。", suminfo);
-    for (const word of words) {
+    if (!option?.searchOnly) for (const word of words) {
         wordCheckProcessed++;
         callback((wordCheckProcessed / words.length) * 20, "analyzing", addedPlaylist, { analyzed: addQueue.length });
         if (word === "") continue;
@@ -107,7 +109,7 @@ export async function urlToQueue(
         if (urlIs) continue;
         searchWords += searchWords === "" ? word : " " + word;
     }
-    if (searchWords) {
+    if (searchWords && !option?.urlOnly) {
         callback(30, "searching", addedPlaylist, { analyzed: addQueue.length });
         SumLog.log(searchWords + "はURLやIDとして分析できないため検索されます。", suminfo);
         const youtubeData = (await yts(searchWords)).videos[0].videoId;

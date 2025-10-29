@@ -3,22 +3,11 @@ import ytdl from "ytdl-core";
 import yts from "yt-search";
 
 import { InteractionInputData } from "../funcs/interface.js";
-import { EnvData, Playlist, videoMetaCacheGet } from "../class/envJSON.js";
 import { VariableExistCheck } from "../class/variableExistCheck.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "../funcs/embed.js";
-import { sourcePathManager } from "../class/sourcePathManager.js";
-import { SumLog } from "../class/sumLog.js";
-import { numberToTimeString } from "../createByChatGPT/numberToTimeString.js";
-import { appleChunkHelper } from "../worker/helper/createByChatGPT/appleChunkHelper.js";
-import { spotifyChunkHelper } from "../worker/helper/createByChatGPT/spotifyChunkHelper.js";
-import { parseSpotifyUrl } from "../worker/helper/createByChatGPT/parseSpotifyUrlHelper.js";
-import { parseAppleMusicUrl } from "../worker/helper/createByChatGPT/parseAppleMusicUrlHelper.js";
-import { searchNicoVideo } from "../worker/helper/createByChatGPT/searchNicoVideoHelper.js";
-import { getNicoMylistIds } from "../worker/helper/createByChatGPT/getNicoMylistIdsHelper.js";
-import { parseNicoVideo } from "../createByChatGPT/niconico.js";
-import { fetchPlaylistVideoIdsFromUrl } from "../worker/helper/createByChatGPT/youtubePlaylistToVideoIdsHelper.js";
 import { urlToQueue } from "../funcs/urlToQueue.js";
 import { progressBar } from "../createByChatGPT/progressBar.js";
+import { EnvData } from "../class/envJSON.js";
 
 export const command = new SlashCommandBuilder()
     .setName("add")
@@ -29,13 +18,11 @@ export const command = new SlashCommandBuilder()
         .setRequired(true)
     )
     .addStringOption(option => option
-        .setName("service")
-        .setDescription("優先するサービスです。動画URLだけどプレイリストがあったら取得したいときはプレイリストを選択します。検索次に優先したいサービスがあれば、それを選択します。")
+        .setName("type")
+        .setDescription("優先する読み取り方法です。動画URLだけどプレイリストがあったら取得したいときはプレイリストを選択します。YouTubeの場合にのみ対応しています。")
         .addChoices(
-            { name: "YouTube", value: "youtube" },
-            { name: "YouTubeプレイリスト", value: "youtubePlaylist" },
-            { name: "ニコニコ動画", value: "niconico" },
-            { name: "X", value: "twitter" }
+            { name: "動画", value: "youtube" },
+            { name: "プレイリスト", value: "youtubePlaylist" }
         )
     )
 export const commandExample = "/add text:[URLまたはVideoIDまたは検索したいタイトル]";
@@ -47,8 +34,22 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
+        const serversData = await variableExistCheck.serverData(inputData.serversDataClass);
+        if (!serversData) return;
         if (data === null) return await message.edit({ embeds: [messageEmbedGet("追加したい曲が指定されませんでした。入力してから追加を行なってください。", interaction.client)] });
-        const priority = interaction.options.getString("service");
+        const priority = interaction.options.getString("type");
+        const focus = Number(data.replace(/[！-～]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)));
+        const playlist = serversData.discord.search?.list[focus - 1];
+        /** 指定方法が数字であり、かつ検索結果がまだ有効な場合 */
+        if (focus) {
+            if (focus > 0 && playlist && Date.now() - (serversData.discord.search?.time || 0) < 5 * 60 * 60 * 1000) {
+                const envData = new EnvData(guildData.guildId);
+                envData.playlist.push(playlist);
+                await message.edit(await videoInfoEmbedGet([playlist], "曲を追加しました。", interaction.client));
+            }
+            else await message.edit({ embeds: [messageEmbedGet("この指定は認識することができませんでした。検索結果に一致する番号を選択すること、また`/search`コマンドを再度実行することをお試しください。", interaction.client)] });
+            return;
+        }
         await urlToQueue(data, guildData, priority, message, async (percent, status, playlist, option) => {
             switch (status) {
                 case "analyzing": {
@@ -68,11 +69,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                     break;
                 }
                 case "failed": {
-                    await message.edit({ embeds: [messageEmbedGet("次のテキストは解析ができず、キューに追加できませんでした。\n`" + data + "`", interaction.client)] });
+                    await message.edit({ embeds: [messageEmbedGet("次のテキストは解析ができませんでした。\n`" + data + "`\n`/search`コマンドを利用することを検討してください。", interaction.client)] });
                     break;
                 }
             }
-        });
+        }, { urlOnly: true });
 
     }
 }

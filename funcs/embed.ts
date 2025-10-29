@@ -12,7 +12,7 @@ import { sourcePathManager } from "../class/sourcePathManager.js";
 import path from "path";
 import Stream from "stream";
 
-export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: string, client: Client, callback: ((embed: EmbedBuilder) => void) = () => {}): Promise<BaseMessageOptions> {
+export async function videoInfoEmbedGet(playlistDatas: Playlist[], message: string, client: Client, callback: ((embed: EmbedBuilder) => void) = () => {}): Promise<{embeds: EmbedBuilder[]; files?: (Attachment | AttachmentBuilder | BufferResolvable | Stream)[]}> {
     const startTime = Date.now();
     if (playlistDatas[0] && playlistDatas.length === 1) {
         const playlistData = playlistDatas[0];
