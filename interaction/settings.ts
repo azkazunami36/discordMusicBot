@@ -22,20 +22,6 @@ export const command = new SlashCommandBuilder()
             .setDescription("チャンネルを設定します。")
         )
     )
-    .addSubcommand(command => command
-        .setName("channelset")
-        .setDescription("チャンネルを指定する必要のある設定を行います。")
-        .addStringOption(option => option
-            .setName("type")
-            .setDescription("typeについての詳細はhelpコマンドに掲載する予定です。")
-            .addChoices({ name: "自動再生通知", value: "changetell" })
-            .setRequired(true)
-        )
-        .addChannelOption(option => option
-            .setName("channel")
-            .setDescription("チャンネルを設定します。")
-        )
-    )
 export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {

@@ -547,8 +547,8 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
             }
         }
     } else if (player.playStatusGet(channel.guildId) !== "stop") {
-        // 1. VCにいる人数がBotを含め1人以下になったら退出します。
-        if (channel.members.filter(member => !member.user.bot).size <= 1) {
+        // 1. VCにいる人数がBotを含めず0人になったら退出します。
+        if (channel.members.filter(member => member.user.bot === false).size <= 0) {
             const serverData = serversData[newState.guild.id];
             // 退出チャットが表示できそうなら表示します。
             if (serverData && serverData.discord.calledChannel) {
