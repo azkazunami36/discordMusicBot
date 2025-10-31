@@ -3,6 +3,16 @@ import fs from "fs";
 import "dotenv/config";
 import "./createByChatGPT/logger.js"
 
+import { EnvData, GlobalEnvData } from "./class/envJSON.js";
+import { ServersDataClass } from "./class/serversData.js";
+import { InteractionInputData } from "./funcs/interface.js";
+import { WebPlayerAPI } from "./class/webAPI.js";
+import { Player } from "./class/player.js";
+import { messageEmbedGet, videoInfoEmbedGet } from "./funcs/embed.js";
+import { progressBar } from "./createByChatGPT/progressBar.js";
+import { SumLog } from "./class/sumLog.js";
+import { interactionLog, messageLog } from "./funcs/eventlog.js";
+
 process.on("uncaughtException", (err) => {
     console.error("キャッチされずグローバルで発生した例外:", err);
     SumLog.error("グローバルでエラーが発生しました。ログを確認してください。", { functionName: "process.on" });
@@ -12,17 +22,6 @@ process.on("unhandledRejection", (reason) => {
     console.error("未処理の拒否:", reason);
     SumLog.error("よくわからないけどunhandledRejectionっていうやつが発生しました。ログを見てください。", { functionName: "process.on" });
 });
-
-import { EnvData, GlobalEnvData } from "./class/envJSON.js";
-import { ServersDataClass } from "./class/serversData.js";
-import { InteractionInputData } from "./funcs/interface.js";
-import { WebPlayerAPI } from "./class/webAPI.js";
-import { Player } from "./class/player.js";
-import { messageEmbedGet, videoInfoEmbedGet } from "./funcs/embed.js";
-import { progressBar } from "./createByChatGPT/progressBar.js";
-import { getVoiceConnections, VoiceConnection } from "@discordjs/voice";
-import { SumLog } from "./class/sumLog.js";
-
 const client = new Discord.Client({
     intents: [
         Discord.GatewayIntentBits.Guilds,
@@ -43,9 +42,44 @@ const webPlayerAPI = new WebPlayerAPI(serversDataClass, client);
 /** 全てのVCの動作を追いかけるクラスです。 */
 const player = new Player(client);
 
+/** インタラクションコマンドのデータです。 */
+const interactionFuncs = (() => {
+    const arr: {
+        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData, message: Discord.Message) => Promise<void>;
+        command?: Discord.SlashCommandOptionsOnlyBuilder;
+    }[] = [];
+    fs.readdirSync("interaction").forEach(async str => {
+        if (!str.endsWith(".js")) return;
+        try {
+            const { execute, command } = await import("./interaction/" + str);
+            arr.push({ execute, command });
+        } catch (e) {
+            console.error(e, str);
+        }
+    });
+    return arr;
+})();
+
+/** インタラクションコマンドのデータです。 */
+const adminInteractionFuncs = (() => {
+    const arr: {
+        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData, message: Discord.Message) => Promise<void>;
+        command?: Discord.SlashCommandOptionsOnlyBuilder;
+    }[] = [];
+    fs.readdirSync("adminInteraction").forEach(async str => {
+        if (!str.endsWith(".js")) return;
+        try {
+            const { execute, command } = await import("./adminInteraction/" + str);
+            arr.push({ execute, command });
+        } catch (e) {
+            console.error(e, str);
+        }
+    });
+    return arr;
+})();
 
 /** 再生をしきったあとにする操作です。たいていリピート操作や再生停止操作などが行われます。 */
-player.on("playAutoEnd", async (guildId) => {
+player.on("playAutoEnd", async guildId => {
     const serverData = serversData[guildId];
     SumLog.log("音楽の再生の終了を示すコールバックが動作しました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
     if (!serverData?.discord.calledChannel) return;
@@ -148,250 +182,12 @@ player.on("playAutoEnd", async (guildId) => {
     SumLog.log("次の曲が存在したため、次の曲の再生を開始しました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
 })
 
-/** インタラクションコマンドのデータです。 */
-const interactionFuncs = (() => {
-    const arr: {
-        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData, message: Discord.Message) => Promise<void>;
-        command?: Discord.SlashCommandOptionsOnlyBuilder;
-    }[] = [];
-    fs.readdirSync("interaction").forEach(async str => {
-        if (!str.endsWith(".js")) return;
-        try {
-            const { execute, command } = await import("./interaction/" + str);
-            arr.push({ execute, command });
-        } catch (e) {
-            console.error(e, str);
-        }
-    });
-    return arr;
-})();
-
-/** インタラクションコマンドのデータです。 */
-const adminInteractionFuncs = (() => {
-    const arr: {
-        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData, message: Discord.Message) => Promise<void>;
-        command?: Discord.SlashCommandOptionsOnlyBuilder;
-    }[] = [];
-    fs.readdirSync("adminInteraction").forEach(async str => {
-        if (!str.endsWith(".js")) return;
-        try {
-            const { execute, command } = await import("./adminInteraction/" + str);
-            arr.push({ execute, command });
-        } catch (e) {
-            console.error(e, str);
-        }
-    });
-    return arr;
-})();
-
 /** コマンドの実行が早すぎる場合に阻止するために使うための変数です。 */
 const runedServerTime: { guildId: string; runedTime: number; }[] = [];
 /** コマンドの最短実行間隔です。 */
 const runlimit = 1000;
 client.on(Discord.Events.InteractionCreate, async interaction => {
-    SumLog.log("インタラクションを受信しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId || undefined, functionName: "client.on Interaction", userId: interaction.user.id });
-    if (fs.existsSync("./log/userinteraction.log")) {
-        const meta = fs.statSync("./log/userinteraction.log");
-        if (meta.size > 10 * 1000 * 1000) {
-            let num = 0;
-            while (fs.existsSync("./log/userinteraction." + num + ".log")) num++;
-            fs.renameSync("./log/userinteraction.log", "./log/userinteraction." + num + ".log")
-        }
-    }
-    if (!fs.existsSync("./log/userinteraction.log")) fs.writeFileSync("./log/userinteraction.log", "");
-    function formatDateJST(date = new Date()) {
-        const offsetMs = 9 * 60 * 60 * 1000; // JST(+9時間)
-        const jstDate = new Date(date.getTime() + offsetMs);
-
-        const iso = jstDate.toISOString(); // 例: 2025-10-11T20:33:14.112Z
-        return iso.replace('Z', '+09:00');
-    }
-    function summarizeInteraction(interaction: Discord.Interaction) {
-        // ユーティリティ：安全にJSON化（循環・BigInt回避）
-        const safe = (o: unknown) =>
-            JSON.stringify(o, (_k, v) => (typeof v === 'bigint' ? v.toString() : v), "  ");
-
-        // 1) ボタン
-        if (interaction.isButton()) {
-            return {
-                type: 'Button',
-                body: safe({
-                    customId: interaction.customId,
-                    messageId: interaction.message?.id,
-                    channelId: interaction.channelId,
-                }),
-            };
-        }
-
-        // 2) モーダル
-        if (interaction.isModalSubmit()) {
-            return {
-                type: 'ModalSubmit',
-                body: safe({
-                    customId: interaction.customId,
-                    fields: interaction.fields.fields.map(f => ({
-                        customId: f.customId,
-                        value: interaction.fields.getTextInputValue(f.customId),
-                    })),
-                }),
-            };
-        }
-
-        // 3) セレクトメニュー群
-        if (interaction.isAnySelectMenu()) {
-            // 種別名の見栄え整形
-            const typeName =
-                interaction.isStringSelectMenu() ? 'StringSelectMenu' :
-                    interaction.isUserSelectMenu() ? 'UserSelectMenu' :
-                        interaction.isRoleSelectMenu() ? 'RoleSelectMenu' :
-                            interaction.isMentionableSelectMenu() ? 'MentionableSelectMenu' :
-                                interaction.isChannelSelectMenu() ? 'ChannelSelectMenu' :
-                                    'SelectMenu';
-
-            return {
-                type: typeName,
-                body: safe({
-                    customId: interaction.customId,
-                    values:
-                        'values' in interaction ? interaction.values : undefined, // string[]
-                    users:
-                        interaction.isUserSelectMenu()
-                            ? interaction.users.map(u => ({ id: u.id, tag: u.tag }))
-                            : undefined,
-                    roles:
-                        interaction.isRoleSelectMenu()
-                            ? interaction.roles.map(r => ({ id: r.id, name: r.name }))
-                            : undefined,
-                    channels:
-                        interaction.isChannelSelectMenu()
-                            ? interaction.channels.map(c => ({ id: c.id, name: c.type }))
-                            : undefined,
-                    mentionables:
-                        interaction.isMentionableSelectMenu()
-                            ? interaction.values // mentionableはID配列
-                            : undefined,
-                }),
-            };
-        }
-
-        // 4) メッセージコンポーネント（一般）
-        if (interaction.isMessageComponent()) {
-            // 上の個別分岐に引っかからなかったコンポーネント（稀）
-            return {
-                type: 'MessageComponent',
-                body: "never",
-            };
-        }
-
-        // 5) オートコンプリート
-        if (interaction.isAutocomplete()) {
-            const focused = interaction.options.getFocused(true);
-            return {
-                type: 'Autocomplete',
-                body: safe({
-                    commandName: interaction.commandName,
-                    focusedOption: { name: focused.name, value: focused.value },
-                }),
-            };
-        }
-
-        // 6) Chat Input（スラッシュ）コマンド
-        if (interaction.isChatInputCommand()) {
-            // オプションを素直に展開
-            const opts = interaction.options.data.map(o => ({
-                name: o.name,
-                type: o.type,
-                value: o.value,
-                focused: (o as any).focused ?? false,
-                options: (o as any).options ?? undefined,
-            }));
-            return {
-                type: 'ChatInputCommand',
-                body: safe({
-                    commandName: interaction.commandName,
-                    options: opts,
-                }),
-            };
-        }
-
-        // 7) コンテキストメニューコマンド（メッセージ／ユーザー）
-        if (interaction.isContextMenuCommand()) {
-            const base = {
-                commandName: interaction.commandName,
-                targetId: interaction.targetId,
-            };
-
-            if (interaction.isMessageContextMenuCommand()) {
-                return {
-                    type: 'MessageContextMenuCommand',
-                    body: safe({
-                        ...base,
-                        targetMessageId: interaction.targetMessage.id,
-                        targetAuthorId: interaction.targetMessage.author?.id,
-                    }),
-                };
-            }
-            if (interaction.isUserContextMenuCommand()) {
-                return {
-                    type: 'UserContextMenuCommand',
-                    body: safe({
-                        ...base,
-                        targetUserId: interaction.targetUser.id,
-                        targetUserTag: interaction.targetUser.tag,
-                    }),
-                };
-            }
-
-            // 予備（将来型）
-            return {
-                type: 'ContextMenuCommand',
-                body: safe(base),
-            };
-        }
-
-        // 8) 一般の CommandInteraction（後方互換）
-        if (interaction.isCommand && interaction.isCommand()) {
-            return {
-                type: 'Command',
-                body: safe({
-                    commandName: (interaction as any).commandName,
-                }),
-            };
-        }
-
-        // 9) PrimaryEntryPointCommand（対応環境向け）
-        if ((interaction as any).isPrimaryEntryPointCommand?.()) {
-            return {
-                type: 'PrimaryEntryPointCommand',
-                body: safe({
-                    commandName: (interaction as any).commandName,
-                }),
-            };
-        }
-
-        // 10) Repliable（返信可能）かどうかのメタ
-        if (interaction.isRepliable()) {
-            return {
-                type: 'Repliable',
-                body: safe({
-                    id: interaction.id,
-                    channelId: interaction.channelId,
-                }),
-            };
-        }
-
-        // Fallback
-        return {
-            type: 'Unknown',
-            body: safe({
-                id: "never",
-                type: (interaction as any).type,
-            }),
-        };
-    }
-    const stat = summarizeInteraction(interaction);
-    fs.appendFileSync("./log/userinteraction.log", "\n[" + formatDateJST() + "] [" + stat.type + "] [" + interaction.guild?.name + "(" + interaction.guildId + ")" + "] [" + interaction.user.globalName + "(" + interaction.user.username + "/" + interaction.user.id + ")" + "] " + stat.body)
-
+    interactionLog(interaction);
     if (!interaction.isCommand()) return;
     if (!interaction.guild) return await interaction.reply({
         embeds: [messageEmbedGet("ここではコマンドは実行できません。", client)]
@@ -474,7 +270,7 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
         }
     }
 });
-client.on("shardResume", () => {
+client.on(Discord.Events.ShardResume, () => {
     try {
         const status: Discord.PresenceData = {};
         status.status = "online";
@@ -490,6 +286,7 @@ client.on(Discord.Events.ClientReady, async () => {
         status.activities = [{ name: (new GlobalEnvData()).botMessage }];
         client.user?.setPresence(status);
     } catch { }
+    // サーバーリストを全部実行し、起動前に接続していたかどうかを取得して、接続していた場合その設定を復元します。
     (await client.guilds.fetch()).forEach(async data => {
         try {
             const guild = client.guilds.cache.get(data.id);
@@ -565,6 +362,28 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
         }
     }
 });
+client.on(Discord.Events.GuildCreate, guild => {
+    console.log("音楽botが新しいサーバーに参加。参加したサーバー名: " + guild.name + " 現在の参加数: " + client.guilds.cache.size);
+    SumLog.log("新しいサーバーにbotが参加しました。現時点の参加数: " + client.guilds.cache.size, { client, functionName: "client.on guildcreate", guildId: guild.id });
+});
+client.on(Discord.Events.ShardDisconnect, (event, id) => {
+    console.log(`Shard ${id} disconnected`, event);
+    SumLog.log(`Shard ${id} disconnected ` + event.code + client.guilds.cache.size, { client, functionName: "client.on sharddisconnect" });
+});
+client.on(Discord.Events.ShardReconnecting, (id) => {
+    try {
+        const status: Discord.PresenceData = {};
+        status.status = "online";
+        status.activities = [{ name: (new GlobalEnvData()).botMessage }];
+        client.user?.setPresence(status);
+    } catch { }
+    console.log(`Shard ${id} reconnecting...`);
+    SumLog.log(`Shard ${id} reconnecting...` + client.guilds.cache.size, { client, functionName: "client.on shardreconnenting" });
+});
+client.on(Discord.Events.ShardReady, (id) => {
+    console.log(`Shard ${id} reconnected...`);
+    SumLog.log(`Shard ${id} connected` + client.guilds.cache.size, { client, functionName: "client.on shardready" });
+});
 
 client.login(process.env.DISCORD_TOKEN);
 
@@ -597,89 +416,8 @@ const bt = [
     },
 ]
 let joubutuNumber = Math.floor(Math.random() * bt.length);
-client.on(Discord.Events.GuildCreate, guild => {
-    console.log("音楽botが新しいサーバーに参加。参加したサーバー名: " + guild.name + " 現在の参加数: " + client.guilds.cache.size);
-    SumLog.log("新しいサーバーにbotが参加しました。現時点の参加数: " + client.guilds.cache.size, { client, functionName: "client.on guildcreate", guildId: guild.id });
-});
-client.on(Discord.Events.ShardDisconnect, (event, id) => {
-    console.log(`Shard ${id} disconnected`, event);
-    SumLog.log(`Shard ${id} disconnected ` + event.code + client.guilds.cache.size, { client, functionName: "client.on sharddisconnect" });
-});
-client.on(Discord.Events.ShardReconnecting, (id) => {
-    console.log(`Shard ${id} reconnecting...`);
-    SumLog.log(`Shard ${id} reconnecting...` + client.guilds.cache.size, { client, functionName: "client.on shardreconnenting" });
-});
-client.on(Discord.Events.ShardReady, (id) => {
-    console.log(`Shard ${id} reconnecting...`);
-    SumLog.log(`Shard ${id} connectied` + client.guilds.cache.size, { client, functionName: "client.on shardready" });
-});
 client.on(Discord.Events.MessageCreate, async message => {
-    if (!message.author.bot) {
-        if (fs.existsSync("./log/usermessage.log")) {
-            const meta = fs.statSync("./log/usermessage.log");
-            if (meta.size > 10 * 1000 * 1000) {
-                let num = 0;
-                while (fs.existsSync("./log/usermessage." + num + ".log")) num++;
-                fs.renameSync("./log/usermessage.log", "./log/usermessage." + num + ".log")
-            }
-        }
-        if (!fs.existsSync("./log/usermessage.log")) fs.writeFileSync("./log/usermessage.log", "");
-        function formatDateJST(date = new Date()) {
-            const offsetMs = 9 * 60 * 60 * 1000; // JST(+9時間)
-            const jstDate = new Date(date.getTime() + offsetMs);
-
-            const iso = jstDate.toISOString(); // 例: 2025-10-11T20:33:14.112Z
-            return iso.replace('Z', '+09:00');
-        }
-        function extractMessageExtras(message: Discord.Message) {
-            const results = [];
-
-            // 添付ファイル（画像・動画・PDFなど）
-            for (const [, attachment] of message.attachments) {
-                results.push({
-                    type: 'attachment',
-                    body: attachment.url
-                });
-            }
-
-            // ステッカー（スタンプ）
-            for (const [, sticker] of message.stickers) {
-                results.push({
-                    type: 'sticker',
-                    body: sticker.id
-                });
-            }
-
-            // 埋め込み（リンクのメタ情報など）
-            for (const embed of message.embeds) {
-                results.push({
-                    type: 'embed',
-                    body: embed.url || embed.title || '[embed without url]'
-                });
-            }
-
-            // ボタン・メニューなど（components）
-            for (const row of message.components) {
-                results.push({
-                    type: 'component',
-                    body: JSON.stringify(row.toJSON())
-                });
-            }
-
-            // 投票（poll）
-            if (message.poll) {
-                results.push({
-                    type: 'poll',
-                    body: message.poll.question?.text ?? '[poll]'
-                });
-            }
-
-            return results;
-        }
-        fs.appendFileSync("./log/usermessage.log", "\n[" + formatDateJST() + "] [" + message.guild?.name + "(" + message.guildId + ")" + "] [" + message.author.globalName + "(" + message.author.username + "/" + message.author.id + ")" + "] " + message.content + ", " + JSON.stringify(extractMessageExtras(message), null, "  "))
-
-        SumLog.log(message.content, { client, functionName: "client.on message", guildId: message.guildId || undefined, textChannelId: message.channelId, userId: message.member?.id });
-    }
+    messageLog(message);
     if (message.guildId === process.env.DISCORD_ADMIN_GUILD_ID || "926965020724691005") {
         if (message.content === client.user?.displayName + "のコマンドを再定義する") {
             // JSON へ変換（REST 配信用）
@@ -712,109 +450,10 @@ client.on(Discord.Events.MessageCreate, async message => {
             botmessage.edit("グローバルコマンドを登録しました。");
             return;
         }
-        if (message.content === client.user?.displayName + "のステータス") {
-            const connections = getVoiceConnections();
-            const list: VoiceConnection[] = [];
-            connections.forEach(connection => list.push(connection));
-            await message.reply("現在音楽botは" + list.length + "箇所で再生されています。: " + (() => {
-                let string = "";
-                for (const data of list) {
-                    string += "\n" + (() => {
-                        try {
-                            return client.guilds.cache.get(data.joinConfig.guildId)?.name
-                        } catch {
-                            return "取得エラー"
-                        }
-                    })() + " / " + data.joinConfig.guildId
-                }
-                return string;
-            })() + "\nこの音楽botは" + client.guilds.cache.size + "箇所に参加しています。: " + (() => {
-                let string = "";
-                client.guilds.cache.forEach(data => {
-                    string += "\n" + (() => {
-                        try {
-                            return client.guilds.cache.get(data.id)?.name
-                        } catch {
-                            return "取得エラー"
-                        }
-                    })() + " / " + data.id
-                })
-                return string;
-            })());
-        }
-        if (message.content.startsWith(client.user?.displayName + "をシャットダウンする")) {
-            const connections = getVoiceConnections();
-            const list: VoiceConnection[] = [];
-            connections.forEach(connection => list.push(connection));
-            const botmessage = await message.reply("再生を停止してシャットダウンの旨を連絡中...");
-            let i = 0;
-            for (const data of list) {
-                i++;
-                await botmessage.edit("再生を停止してシャットダウンの旨を連絡中...(" + i + "/" + list.length + ")");
-                try {
-                    const serverData = serversData[data.joinConfig.guildId];
-                    if (serverData && serverData.discord.calledChannel) {
-                        const channel = client.guilds.cache.get(data.joinConfig.guildId)?.channels.cache.get(serverData.discord.calledChannel);
-                        if (channel && channel.isTextBased()) {
-                            const adminMessage = message.content.split("♡")[1];
-                            await channel.send({ embeds: [messageEmbedGet("お楽しみ中のところ大変申し訳ありません。音楽botはメンテナンス・再起動のため強制的にシャットダウン処理を開始します。音楽botがオンラインになるまでしばらくお待ちください。" + (adminMessage ? "管理者からシャットダウン理由について説明されています。\n\n**〜管理者よりメッセージ〜**\n\n" + adminMessage : "再起動理由について、管理者はメッセージを用意しませんでした。意図について詳しく説明できず、復旧タイミングも不明です。\n\n現在のメッセージから５分経ってもこのbotのオンラインステータスが復帰しない場合、X(旧Twitter)で@kazunami36_sum1のツイート情報をご確認ください。"), client)] });
-                        }
-                    }
-                    player.stop(data.joinConfig.guildId);
-                } catch (e) {
-                    console.error("再生停止処理中にエラー(処理は続行されます)", e)
-                }
-            }
-            await botmessage.edit("シャットダウンの準備が整いました。システムが終了しているか確認してください。");
-            await client.destroy();
-            process.exit(0);
-        }
-        if (message.content.startsWith(client.user?.displayName + "を再起動する")) {
-            const connections = getVoiceConnections();
-            const list: VoiceConnection[] = [];
-            connections.forEach(connection => list.push(connection));
-            const botmessage = await message.reply("再生を停止して再起動の旨を連絡中...");
-            let i = 0;
-            for (const data of list) {
-                i++;
-                await botmessage.edit("再生を停止して再起動の旨を連絡中...(" + i + "/" + list.length + ")");
-                try {
-                    const serverData = serversData[data.joinConfig.guildId];
-                    const envData = new EnvData(data.joinConfig.guildId);
-                    if (serverData && serverData.discord.calledChannel && data.joinConfig.channelId) {
-                        const channel = client.guilds.cache.get(data.joinConfig.guildId)?.channels.cache.get(serverData.discord.calledChannel);
-                        if (channel && channel.isTextBased()) {
-                            const adminMessage = message.content.split("♡")[1];
-                            await channel.send({ embeds: [messageEmbedGet("お楽しみ中のところ大変申し訳ありません。音楽botは再起動を開始します。音楽botがオンラインになるまでしばらくお待ちください。再起動後に音楽botはVCに再接続します。" + (adminMessage ? "管理者から再起動理由について説明されています。\n\n**〜管理者よりメッセージ〜**\n\n" + adminMessage : "\n\n現在のメッセージから５分経ってもこのbotのオンラインステータスが復帰しない場合、X(旧Twitter)で@kazunami36_sum1のツイート情報をご確認ください。"), client)] });
-                        }
-                        envData.restartedPlayPoint = player.playtimeGet(data.joinConfig.guildId);
-                        envData.restartedPlayIs = player.playStatusGet(data.joinConfig.guildId) === "play";
-                        envData.restartedCalledChannel = serverData.discord.calledChannel;
-                        envData.restartedVoiceChannel = data.joinConfig.channelId;
-                    }
-                    player.stop(data.joinConfig.guildId);
-                } catch (e) {
-                    console.error("再生停止処理中にエラー(処理は続行されます)", e)
-                }
-            }
-            await botmessage.edit("再起動の準備が整いました。システムが終了しているか確認してください。終了していない場合、手動でCtrl+Cを行なってください。");
-            await client.destroy();
-        }
-        if (message.content.startsWith(client.user?.displayName + "のステータスメッセージ")) {
-            const text = message.content.split("♡")[1];
-            const globalEnvData = new GlobalEnvData();
-            if (text) globalEnvData.botMessage = text
-            try {
-                const status: Discord.PresenceData = {};
-                status.status = "online";
-                status.activities = [{ name: globalEnvData.botMessage }];
-                client.user?.setPresence(status);
-            } catch { }
-        }
     }
     // 1. bot呼び出しでないものをスキップする。
-    if (!message.guildId || !message.member || !message.guild) return message.reply("ごめん！！エラーっす！www");
     if (message.content === "VCの皆、成仏せよ") {
+        if (!message.guildId || !message.member || !message.guild) return message.reply("ごめん！！エラーっす！www");
         if (!serversData[message.guildId]) serversDataClass.serverDataInit(message.guildId);
         const serverData = serversData[message.guildId];
         if (!serverData) return message.reply("ごめん！！エラーっす！www");
