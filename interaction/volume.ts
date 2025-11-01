@@ -1,8 +1,9 @@
-import { Interaction, SlashCommandBuilder, CacheType, GuildMember } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, GuildMember, Message } from "discord.js";
 
-import { InteractionInputData } from "../interface.js";
-import { EnvData } from "../envJSON.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
+import { InteractionInputData } from "../funcs/interface.js";
+import { EnvData } from "../class/envJSON.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { messageEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("volume")
@@ -14,7 +15,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
@@ -22,12 +23,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const serverData = await variableExistCheck.serverData(inputData.serversDataClass);
         if (!serverData) return;
         const number = interaction.options.getNumber("vol");
-        if (number === null) return await interaction.editReply("番号が入力されていません。番号を入力してから再度実行してください。");
-        if (!number || number < 0) return await interaction.editReply("番号が無効です。0以上の数字を入力してください。半角数字を使ってください。");
+        if (number === null) return await message.edit({ embeds: [messageEmbedGet("番号が入力されていません。番号を入力してから再度実行してください。", interaction.client)] });
+        if (!number || number < 0) return await message.edit({ embeds: [messageEmbedGet("番号が無効です。0以上の数字を入力してください。半角数字を使ってください。", interaction.client)] });
         const envData = new EnvData(guildData.guildId);
         envData.volume = number;
         inputData.player.volumeSet(guildData.guildId, number);
-        await interaction.editReply("音量を" + number + "%に変更しました。");
+        await message.edit({ embeds: [messageEmbedGet("音量を" + number + "%に変更しました。", interaction.client)] });
     }
 }
-

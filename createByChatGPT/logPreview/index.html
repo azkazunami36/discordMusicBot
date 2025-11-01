@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>sumlogJSON.jsonl viewer (server-side search & newest-first paging)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; }
+    header { position: sticky; top: 0; background: #f6f7f9; border-bottom: 1px solid #ccc; padding: 8px 12px; display:flex; gap:8px; align-items:center; z-index: 5; }
+    header .spacer { flex: 1; }
+    .btn { padding: 6px 10px; border: 1px solid #aaa; background: #fff; cursor: pointer; }
+    .btn:disabled { opacity: .5; cursor: default; }
+    .stat { color:#555; font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #aaa; padding: 4px; vertical-align: top; word-break: break-word; white-space: normal; overflow-wrap: anywhere; }
+    th { background: #eee; position: sticky; top: 46px; z-index: 4; }
+    /* 固定幅列 */
+    col.col-idx { width: 60px; }       /* # は固定60px */
+    col.col-date { width: 180px; }     /* dateは固定180px */
+    col.col-type { width: 55px; }      /* typeは固定55px */
+    col.col-func { width: 220px; }     /* functionNameは固定220px（+20px） */
+    col.col-message { width: 50%; }    /* messageは全体の50% */
+    /* センタリング */
+    th.center, td.center { text-align: center; }
+    /* 可変列の最小幅（functionName以降）*/
+    th:nth-child(n+4), td:nth-child(n+4) { min-width: 120px; }
+    /* message列の最小幅（5列目）*/
+    th:nth-child(5), td:nth-child(5) { min-width: 250px; }
+    /* type の強調 */
+    td.type-warn { background: #f39c12; color: #fff; font-weight: 900; }
+    td.type-error { background: #e74c3c; color: #fff; font-weight: 900; }
+  </style>
+</head>
+<body>
+  <header>
+    <button id="prev" class="btn">← 前へ</button>
+    <button id="next" class="btn">次へ →</button>
+    <div id="pageInfo">Page 1 / 1</div>
+
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button id="openSearchModal" class="btn" title="検索条件を編集">🔍</button>
+      <label style="display:flex; gap:6px; align-items:center;">
+        <input id="searchModeToggle" type="checkbox" /> 検索モード
+      </label>
+    </div>
+  <style>
+    /* Modal 基本 */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index: 20; }
+    .modal { background:#fff; width:min(960px, 96vw); max-height: 86vh; overflow:auto; border:1px solid #888; border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+    .modal header { position: sticky; top:0; background:#f6f7f9; border-bottom:1px solid #ccc; padding:10px 12px; display:flex; gap:8px; align-items:center; z-index:1; }
+    .modal .content { padding:12px; display:flex; flex-direction:column; gap:12px; }
+    .chip { display:inline-flex; gap:6px; align-items:center; padding:6px 8px; border:1px solid #aaa; border-radius:6px; background:#fff; }
+    .group { border:1px dashed #bbb; padding:10px; border-radius:8px; background:#fafafa; display:flex; flex-direction:column; gap:8px; }
+    .group > .title { font-size:12px; color:#666; }
+    .hstack { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .vstack { display:flex; gap:8px; flex-direction:column; }
+    .sm { padding:4px 6px; }
+    .muted { color:#666; font-size:12px; }
+    .btn-icon { padding:4px 8px; border:1px solid #aaa; background:#fff; cursor:pointer; border-radius:6px; }
+  </style>
+
+  <div id="searchModalBackdrop" class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="searchModalTitle">
+      <header>
+        <strong id="searchModalTitle">検索条件（OR グループ × AND 条件）</strong>
+        <span class="spacer"></span>
+        <button id="addOrGroupBtn" class="btn">OR グループ追加</button>
+        <button id="applySearchBtn" class="btn">適用</button>
+        <button id="closeSearchBtn" class="btn">閉じる</button>
+      </header>
+      <div class="content">
+        <div class="muted">※ グループ＝OR。各グループ内の条件は AND。クエリが空の条件は無視され、空グループは自動で削除されます。全条件が空なら検索は実行されません。</div>
+        <div id="orGroups" class="vstack"></div>
+      </div>
+    </div>
+  </div>
+
+    <!-- 検索中のみ表示する範囲UI -->
+    <div id="rangeUI" style="display:none; gap:6px; align-items:center;">
+      <button id="wprev" class="btn">範囲 ←</button>
+      <div id="winfo">Window 1 / 1</div>
+      <button id="wnext" class="btn">→ 範囲</button>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="stat">
+      <span id="rowsStat">rows: 0</span> /
+      <span id="bytesStat">size: 0B</span>
+    </div>
+  </header>
+
+  <table id="table">
+    <colgroup>
+      <col class="col-idx">
+      <col class="col-date">
+      <col class="col-type">
+      <col class="col-func">
+      <col class="col-message">
+      <col>
+      <col>
+      <col>
+      <col>
+    </colgroup>
+    <thead>
+      <tr>
+        <th class="center">#</th>
+        <th class="center">date</th>
+        <th class="center">type</th>
+        <th>functionName</th>
+        <th>message</th>
+        <th>user</th>
+        <th>guild</th>
+        <th>textChannel</th>
+        <th>voiceChannel</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    (async function boot(){
+      const cfg = await fetch('/config', {cache:'no-store'}).then(r=>r.json());
+      const PAGE_SIZE = Number(cfg.pageSize || 2500);
+      const POLL_MS = Number(cfg.pollMs || 1000);
+      const SEARCH_WINDOW_SIZE = Number(cfg.searchWindowSize || 50000);
+      // ==== Debug helpers ====
+      const DBG_PREFIX = "[logPreview]";
+      const dbg = (...args) => console.log(DBG_PREFIX, ...args);
+      const dgw = (...args) => console.warn(DBG_PREFIX, ...args);
+      const dge = (...args) => console.error(DBG_PREFIX, ...args);
+      const time = (label) => console.time(DBG_PREFIX + " " + label);
+      const timeEnd = (label) => console.timeEnd(DBG_PREFIX + " " + label);
+      dbg("boot start", { PAGE_SIZE, POLL_MS, SEARCH_WINDOW_SIZE });
+
+      let mode = 'normal'; // 'normal' | 'search'
+      let searchParams = {
+        field: 'message', q: '', exclude: false,
+        page: 1, totalPages: 1, total: 0,
+        // 追加：範囲ウィンドウ情報
+        windowIndex: 0, windowCount: 1, windowStartLine: 0, windowEndLine: 0
+      };
+
+      let searchMode = false; // false=通常, true=検索
+      /** @type {Array<Array<{q:string, field?:string, exclude?:boolean}>>} */
+      let condSets = []; // 外側OR × 内側AND
+
+      let lastPos=0,pending="",currentPage=1,totalPages=1,totalLines=0,fileSize=0,onLatestPage=true;
+      const tbody=document.querySelector("#table tbody"),
+            pageInfo=document.getElementById("pageInfo"),
+            rowsStat=document.getElementById("rowsStat"),
+            bytesStat=document.getElementById("bytesStat"),
+            prevBtn=document.getElementById("prev"),
+            nextBtn=document.getElementById("next"),
+            rangeUI=document.getElementById("rangeUI"),
+            wprevBtn=document.getElementById("wprev"),
+            wnextBtn=document.getElementById("wnext"),
+            winfo=document.getElementById("winfo");
+
+      const openSearchModalBtn = document.getElementById("openSearchModal");
+      const searchModeToggle = document.getElementById("searchModeToggle");
+      const modalBackdrop = document.getElementById("searchModalBackdrop");
+      const addOrGroupBtn = document.getElementById("addOrGroupBtn");
+      const applySearchBtn = document.getElementById("applySearchBtn");
+      const closeSearchBtn = document.getElementById("closeSearchBtn");
+      const orGroupsEl = document.getElementById("orGroups");
+
+      function setRangeUIVisible(v){
+        rangeUI.style.display = v ? "flex" : "none";
+      }
+      function updateRangeUIState(){
+        winfo.textContent = `Window ${searchParams.windowIndex+1} / ${searchParams.windowCount}`;
+        wprevBtn.disabled = (searchParams.windowIndex<=0);
+        wnextBtn.disabled = (searchParams.windowIndex>=(searchParams.windowCount-1));
+      }
+
+      function setPageInfo(){
+        if(mode==='search'){
+          pageInfo.textContent = `Page ${searchParams.page||1} / ${searchParams.totalPages||1} (search)`;
+        }else{
+          pageInfo.textContent = `Page ${currentPage||1} / ${totalPages||1}`;
+        }
+        prevBtn.disabled = (mode==='search' ? (searchParams.page<=1) : (currentPage<=1));
+        nextBtn.disabled = (mode==='search' ? (searchParams.page>=searchParams.totalPages) : (currentPage>=totalPages));
+      }
+      function setRowsStatVal(){
+        if(mode==='search'){
+          rowsStat.textContent = "hits: " + (searchParams.total || 0);
+        }else{
+          rowsStat.textContent = "rows: " + (totalLines || 0);
+        }
+      }
+      function humanBytes(n){
+        if(n<1024) return n+"B";
+        const u=["KB","MB","GB","TB"]; let i=-1,v=n;
+        do{ v/=1024; i++; } while(v>=1024 && i<u.length-1);
+        return v.toFixed(1)+u[i];
+      }
+      function splitLinesNoRegex(t){
+        const len = (t||"").length;
+        const o=[]; let s=0;
+        for(let i=0;i<t.length;i++){
+          const c=t.charCodeAt(i);
+          if(c===10){ o.push(t.slice(s,i)); s=i+1; }
+          else if(c===13){ o.push(t.slice(s,i)); if(i+1<t.length && t.charCodeAt(i+1)===10) i++; s=i+1; }
+        }
+        if(s<t.length) o.push(t.slice(s));
+        dbg("splitLinesNoRegex", { inLen: len, outCount: o.length, endsWithNL: (len>0 ? (t.at(-1)==="\n" || t.at(-1)==="\r") : false) });
+        return o;
+      }
+      function endsWithNewline(t){ if(!t) return false; const l=t.charCodeAt(t.length-1); return l===10||l===13; }
+      function formatDate(ts){
+        if(!ts) return "";
+        const d=new Date(ts);
+        const y=d.getFullYear(), m=d.getMonth()+1, da=d.getDate(), h=d.getHours(), mi=d.getMinutes(), s=d.getSeconds();
+        const pad=n=>String(n).padStart(2,'0');
+        return y+'/'+pad(m)+'/'+pad(da)+' '+pad(h)+':'+pad(mi)+':'+pad(s);
+      }
+      function normalize(v){ return (v==null?"":String(v)).toLowerCase(); }
+
+      const FIELDS = ["message","type","functionName","user","guild","textChannel","voiceChannel"]; // message を既定
+
+      function openModal(){ dbg("openModal"); modalBackdrop.style.display = 'flex'; renderOrGroups(); }
+      function closeModal(){ dbg("closeModal"); modalBackdrop.style.display = 'none'; }
+
+      function renderOrGroups(){
+        orGroupsEl.innerHTML = "";
+        if(!Array.isArray(condSets) || condSets.length===0){ condSets = [[]]; }
+        condSets.forEach((andList, gi)=>{
+          const group = document.createElement('div'); group.className = 'group';
+          const title = document.createElement('div'); title.className='title'; title.textContent = `ORグループ #${gi+1}`; group.appendChild(title);
+
+          const addCondBtn = document.createElement('button'); addCondBtn.className='btn-icon'; addCondBtn.textContent = 'AND 条件追加';
+          addCondBtn.onclick = ()=>{ andList.push({q:"", field:"message", exclude:false}); renderOrGroups(); };
+
+          const removeGroupBtn = document.createElement('button'); removeGroupBtn.className='btn-icon'; removeGroupBtn.textContent = 'グループ削除';
+          removeGroupBtn.onclick = ()=>{ condSets.splice(gi,1); if(condSets.length===0) condSets=[[]]; renderOrGroups(); };
+
+          const header = document.createElement('div'); header.className='hstack'; header.append(addCondBtn, removeGroupBtn);
+          group.appendChild(header);
+
+          const list = document.createElement('div'); list.className='vstack';
+          andList.forEach((c, ci)=>{
+            const row = document.createElement('div'); row.className='hstack';
+            const q = document.createElement('input'); q.className='sm'; q.placeholder='query'; q.value = c.q||""; q.oninput=()=>{ c.q=q.value; };
+            const sel = document.createElement('select'); sel.className='sm'; FIELDS.forEach(f=>{ const o=document.createElement('option'); o.value=f; o.textContent=f; if((c.field||'message')===f) o.selected=true; sel.appendChild(o); }); sel.onchange=()=>{ c.field=sel.value; };
+            const ex = document.createElement('label'); ex.className='hstack';
+            const exi = document.createElement('input'); exi.type='checkbox'; exi.checked=!!c.exclude; exi.onchange=()=>{ c.exclude=exi.checked; };
+            const ext = document.createElement('span'); ext.textContent='除外'; ex.append(exi, ext);
+            const del = document.createElement('button'); del.className='btn-icon'; del.textContent='削除'; del.onclick=()=>{ andList.splice(ci,1); renderOrGroups(); };
+            row.append(q, sel, ex, del);
+            list.appendChild(row);
+          });
+          group.appendChild(list);
+          orGroupsEl.appendChild(group);
+        });
+      }
+
+      function effectiveConds(){
+        dbg("effectiveConds: raw", JSON.parse(JSON.stringify(condSets||[])));
+        // 空クエリを除外、空グループを除外
+        const cleaned = (condSets||[]).map(g=> (g||[]).filter(c=> (c && typeof c.q==='string' && c.q.trim()!==''))).filter(g=> g.length>0);
+        dbg("effectiveConds: cleaned", JSON.parse(JSON.stringify(cleaned)));
+        return cleaned;
+      }
+
+      // ★ lines配列と、実JSONL開始行番号(offsetBase)またはnumbers配列から描画
+      function appendRowsFromLines(lines, offsetBase, numbers){
+        dbg("appendRowsFromLines: start", { linesLen: lines?.length||0, offsetBase, hasNumbers: Array.isArray(numbers) });
+        const f=document.createDocumentFragment();
+        // when numbers is provided (search mode), use it directly; otherwise derive from offsetBase
+        const useNumbers = Array.isArray(numbers) && numbers.length === lines.length;
+        let base = (typeof offsetBase==='number' && offsetBase>=0) ? offsetBase : 0;
+
+        for(let i=0;i<lines.length;i++){
+          const line = lines[i];
+          if(!line) continue;
+          try{
+            const d=JSON.parse(line), iinfo=d.info||{}, g=iinfo.guild||{}, tx=iinfo.textChannelId||{}, vx=iinfo.voiceChannelId||{}, u=iinfo.userId||{}, tr=document.createElement("tr");
+            const userStr = u.globalName||u.displayName||u.username||"";
+            const guildStr = g.name||g.id||"";
+            const txStr = tx.name||tx.id||"";
+            const vxStr = vx.name||vx.id||"";
+            const fnStr = iinfo.functionName||"";
+            const typeStr = (d.type||"").toString();
+
+            // #（実際の JSONL 行番号）
+            const displayNo = useNumbers ? Number(numbers[i])||0 : (base + i + 1);
+            let td=document.createElement("td"); td.className="center"; td.textContent=String(displayNo); tr.appendChild(td);
+
+            // date
+            td=document.createElement("td"); td.className="center"; td.textContent=formatDate(d.date); tr.appendChild(td);
+            // type（装飾）
+            const t=typeStr.toLowerCase();
+            td=document.createElement("td"); td.className="center";
+            if(t.indexOf("error")!==-1) td.classList.add("type-error"); else if(t.indexOf("warn")!==-1) td.classList.add("type-warn");
+            td.textContent=typeStr; tr.appendChild(td);
+            // functionName
+            td=document.createElement("td"); td.textContent=fnStr; tr.appendChild(td);
+            // message
+            td=document.createElement("td"); td.textContent=d.message||""; tr.appendChild(td);
+            // user
+            td=document.createElement("td"); td.textContent=userStr; tr.appendChild(td);
+            // guild
+            td=document.createElement("td"); td.textContent=guildStr; tr.appendChild(td);
+            // textChannel
+            td=document.createElement("td"); td.textContent=txStr; tr.appendChild(td);
+            // voiceChannel
+            td=document.createElement("td"); td.textContent=vxStr; tr.appendChild(td);
+
+            // dataset（クリック検索用）
+            tr.dataset.type = normalize(typeStr);
+            tr.dataset.functionname = normalize(fnStr);
+            tr.dataset.message = normalize(d.message||"");
+            tr.dataset.user = normalize(userStr);
+            tr.dataset.guild = normalize(guildStr);
+            tr.dataset.textchannel = normalize(txStr);
+            tr.dataset.voicechannel = normalize(vxStr);
+
+            f.appendChild(tr);
+          }catch{}
+        }
+        dbg("appendRowsFromLines: appended rows", { count: f.childNodes.length });
+        tbody.appendChild(f);
+
+        // 1ページ目（最新）＆通常モード時は PAGE_SIZE 超過で上から削除
+        if (mode === 'normal' && onLatestPage && !searchMode) {
+          while(tbody.rows.length > PAGE_SIZE) tbody.deleteRow(0);
+        }
+      }
+
+      function computeStartBaseNewestFirst(totalCount, pageIndex, pageChunkLength){
+        const t = Math.max(0, Number(totalCount||0));
+        const p = Math.max(1, Number(pageIndex||1));
+        const len = Math.max(0, Number(pageChunkLength||0));
+        const prevPagesCount = (p-1) * PAGE_SIZE;
+        return Math.max(0, t - prevPagesCount - len);
+      }
+
+      function clearBody(){ tbody.innerHTML=""; }
+
+      async function fetchJSON(u){
+        dbg("fetchJSON: start", u);
+        time("fetch " + u);
+        let r;
+        try{
+          r = await fetch(u, { cache: 'no-store' });
+        }catch(err){
+          dge("fetchJSON: network error", { url: u, err });
+          throw err;
+        } finally {
+          // no-op
+        }
+        timeEnd("fetch " + u);
+        dbg("fetchJSON: status", { url: u, status: r?.status, ok: r?.ok });
+        if(!r.ok){
+          const text = await r.text().catch(()=>"(read body failed)");
+          dge("fetchJSON: not ok", { url: u, status: r.status, body: text.slice(0, 500) });
+          throw new Error("HTTP " + r.status);
+        }
+        const text = await r.text();
+        dbg("fetchJSON: body length", { url: u, length: text.length });
+        try{
+          const json = JSON.parse(text);
+          return json;
+        }catch(parseErr){
+          dge("fetchJSON: JSON parse error", { url: u, err: parseErr, sample: text.slice(0, 300) });
+          throw parseErr;
+        }
+      }
+
+      function buildSearchQS(conds, page, windex, size){
+        const qs = new URLSearchParams();
+        qs.set('windex', String(windex||0));
+        qs.set('index', String(page||1));
+        qs.set('size', String(size||PAGE_SIZE));
+        const payload = JSON.stringify(conds||[]);
+        qs.set('conds', payload); // send RAW JSON (no encodeURIComponent)
+        const url = `/search-window?${qs.toString()}`;
+        dbg("buildSearchQS", { url, payloadLen: payload.length });
+        return { url, payload };
+      }
+
+      async function fetchSearchWindow(conds, page, windex){
+        const built = buildSearchQS(conds, page, windex, PAGE_SIZE);
+        dbg("fetchSearchWindow", built);
+        return await fetchJSON(built.url);
+      }
+
+      // ---- 通常表示：page=1（最新）をロード ----
+      async function initialLoad(){
+        dbg("initialLoad: start");
+        try{
+          const d=await fetchJSON("/page?index=1&size="+PAGE_SIZE);
+          dbg("initialLoad: response meta", { totalLines: d.totalLines, totalPages: d.totalPages, size: d.size, startIndex: d.startIndex });
+          const t=d.lines||""; const l=t?splitLinesNoRegex(t):[];
+          totalLines=d.totalLines||l.length;
+          totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
+          currentPage=1; onLatestPage=true;
+          lastPos=d.size??0; fileSize=d.size??0; pending="";
+          clearBody();
+
+          const base = (d.startIndex!=null)
+            ? Number(d.startIndex)||0
+            : computeStartBaseNewestFirst(totalLines, currentPage, l.length);
+
+          appendRowsFromLines(l, base);
+          bytesStat.textContent="size: "+humanBytes(fileSize); setPageInfo();
+          setRowsStatVal();
+          window.scrollTo({top:document.body.scrollHeight});
+          dbg("initialLoad: done", { rowsRendered: l.length });
+        }catch(err){
+          dge("initialLoad: error", err);
+        }
+      }
+
+      // ---- 追記監視（検索モード中は停止）----
+      async function poll(){
+        if(mode==='search') { dbg("poll: skipped (search mode)"); return; }
+        try{
+          const h=await fetch("/head",{cache:'no-store'}).then(r=>r.json());
+          const s=h.size??0; bytesStat.textContent="size: "+humanBytes(s);
+          if(s===fileSize) { dbg("poll: no size change", { size: s }); return; }
+
+          dbg("poll: file size changed", { from: fileSize, to: s, onLatestPage, currentPage });
+          if(onLatestPage && currentPage===1){
+            const d=await fetchJSON("/data?pos="+lastPos), chunk=d.chunk||""; fileSize=d.size??s;
+            let text=pending+chunk;
+            const parts=splitLinesNoRegex(text);
+            let tail=""; if(!endsWithNewline(text)) tail=parts.pop()||"";
+            if(tail){ try{ JSON.parse(tail); parts.push(tail); pending=""; } catch{ pending=tail; } } else { pending=""; }
+            const newLines=parts.filter(x=>x.length>0);
+            dbg("poll: new content", { chunkLen: chunk.length, parts: parts.length, newLines: newLines.length, pendingLen: pending.length });
+            if(newLines.length>0){
+              let lastNumber = 0;
+              const lastTr = tbody.lastElementChild;
+              if(lastTr && lastTr.firstChild && lastTr.firstChild.textContent){
+                lastNumber = Number(lastTr.firstChild.textContent) || 0;
+              }else{
+                lastNumber = totalLines - (tbody.rows.length || 0);
+              }
+
+              const atBottom = (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 5);
+              appendRowsFromLines(newLines, lastNumber);
+              if(atBottom){ window.scrollTo({top: document.body.scrollHeight}); }
+
+              totalLines+=newLines.length;
+              totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
+              setPageInfo();
+              setRowsStatVal();
+              dbg("poll: appended", { totalLines, totalPages });
+            }
+            lastPos=fileSize;
+          }else{
+            fileSize=s; lastPos=s;
+            dbg("poll: not on latest page; update pointers only", { fileSize, lastPos });
+          }
+        }catch(err){
+          dge("poll: error", err);
+        }
+      }
+
+      // ---- 通常ページ移動（newest-first）----
+      async function goPage(i){
+        dbg("goPage: request", { i, mode, currentPage, totalPages });
+        if(mode==='search'){ return goSearchPage(i); }
+        i=Math.max(1,i);
+        try{
+          const d=await fetchJSON("/page?index="+i+"&size="+PAGE_SIZE), t=d.lines||"", l=t?splitLinesNoRegex(t):[];
+          totalLines=d.totalLines||totalLines; totalPages=Math.max(1,Math.ceil(totalLines/PAGE_SIZE));
+          currentPage=i; onLatestPage=(currentPage===1); setPageInfo();
+          clearBody();
+
+          const base = (d.startIndex!=null)
+            ? Number(d.startIndex)||0
+            : computeStartBaseNewestFirst(totalLines, currentPage, l.length);
+
+          appendRowsFromLines(l, base);
+          window.scrollTo({ top: document.body.scrollHeight });
+          setRowsStatVal();
+          dbg("goPage: done", { page: i, rowsRendered: l.length });
+        }catch(err){
+          dge("goPage: error", err);
+        }
+      }
+
+      // =============================
+      //  検索（サーバー全体 /search-window）
+      // =============================
+      async function runSearch(page){
+        dbg("runSearch: start", { requestedPage: page, searchMode, mode, condSets });
+        if(!searchMode){
+          dbg("runSearch: searchMode=false → initialLoad()");
+          mode='normal'; setRangeUIVisible(false); return initialLoad();
+        }
+        const conds = effectiveConds();
+        dbg("runSearch: effectiveConds", conds);
+        if(conds.length===0){
+          dbg("runSearch: no conditions → initialLoad()");
+          mode='normal'; setRangeUIVisible(false); return initialLoad();
+        }
+        mode='search'; setRangeUIVisible(true);
+        const windex = searchParams.windowIndex || 0;
+        const pageIndex = page || 1;
+        try{
+          const d = await fetchSearchWindow(conds, pageIndex, windex);
+          dbg("runSearch: response meta", { total: d.total, totalPages: d.totalPages, pageIndex: d.pageIndex, window: d.window });
+          const t=d.lines||""; const l=t?splitLinesNoRegex(t):[];
+          dbg("runSearch: payload sizes", { textLen: t.length, lines: l.length, numbersLen: Array.isArray(d.numbers)? d.numbers.length : null });
+          const w = d.window || {};
+          searchParams = {
+            field: 'message', q: '', exclude: false,
+            page: d.pageIndex||1, totalPages: d.totalPages||1, total: d.total||l.length,
+            windowIndex: (w.index!=null ? Number(w.index): (windex||0)),
+            windowCount: (w.windowCount!=null ? Number(w.windowCount): 1),
+            windowStartLine: (w.startLine!=null ? Number(w.startLine): 0),
+            windowEndLine: (w.endLine!=null ? Number(w.endLine): 0)
+          };
+          setPageInfo(); updateRangeUIState();
+          clearBody();
+          const nums = Array.isArray(d.numbers) ? d.numbers : null;
+          appendRowsFromLines(l, 0, nums);
+          setRowsStatVal();
+          window.scrollTo({top:document.body.scrollHeight});
+          dbg("runSearch: done", { rendered: l.length });
+        }catch(err){
+          dge("runSearch: error", err);
+        }
+      }
+      async function goSearchPage(i){
+        dbg("goSearchPage: request", { i, totalPages: searchParams.totalPages });
+        i=Math.max(1,Math.min(searchParams.totalPages||1,i));
+        searchParams.page=i; await runSearch(i);
+      }
+
+      // UI イベント
+      document.getElementById("prev").onclick=()=>{ if(mode==='search') goSearchPage((searchParams.page||1)-1); else goPage(currentPage-1); };
+      document.getElementById("next").onclick=()=>{ if(mode==='search') goSearchPage((searchParams.page||1)+1); else goPage(currentPage+1); };
+
+      // 範囲UIボタン
+      wprevBtn.addEventListener("click", ()=>{
+        if(searchParams.windowIndex>0){
+          searchParams.windowIndex -= 1;
+          runSearch(1);
+        }
+      });
+      wnextBtn.addEventListener("click", ()=>{
+        if(searchParams.windowIndex < (searchParams.windowCount-1)){
+          searchParams.windowIndex += 1;
+          runSearch(1);
+        }
+      });
+
+      // クリック→検索条件に追加（検索モード時はAND条件追加してモーダルを開く）
+      // 0:#, 1:date, 2:type, 3:functionName, 4:message, 5:user, 6:guild, 7:textChannel, 8:voiceChannel
+      function fieldByColIndex(idx){
+        switch(idx){
+          case 2: return "type";
+          case 3: return "functionName";
+          case 5: return "user";
+          case 6: return "guild";
+          case 7: return "textChannel";
+          case 8: return "voiceChannel";
+          default: return null;
+        }
+      }
+      document.querySelector("#table tbody").addEventListener("click",(ev)=>{
+        const tdEl = ev.target.closest("td"); if(!tdEl) return;
+        const idx = tdEl.cellIndex;
+        const field = fieldByColIndex(idx);
+        if(!field) return;
+        const value = (tdEl.textContent||"").trim(); if(!value) return;
+        // 検索モードで AND 条件を1つ追加してモーダルを開く
+        if(!Array.isArray(condSets) || condSets.length===0) condSets=[[]];
+        condSets[0].push({ q:value, field:field, exclude:false });
+        openModal();
+      });
+
+      // 検索モーダル制御
+      openSearchModalBtn.onclick = ()=>{ openModal(); };
+      dbg("UI handlers bound");
+      closeSearchBtn.onclick = ()=>{ closeModal(); };
+      dbg("UI handlers bound");
+      modalBackdrop.addEventListener('click', (e)=>{ if(e.target===modalBackdrop) closeModal(); });
+      dbg("UI handlers bound");
+      addOrGroupBtn.onclick = ()=>{ condSets.push([]); renderOrGroups(); };
+      dbg("UI handlers bound");
+      applySearchBtn.onclick = ()=>{ closeModal(); searchParams.windowIndex = 0; runSearch(1); };
+      dbg("UI handlers bound");
+
+      searchModeToggle.addEventListener('change', ()=>{
+        dbg("searchModeToggle changed", { checked: !!searchModeToggle.checked });
+        searchMode = !!searchModeToggle.checked;
+        if(!searchMode){ mode='normal'; setRangeUIVisible(false); initialLoad(); }
+        else { runSearch(1); }
+      });
+
+      // 起動
+      await initialLoad();
+      setInterval(poll, POLL_MS);
+      dbg("boot complete; polling started", { POLL_MS });
+    })();
+  </script>
+</body>
+</html>

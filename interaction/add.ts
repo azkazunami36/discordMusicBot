@@ -1,168 +1,80 @@
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, Message, Guild, GuildMember, APIInteractionGuildMember, MessageType } from "discord.js";
 import ytdl from "ytdl-core";
 import yts from "yt-search";
 
-import { InteractionInputData } from "../interface.js";
-import { CacheGetReturn, EnvData, Playlist, VideoMetaCache } from "../envJSON.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
-import { parseNicoVideo, searchNicoVideo } from "../ niconico.js";
-import { numberToTimeString } from "../numberToTimeString.js";
+import { InteractionInputData } from "../funcs/interface.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { messageEmbedGet, videoInfoEmbedGet } from "../funcs/embed.js";
+import { urlToQueue } from "../funcs/urlToQueue.js";
+import { progressBar } from "../createByChatGPT/progressBar.js";
+import { EnvData } from "../class/envJSON.js";
 
 export const command = new SlashCommandBuilder()
     .setName("add")
     .setDescription("曲を追加します。")
     .addStringOption(option => option
         .setName("text")
-        .setDescription("音楽を追加することができます。URLまたはVideoIDまたは検索したいタイトルを入力してください。複数曲追加することは現時点ではできません。")
+        .setDescription("音楽を追加することができます。URLまたは検索したいタイトルを入力してください。")
         .setRequired(true)
     )
     .addStringOption(option => option
-        .setName("service")
-        .setDescription("ダウンロードするサービスを優先して選びます。URLだった場合は自動で選択されます。")
-        .addChoices({ name: "YouTube", value: "youtube" }, { name: "ニコニコ動画", value: "niconico" })
+        .setName("type")
+        .setDescription("優先する読み取り方法です。動画URLだけどプレイリストがあったら取得したいときはプレイリストを選択します。YouTubeの場合にのみ対応しています。")
+        .addChoices(
+            { name: "動画", value: "youtube" },
+            { name: "プレイリスト", value: "youtubePlaylist" }
+        )
     )
 export const commandExample = "/add text:[URLまたはVideoIDまたは検索したいタイトル]";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
+        /** 検索するテキストデータ */
         const data = interaction.options.getString("text");
         const variableExistCheck = new VariableExistCheck(interaction);
         const guildData = await variableExistCheck.guild();
         if (!guildData) return;
-        if (data === null) return await interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription("追加したい曲が指定されませんでした。入力してから追加を行なってください。")
-            ]
-        });
-        if (data === "") return await interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription("内容が空です。入力してから追加をしてください。")
-            ]
-        });
-        const priority = interaction.options.getString("service");
-        const result = await (async function analysisStr(string: string, priority?: "youtube" | "niconico"): Promise<Playlist | undefined> {
-            await interaction.editReply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setDescription("文字列を分析中...")
-                ]
-            });
-            if (ytdl.validateURL(string)) return {
-                type: "videoId",
-                body: ytdl.getURLVideoID(string)
-            };
-            const nicovideoId = parseNicoVideo(string);
-            if (nicovideoId) return {
-                type: "nicovideoId",
-                body: nicovideoId
-            };
-            await interaction.editReply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setDescription("検索中...")
-                ]
-            });
-
-            async function search(string: string, type: "youtube" | "niconico"): Promise<Playlist | undefined> {
-                if (type === "youtube") {
-                    const result = await yts(string);
-                    return result.videos[0] ? {
-                        type: "videoId",
-                        body: result.videos[0].videoId
-                    } : undefined;
+        const serversData = await variableExistCheck.serverData(inputData.serversDataClass);
+        if (!serversData) return;
+        if (data === null) return await message.edit({ embeds: [messageEmbedGet("追加したい曲が指定されませんでした。入力してから追加を行なってください。", interaction.client)] });
+        const priority = interaction.options.getString("type");
+        const focus = Number(data.replace(/[！-～]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)));
+        const playlist = serversData.discord.search?.list[focus - 1];
+        /** 指定方法が数字であり、かつ検索結果がまだ有効な場合 */
+        if (focus) {
+            if (focus > 0 && playlist && Date.now() - (serversData.discord.search?.time || 0) < 5 * 60 * 60 * 1000) {
+                const envData = new EnvData(guildData.guildId);
+                envData.playlist.push(playlist);
+                await message.edit(await videoInfoEmbedGet([playlist], "曲を追加しました。", interaction.client));
+            }
+            else await message.edit({ embeds: [messageEmbedGet("この指定は認識することができませんでした。検索結果に一致する番号を選択すること、また`/search`コマンドを再度実行することをお試しください。", interaction.client)] });
+            return;
+        }
+        await urlToQueue(data, guildData, priority, message, async (percent, status, playlist, option) => {
+            switch (status) {
+                case "analyzing": {
+                    await message.edit({ embeds: [messageEmbedGet("文字列を分析しています..." + option.analyzed + "個解析済みです。\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
+                    break;
                 }
-                if (type === "niconico") {
-                    const result = await searchNicoVideo(string);
-                    return (result && result[0]) ? {
-                        type: "nicovideoId",
-                        body: result[0].contentId
-                    } : undefined;
+                case "searching": {
+                    await message.edit({ embeds: [messageEmbedGet("検索しています...\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
+                    break;
+                }
+                case "checkAndDownloading": {
+                    await message.edit({ embeds: [messageEmbedGet("取得したデータ" + option.analyzed + "個を解析・ダウンロードしています..." + (playlist || []).length + "曲はキューに追加済みで、再生が可能です。" + "\n" + (Math.floor(percent * 10) / 10) + "%`" + progressBar(percent, 35) + "`", interaction.client)] });
+                    break;
+                }
+                case "done": {
+                    await message.edit(await videoInfoEmbedGet(playlist || [], "曲を追加しました。", interaction.client));
+                    break;
+                }
+                case "failed": {
+                    await message.edit({ embeds: [messageEmbedGet("次のテキストは解析ができませんでした。\n`" + data + "`\n`/search`コマンドを利用することを検討してください。", interaction.client)] });
+                    break;
                 }
             }
-            const one = priority ? (priority === "niconico" ? "niconico" : "youtube") : "youtube";
-            const two = priority ? (priority === "niconico" ? "youtube" : "niconico") : "niconico";
-            return await search(string, one) || await search(string, two);
-        })(data, priority === null ? undefined : priority === "youtube" ? "youtube" : "niconico");
-        if (!result) return await interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription("「" + data + "」は有効な内容として認識することができず、追加ができませんでした。再度追加するか、botの作成者に相談してください。")
-            ]
-        });
-        const playlist = await variableExistCheck.playlist();
-        if (!playlist) return;
-        // 追加
-        playlist.push(result);
-        const envData = new EnvData(guildData.guildId);
-        envData.playlistSave(playlist);
-        const videoMetaCache = new VideoMetaCache();
-        async function videoInfoEmbedGet(playlistData: Playlist, message: string) {
-            const meta = await videoMetaCache.cacheGet(playlistData);
-            let authorName = "取得ができませんでした。";
-            let authorUrl: string | undefined;
-            let authorIconUrl: string | undefined;
-            let videoTitle = (meta?.body?.title || "取得ができませんでした。");
-            let videoUrl: string | undefined;
-            let videoThumbnail: string | undefined;
-            let serviceColor: "NotQuiteBlack" | "Red" | "Grey" = "NotQuiteBlack";
-            let serviceMessage = "エラー";
-            let serviceIconUrl: string | undefined;
-            if (meta?.body) if (meta.type === "videoId") {
-                const data = await videoMetaCache.youtubeUserInfoGet(meta.body.author.url);
-                if (data) {
-                    authorName = data?.snippet?.localized?.title || data?.snippet?.title || "取得に失敗";
-                    authorUrl = data?.id ? "https://youtube.con/channel/" + data?.id : "";
-                    authorIconUrl = data?.snippet?.thumbnails?.maxres?.url || data?.snippet?.thumbnails?.high?.url || data?.snippet?.thumbnails?.medium?.url || data?.snippet?.thumbnails?.standard?.url || data?.snippet?.thumbnails?.default?.url || "";
-                }
-                videoUrl = meta.body.url;
-                videoThumbnail = meta.body.thumbnail;
-                serviceColor = "Red";
-                serviceMessage = "Service by YouTube";
-                serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/yt_icon_red_digital.png";
-            } else if (meta.type === "nicovideoId") {
-                if (meta.body.userId) {
-                    const userData = await videoMetaCache.niconicoUserInfoGet(meta.body.userId);
-                    if (userData) {
-                        authorName = userData?.name || "取得に失敗";
-                        authorUrl = userData?.id ? "https://www.nicovideo.jp/user/" + userData?.id : "";
-                        authorIconUrl = userData?.iconUrl || "";
-                    }
-                }
-                if (meta.body.channelId) {
-                    const channelData = await videoMetaCache.niconicoChannelInfoGet(meta.body.channelId.startsWith("ch") ? meta.body.channelId : "ch" + meta.body.channelId);
-                    authorName = channelData?.name || "取得に失敗";
-                    authorUrl = channelData?.id ? "https://www.nicovideo.jp/user/" + channelData?.id : "";
-                    authorIconUrl = channelData?.iconUrl || "";
-                }
-                videoUrl = "https://www.nicovideo.jp/watch/" + meta.body.contentId;
-                videoThumbnail = meta.body.thumbnailUrl || "";
-                serviceColor = "Grey";
-                serviceMessage = "Service by ニコニコ動画";
-                serviceIconUrl = "https://azkazunami36.github.io/URL-basedData/nc296562_ニコニコ_シンボルマーク_白.png";
-            };
-            const embed = new EmbedBuilder()
-            if (authorUrl && authorIconUrl) embed.setAuthor({
-                name: authorName,
-                url: authorUrl,
-                iconURL: authorIconUrl,
-            })
-            embed.setTitle(videoTitle)
-            if (videoUrl) embed.setURL(videoUrl)
-            embed.setDescription(message)
-            if (serviceColor) embed.setColor(serviceColor)
-            embed.setFooter({
-                text: serviceMessage,
-                iconURL: serviceIconUrl,
-            });
-            if (videoThumbnail) if (meta?.type === "videoId") embed.setImage(videoThumbnail);
-            else embed.setThumbnail(videoThumbnail);
-            return embed;
-        }
-        const embed = await videoInfoEmbedGet(result, "曲が追加されました。");
-        await interaction.editReply({
-            embeds: [embed]
-        });
+        }, { urlOnly: true });
+
     }
 }
+

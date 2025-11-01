@@ -1,7 +1,8 @@
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } from "discord.js";
 
-import { InteractionInputData } from "../interface.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
+import { InteractionInputData } from "../funcs/interface.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { messageEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("backseek")
@@ -12,7 +13,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         // 1. 必要な変数があるかチェック
         const variableExistCheck = new VariableExistCheck(interaction);
@@ -22,14 +23,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (!serverData) return;
         if (await variableExistCheck.playerIsNotPlaying(inputData.player)) return;
         const second = interaction.options.getNumber("second") || 10;
-        await inputData.player.playtimeSet(guildData.guildId, (await inputData.player.playtimeGet(guildData.guildId) || 0) - second);
-        interaction.editReply({
-            embeds: [
-                new EmbedBuilder()
-                    .setDescription(second + "秒巻き戻しました。")
-                    .setColor("Purple")
-            ]
-        });
+        await inputData.player.playtimeSet(guildData.guildId, inputData.player.playtimeGet(guildData.guildId) - second);
+        message.edit({ embeds: [messageEmbedGet(second + "秒巻き戻しました。", interaction.client)] });
     }
 }
-

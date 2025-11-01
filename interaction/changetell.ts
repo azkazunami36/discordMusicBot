@@ -1,7 +1,8 @@
-import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder } from "discord.js";
-import { InteractionInputData } from "../interface.js";
-import { EnvData } from "../envJSON.js";
-import { VariableExistCheck } from "../variableExistCheck.js";
+import { Interaction, SlashCommandBuilder, CacheType, EmbedBuilder, Message } from "discord.js";
+import { InteractionInputData } from "../funcs/interface.js";
+import { EnvData } from "../class/envJSON.js";
+import { VariableExistCheck } from "../class/variableExistCheck.js";
+import { messageEmbedGet } from "../funcs/embed.js";
 
 export const command = new SlashCommandBuilder()
     .setName("changetell")
@@ -13,7 +14,7 @@ export const command = new SlashCommandBuilder()
     )
 export const commandExample = "";
 
-export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData) {
+export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
     if (interaction.isChatInputCommand()) {
         const type = interaction.options.getBoolean("type");
         const variableExistCheck = new VariableExistCheck(interaction);
@@ -22,24 +23,11 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         const envData = new EnvData(guildData.guildId);
         if (type) {
             envData.changeTellIs = true;
-            interaction.editReply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setDescription("常に曲の切り替えを伝えるように変更しました。")
-                        .setColor("Purple")
-                ]
-            });
+            message.edit({ embeds: [messageEmbedGet("常に曲の切り替えを伝えるように変更しました。", interaction.client)] });
         } else {
             envData.changeTellIs = false;
-            interaction.editReply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setDescription("曲の変更は常に通知なしで行われるように変更しました。")
-                        .setColor("Purple")
-                ]
-            })
+            message.edit({ embeds: [messageEmbedGet("曲の変更は常に通知なしで行われるように変更しました。", interaction.client)] })
         }
 
     }
 }
-
