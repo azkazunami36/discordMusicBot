@@ -231,7 +231,6 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             else if (!interaction.channel.permissionsFor(me).has(checkPermission)) permissionIs = false;
         }
         SumLog.log("コマンド「/" + interaction.commandName + "」の実行を開始しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, functionName: "client.on Interaction", userId: interaction.user.id });
-        if (!permissionIs) SumLog.log("このサーバーが権限が不足している箇所が多いようです。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, functionName: "client.on Interaction", userId: interaction.user.id });
         // 4. 必要なデータを整え、コマンドを実行します。
         const inputData: InteractionInputData = { serversDataClass, player };
         const response = await interaction.reply({
@@ -239,17 +238,20 @@ client.on(Discord.Events.InteractionCreate, async interaction => {
             withResponse: true
         });
         const message = response.resource?.message || undefined;
-        if (!permissionIs) await interaction.followUp({
-            embeds: [new Discord.EmbedBuilder()
-                .setTitle("警告")
-                .setAuthor({
-                    name: "音楽bot",
-                    iconURL: client.user?.avatarURL() || undefined,
-                })
-                .setDescription("この音楽botはテキスト送信権限のないチャンネルでコマンドを実行しています。権限を付与しない場合、様々な機能が利用できません。ご注意ください。この警告は改善されるまで常に表示されます。")
-                .setColor("Purple")
-            ]
-        });
+        if (!permissionIs) {
+            SumLog.warn("このサーバーでは権限のないエリアでbotを実行しています。エラーの原因となる可能性が高いです。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, functionName: "client.on Interaction", userId: interaction.user.id });
+            await interaction.followUp({
+                embeds: [new Discord.EmbedBuilder()
+                    .setTitle("警告")
+                    .setAuthor({
+                        name: "音楽bot",
+                        iconURL: client.user?.avatarURL() || undefined,
+                    })
+                    .setDescription("この音楽botはテキスト送信権限のないチャンネルでコマンドを実行しています。権限を付与しない場合、様々な機能が利用できません。ご注意ください。この警告は改善されるまで常に表示されます。")
+                    .setColor("Purple")
+                ]
+            });
+        }
         if (!message) return SumLog.error("メッセージを取得できなかったため、コマンドは実行されませんでした。", { functionName: "client.on Interaction", guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, userId: interaction.user.id });
         try {
             await commandFunction.execute(interaction, inputData, message);
