@@ -163,6 +163,9 @@ export class Player extends EventEmitter {
         // 3. プレイヤーを作成し、VCの接続を待った後にプレイヤーを登録して返す。
         if (this.status[guildId]?.player) {
             const player = this.status[guildId].player;
+            player.on("stateChange", (oldState, newState) => {
+                SumLog.log("ステータス「" + oldState.status + "」が「" + newState.status + "」に切り替わりました。", { functionName: "Player playerGet" })
+            });
             try {
                 await entersState(connection, VoiceConnectionStatus.Ready, 10000);
             } catch (e) {

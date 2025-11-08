@@ -27,7 +27,7 @@
     "ytpl": "^2.3.0"
   },
   "scripts": {
-    "start": "npm i && tsc && node main",
+    "start": "npm i && tsc && node --trace-warnings --no-force-async-hooks-checks main",
     "log": "npm i && tsc && node ./createByChatGPT/logPreview/server"
   }
 }

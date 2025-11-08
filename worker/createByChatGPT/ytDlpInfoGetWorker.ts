@@ -1,9 +1,5 @@
 /**
- * Worker Thread 側コード。
- * 親（Helper）から渡された Playlist を受け取り、
- * yt-dlp を実行して行区切り JSON をパースし、YtDlpInfo[] を返します。
- *
- * 実行コマンド: yt-dlp -j -q --no-warnings --cookies-from-browser chrome <URL> [extraArgs...]
+ * 改良版：YouTubeのplayer_clientを順番に試す
  */
 
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
@@ -12,157 +8,145 @@ import { Playlist } from "../../class/envJSON.js";
 import { YtDlpInfo } from "../../createByChatGPT/ytDlp.js";
 import { Picture } from "../../class/sourcePathManager.js";
 
-/** WorkerData で受け取るデータの型 */
 interface JobData {
   playlist: Playlist;
 }
 
-/** 親スレッドへ返すメッセージの型 */
 type WorkerReply =
   | { ok: true; data: YtDlpInfo[]; stderr?: string }
-  | { ok: false; error: string; stderr?: string };
+  | { ok: false; error: string; stderr?: string; args?: string[]; tried?: string[] };
 
-/** メインスレッドから直接実行されることは想定しない */
-if (isMainThread) {
-  // もし直に呼ばれたら何もせず終了（安全策）
-  process.exit(0);
-}
+if (isMainThread) process.exit(0);
 
-/** Worker の本体処理 */
 (async () => {
   const port = parentPort!;
   const { playlist } = (workerData as JobData) ?? {};
 
   try {
-    const args = buildArgs(playlist);
-    const { stdout, stderr, code, signal } = await runYtDlp(args);
+    const triedClients: string[] = [];
+    const clientPriority = [
+      "android_music", // 🎵 音質最優先 (Opus率高)
+      "web_music",     // 🎧 安定＋Opus対応
+      "web",           // 💻 標準クライアント
+      "android",       // 📱 軽量
+      "ios",           // 🍎 AAC系安定
+      "tv_embedded",   // 📺 一部OGG対応 (旧仕様)
+    ];
 
-    if (code !== 0) {
-      const msg = [
-        `yt-dlp exited with code=${code}${signal ? ` signal=${signal}` : ""}`,
-        stderr ? truncate(stderr, 2000) : ""
-      ].filter(Boolean).join("\n");
-      const fail: WorkerReply = { ok: false, error: msg, stderr };
-      port.postMessage(fail);
-      return;
+    let success = false;
+    let lastError = "";
+    let lastArgs: string[] = [];
+
+    for (const client of clientPriority) {
+      triedClients.push(client);
+      const args = buildArgs(playlist, client);
+      const result = await runYtDlp(args);
+
+      if (result.code === 0 && result.stdout.trim()) {
+        const data = parseNdjson(result.stdout);
+        if (data.length > 0) {
+          port.postMessage({ ok: true, data, stderr: result.stderr });
+          success = true;
+          break;
+        }
+      }
+
+      lastError = result.stderr || result.stdout || "(no output)";
+      lastArgs = args;
     }
 
-    const data = parseNdjson(stdout);
-    const ok: WorkerReply = { ok: true, data, stderr };
-    port.postMessage(ok);
+    if (!success) {
+      const msg = [
+        `yt-dlp failed for all clients.`,
+        `Last error: ${truncate(lastError, 2000)}`,
+        `Last args: ${lastArgs.join(" ")}`,
+      ].join("\n");
+      port.postMessage({
+        ok: false,
+        error: msg,
+        stderr: lastError,
+        args: lastArgs,
+        tried: triedClients,
+      });
+    }
   } catch (e: any) {
-    const fail: WorkerReply = {
+    parentPort?.postMessage({
       ok: false,
-      error: e?.message ?? String(e)
-    };
-    port.postMessage(fail);
+      error: e?.message ?? String(e),
+    } as WorkerReply);
   }
-})().catch((e) => {
-  // 最後の砦
-  parentPort?.postMessage({ ok: false, error: String(e) } as WorkerReply);
-});
+})();
 
-/** Playlist から yt-dlp の引数を作る */
-function buildArgs(playlist: Playlist | Picture): string[] {
+/** yt-dlpの引数を組み立てる */
+function buildArgs(playlist: Playlist | Picture, client: string): string[] {
   const { type, body } = playlist;
 
-  // 既定オプション
   const args: string[] = [
     "-j",
     "-q",
     "--no-warnings",
     "--cookies-from-browser",
-    "chrome", // 必要なら "safari" へ
+    "firefox",
+    "--extractor-args",
+    `youtube:player_client=${client}`,
+    "--format",
+    "bestaudio/best"
   ];
 
-  // サイトごとの追加
   switch (type) {
     case "twitterId":
-    case "twitterThumbnail": {
-      // X（Twitter）
-      const url = `https://x.com/i/web/status/${body}`;
-      args.push(url);
+    case "twitterThumbnail":
+      args.push(`https://x.com/i/web/status/${body}`);
       break;
-    }
 
-    case "videoId": {
-      // YouTube
-      const url = `https://youtu.be/${body}`;
-      args.push(
-        "--extractor-args",
-        "youtube:player_client=tv_embedded",
-        url
-      );
+    case "videoId":
+      args.push(`https://youtu.be/${body}`);
       break;
-    }
 
-    case "nicovideoId": {
-      // ニコニコ動画
-      const url = `https://www.nicovideo.jp/watch/${body}`;
-      args.push(
-        "--add-header",
-        "Referer:https://www.nicovideo.jp/",
-        url
-      );
+    case "nicovideoId":
+      args.push("--add-header", "Referer:https://www.nicovideo.jp/", `https://www.nicovideo.jp/watch/${body}`);
       break;
-    }
 
-    default: {
-      // 既知以外は body をそのまま URL とみなす（必要なら絞ってください）
+    default:
       args.push(String(body));
       break;
-    }
   }
 
   return args;
 }
 
-/** yt-dlp を spawn して stdout/stderr を取得（大きな出力でも安全） */
-function runYtDlp(args: string[]): Promise<{ stdout: string; stderr: string; code: number | null; signal: NodeJS.Signals | null; }> {
+/** spawnでyt-dlpを実行 */
+function runYtDlp(args: string[]): Promise<{ stdout: string; stderr: string; code: number | null; signal: NodeJS.Signals | null }> {
   return new Promise((resolve) => {
-    const child = spawn("yt-dlp", args, {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let out = "";
-    let err = "";
+    const child = spawn("yt-dlp", args, { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "", err = "";
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (c) => (out += c));
+    child.stderr.on("data", (c) => (err += c));
 
-    child.stdout.on("data", (chunk) => { out += chunk; });
-    child.stderr.on("data", (chunk) => { err += chunk; });
-
-    child.on("close", (code, signal) => {
-      resolve({ stdout: out, stderr: err, code, signal });
-    });
-
-    child.on("error", (e) => {
-      resolve({
-        stdout: out,
-        stderr: err + `\nspawn error: ${String(e)}`,
-        code: 1,
-        signal: null
-      });
-    });
+    child.on("close", (code, signal) => resolve({ stdout: out, stderr: err, code, signal }));
+    child.on("error", (e) =>
+      resolve({ stdout: out, stderr: err + `\nspawn error: ${String(e)}`, code: 1, signal: null })
+    );
   });
 }
 
-/** 行区切り JSON（NDJSON）を配列にパース */
 function parseNdjson(stdout: string): YtDlpInfo[] {
-  const lines = stdout.split(/\r?\n/).filter(Boolean);
-  const out: YtDlpInfo[] = [];
-  for (const line of lines) {
-    try {
-      out.push(JSON.parse(line) as YtDlpInfo);
-    } catch {
-      // 1行壊れてても他は活かす
-    }
-  }
-  return out;
+  return stdout
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line) as YtDlpInfo;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as YtDlpInfo[];
 }
 
-/** ログを適度に丸める */
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + "…(truncated)" : s;
 }
