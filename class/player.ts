@@ -163,6 +163,9 @@ export class Player extends EventEmitter {
         // 3. プレイヤーを作成し、VCの接続を待った後にプレイヤーを登録して返す。
         if (this.status[guildId]?.player) {
             const player = this.status[guildId].player;
+            player.on("stateChange", (oldState, newState) => {
+                SumLog.log("ステータス「" + oldState.status + "」が「" + newState.status + "」に切り替わりました。", { functionName: "Player playerGet" })
+            });
             try {
                 await entersState(connection, VoiceConnectionStatus.Ready, 10000);
             } catch (e) {
@@ -426,7 +429,7 @@ export class Player extends EventEmitter {
         if (!this.status[guildId].playing.meta.ffprobe.duration) SumLog.warn("次のFFprobe情報にはdurationがなく、かなり危険な状態です。現在続行可能な処理がないため、続きの曲が再生できません。", { guildId, voiceChannelId: data.channelId, functionName: "Player ffmpegPlay" });
         this.status[guildId].playEndTimeout = setTimeout(() => {
             this.emit("playAutoEnd", guildId);
-        }, ((Number(this.status[guildId].playing.meta.ffprobe.duration) ?? 0) - (this.status[guildId].playtimeMargin || 0)) * 1000);
+        }, (((Number(this.status[guildId].playing.meta.ffprobe.duration) ?? 0) - (this.status[guildId].playtimeMargin || 0)) * 1000) / (this.status[guildId].tempo || 1));
     }
     /** 
      * 指定した内容に強制的に切り替えます。

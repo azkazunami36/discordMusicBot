@@ -53,8 +53,28 @@ function openFdSync(p: string): number { return fs.openSync(p, "r"); }
 function closeFdSync(fd: number) { try { fs.closeSync(fd); } catch {} }
 
 function readSliceSync(fd: number, start: number, length: number): Buffer {
-  const buf = Buffer.alloc(length);
-  fs.readSync(fd, buf, 0, length, start);
+  // 🛡 Guard against negative or NaN values
+  if (!Number.isFinite(length) || length <= 0) {
+    return Buffer.alloc(0);
+  }
+  if (!Number.isFinite(start) || start < 0) {
+    start = 0;
+  }
+
+  // Clamp to 2 GiB (max Buffer size safety for Node)
+  const MAX_SLICE = 2 * 1024 * 1024 * 1024;
+  const safeLen = Math.min(length, MAX_SLICE);
+
+  const buf = Buffer.allocUnsafe(safeLen);
+  try {
+    fs.readSync(fd, buf, 0, safeLen, start);
+  } catch (err: any) {
+    // Graceful fallback for out-of-range or partial reads
+    if (err.code === "ERR_OUT_OF_RANGE" || err.code === "EINVAL" || err.code === "EFBIG") {
+      return Buffer.alloc(0);
+    }
+    throw err;
+  }
   return buf;
 }
 
@@ -449,18 +469,31 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === "/data") {
-      // 追記分をそのまま返す（以前のまま）
       const pos = Math.max(0, Number(parsed.searchParams.get("pos") || "0"));
       const st = safeStat(LOG_PATH);
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-      if (!st) { res.end(JSON.stringify({ chunk: "", nextPos: 0, size: 0 })); return; }
+
+      if (!st) {
+        res.end(JSON.stringify({ chunk: "", nextPos: 0, size: 0 }));
+        return;
+      }
+
+      const size = st.size;
+
+      // 🛡 安全チェック: pos がファイルサイズより大きい場合はリセット
+      if (pos >= size) {
+        res.end(JSON.stringify({ chunk: "", nextPos: size, size }));
+        return;
+      }
+
+      const length = Math.max(0, size - pos); // 🛡 length は負にならないよう制限
       const fd = openFdSync(LOG_PATH);
       try {
-        const size = st.size;
-        if (pos >= size) { res.end(JSON.stringify({ chunk: "", nextPos: size, size })); return; }
-        const buf = readSliceSync(fd, pos, size - pos);
+        const buf = readSliceSync(fd, pos, length);
         res.end(JSON.stringify({ chunk: buf.toString("utf-8"), nextPos: size, size }));
-      } finally { closeFdSync(fd); }
+      } finally {
+        closeFdSync(fd);
+      }
       return;
     }
 

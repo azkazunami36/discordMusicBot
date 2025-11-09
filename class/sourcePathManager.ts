@@ -171,15 +171,43 @@ export class SourcePathManager {
                         let errmsg = "";
                         const retry = (err?: any) => {
                             SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。リトライ関数で再施行します。", { functionName: "SourcePathManager downloadProcess" });
-                            const candidates = [
-                                "/opt/homebrew/bin/yt-dlp",
-                                "/usr/local/bin/yt-dlp",
-                                (() => { try { return execSync("which yt-dlp").toString().trim(); } catch { return null; } })(),
-                            ].filter(Boolean);
-                            const ytdlp = candidates.find(p => { try { return p && fs.existsSync(p); } catch { return false; } });
-                            if (!ytdlp) throw new Error("yt-dlp が見つかりませんでした（PATHに無い/権限不足）。/opt/homebrew/bin/yt-dlp を確認してください。");
+                            const cp = spawn("yt-dlp", [
+                                "--progress", "--newline",
+                                "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
+                                "-o", folderPath + "/%(id)s" + (downloadingQueue.playlist.type === "twitterId" ? "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache.%(ext)s",
+                                "--progress-template", "%(progress)j",
+                                "--cookies-from-browser", "firefox",
+                                ...(() => {
+                                    if (type === "videoId") return ["--extractor-args", "youtube:player_client=android"]
+                                    if (type === "nicovideoId") return ["--add-header", "Referer:https://www.nicovideo.jp/"]
+                                    if (type === "twitterId") return ["--playlist-items", String(downloadingQueue.playlist.number || 1)]
+                                    return []
+                                })(),
+                                (type === "videoId" ? "https://youtu.be/" : type === "twitterId" ? "https://x.com/i/web/status/" : "https://www.nicovideo.jp/watch/") + downloadingId
+                            ], { cwd: process.cwd() });
 
-                            const cp = spawn(ytdlp, [
+                            cp.stdout.setEncoding("utf8");
+                            cp.stderr.setEncoding("utf8");
+
+                            cp.stdout.on("data", chunk => {
+                                const progress = parseYtDlpProgressLine(String(chunk));
+                                status("downloading", 40 + ((progress?._percent || 0) / 100) * 20);
+                            });
+
+                            cp.stderr.on("data", message => {
+                                errmsg += message;
+                            });
+
+                            cp.on("close", code => {
+                                if (code === 0) resolve();
+                                else retry2(errmsg);
+                            });
+
+                            cp.on("error", e => { retry2(errmsg) });
+                        }
+                        const retry2 = (err?: any) => {
+                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。リトライ関数で再施行します。", { functionName: "SourcePathManager downloadProcess" });
+                            const cp = spawn("yt-dlp", [
                                 "--progress", "--newline",
                                 "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
                                 "-o", folderPath + "/%(id)s" + (downloadingQueue.playlist.type === "twitterId" ? "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache.%(ext)s",
@@ -217,7 +245,7 @@ export class SourcePathManager {
                             "-f", audioformat?.format_id || "",
                             "-o", folderPath + "/%(id)s" + (downloadingQueue.playlist.type === "twitterId" ? "-" + downloadingId + "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache.%(ext)s",
                             "--progress-template", "%(progress)j",
-                            "--cookies-from-browser", "chrome",
+                            "--cookies-from-browser", "firefox",
                             ...(() => {
                                 if (type === "videoId") return ["--extractor-args", 'youtube:player_client=tv_embedded']
                                 if (type === "nicovideoId") return ["--add-header", "Referer:https://www.nicovideo.jp/"]
