@@ -14,7 +14,7 @@ package-lock.json
 .DS_Store
 !types/**/*.d.ts
 !webAudioAPI/worklet/**/*.js
-!gui/**/*
+!docs/**/*
 musicBrainzCache.json
 log
 cacheJSONs

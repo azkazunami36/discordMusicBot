@@ -1,4 +1,4 @@
-import { ActiveElement } from '../../../scripts/class/ActiveElement';
+import { ActiveElement } from '../../../scripts/class/ActiveElement.js';
 import { formatDate } from '../../../scripts/function/formatDate.js';
 import { serverRequest } from '../../../scripts/function/serverRequest.js';
 import { MusicInfo } from '../../../scripts/interfaces/MusicInfo.js';

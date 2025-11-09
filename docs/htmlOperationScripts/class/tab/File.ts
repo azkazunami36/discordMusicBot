@@ -1,4 +1,4 @@
-import { ActiveElement } from '../../../scripts/class/ActiveElement';
+import { ActiveElement } from '../../../scripts/class/ActiveElement.js';
 import { formatDate } from '../../../scripts/function/formatDate.js';
 import { POSTData } from '../../../scripts/interfaces/POSTData.js';
 import { FileList } from '../panel/List/FileList.js';
