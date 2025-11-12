@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/kazunami/emsdk/upstream/emscripten/system/include",
+                "/home/kazunami/emsdk/upstream/emscripten/system/include/libc",
+                "/home/kazunami/emsdk/upstream/emscripten/system/lib/libc/musl/arch/emscripten"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
