@@ -33,7 +33,6 @@ export class EditMusicAddFilePopup extends EventEmitter<{}> {
             if (!editingData.sounds[0].filelist) editingData.sounds[0].filelist = [];
             if (!editingData.sounds[0].filelist.find(value => value.filename === fileName)) editingData.sounds[0].filelist.push({
                 filename: fileName.name,
-                filetypename: "default",
                 filetype: "default",
                 timediff: 0
             });

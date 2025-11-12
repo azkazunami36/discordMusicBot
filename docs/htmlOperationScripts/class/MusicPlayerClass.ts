@@ -114,7 +114,7 @@ export class MusicPlayerClass extends EventEmitter<{
     /**
      * シークバーの更新用インターバル
      */
-    private interval: number | undefined;
+    private interval: NodeJS.Timeout | undefined;
     /**
      * シークバーを操作中かどうか
      */
@@ -206,7 +206,7 @@ export class MusicPlayerClass extends EventEmitter<{
      */
     async playChange() {
         const streamfilenames = await this.getPlayingStreamFilename();
-        function uriGet() {
+        const uriGet = () => {
             const query: POSTData = {};
             let fileName: string | undefined = "";
             if (this.playType === "flac") fileName = streamfilenames?.flacfilename;

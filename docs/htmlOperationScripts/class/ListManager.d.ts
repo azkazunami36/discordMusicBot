@@ -42,7 +42,7 @@ export declare class ListManagerV2 extends EventEmitter<ListManagerEvents> {
     }[];
     /** ソート中の項目名 */
     sortingName: string | undefined;
-    private viewedList;
+    private viewedList?;
     /**
      * @param firstElement リストのメイン要素を囲う要素なら何でもOK。マウスクリックイベントを登録する。
      * @param mainElement リストのメイン要素。tableを囲っている必要があり、スクロール位置を計算するために必要。

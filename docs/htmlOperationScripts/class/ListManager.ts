@@ -65,7 +65,7 @@ export class ListManagerV2 extends EventEmitter<ListManagerEvents> {
     }[] = [];
     /** ソート中の項目名 */
     sortingName: string | undefined;
-    private viewedList: {
+    private viewedList?: {
         [id: string]: any
     }
     /**
@@ -226,7 +226,7 @@ export class ListManagerV2 extends EventEmitter<ListManagerEvents> {
         if (activedElement) {
             let className: string | undefined;
             activedElement.classList.forEach(value => { if (value.includes("selectingNumber")) className = value });
-            if (className) return this.viewedList[className.split("-")[1]];
+            if (className) return this.viewedList?.[className.split("-")[1]];
         }
     }
 };

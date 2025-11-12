@@ -125,7 +125,7 @@ export class MusicPlayerClass extends EventEmitter {
      */
     async playChange() {
         const streamfilenames = await this.getPlayingStreamFilename();
-        function uriGet() {
+        const uriGet = () => {
             const query = {};
             let fileName = "";
             if (this.playType === "flac")
@@ -133,7 +133,7 @@ export class MusicPlayerClass extends EventEmitter {
             else
                 fileName = streamfilenames?.aacfilename;
             return window.location.origin + ":38671/?" + new URLSearchParams({ fileName: decodeURIComponent(fileName || "") });
-        }
+        };
         console.log(this.audioElement.src, uriGet.bind(this)());
         if (this.audioElement.src !== uriGet.bind(this)()) {
             this.audioElement.src = uriGet.bind(this)();

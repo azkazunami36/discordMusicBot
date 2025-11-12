@@ -62,7 +62,7 @@ export class ListPanel extends EventEmitter<ListManagerEvents> {
     /** ソート中の項目名 */
     sortingName: string | undefined;
     refleshRequest: ((progress: (progressData: { total: number, now: number }) => void) => Promise<void>) | undefined;
-    private viewedList: { [id: string]: any }
+    private viewedList?: { [id: string]: any }
     private listReflashing = false;
     /**
      * @param firstElement リストのメイン要素を囲う要素なら何でもOK。マウスクリックイベントを登録する。
@@ -235,7 +235,7 @@ export class ListPanel extends EventEmitter<ListManagerEvents> {
         if (activedElement) {
             let className: string | undefined;
             activedElement.classList.forEach(value => { if (value.includes("selectingNumber")) className = value });
-            if (className) return this.viewedList[className.split("-")[1]];
+            if (className) return this.viewedList?.[className.split("-")[1]];
         }
     }
     async listReflash(loadingBlankIs?: boolean) {

@@ -189,7 +189,7 @@ export class ListPanel extends EventEmitter {
             activedElement.classList.forEach(value => { if (value.includes("selectingNumber"))
                 className = value; });
             if (className)
-                return this.viewedList[className.split("-")[1]];
+                return this.viewedList?.[className.split("-")[1]];
         }
     }
     async listReflash(loadingBlankIs) {

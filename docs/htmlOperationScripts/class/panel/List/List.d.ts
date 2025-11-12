@@ -69,7 +69,7 @@ export declare class ListPanel extends EventEmitter<ListManagerEvents> {
         total: number;
         now: number;
     }) => void) => Promise<void>) | undefined;
-    private viewedList;
+    private viewedList?;
     private listReflashing;
     /**
      * @param firstElement リストのメイン要素を囲う要素なら何でもOK。マウスクリックイベントを登録する。

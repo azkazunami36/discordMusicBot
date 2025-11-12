@@ -1,5 +1,5 @@
 import { DiscordGatewayAdapterCreator, getVoiceConnection, joinVoiceChannel, VoiceConnectionStatus, AudioPlayer, AudioPlayerStatus, createAudioResource, StreamType, entersState, PlayerSubscription, AudioResource, AudioPlayerState } from "@discordjs/voice";
-import { Playlist } from "./envJSON.js";
+import { EnvData, Playlist } from "./envJSON.js";
 import { SourcePathManager, sourcePathManager } from "./sourcePathManager.js";
 import { ChildProcessByStdio, spawn } from "child_process";
 import ffmpeg from "fluent-ffmpeg";
@@ -209,6 +209,8 @@ export class Player extends EventEmitter {
                     if (this.status[guildId].playing) this.status[guildId].playing = undefined;
                     if (this.status[guildId].playEndTimeout) clearTimeout(this.status[guildId].playEndTimeout);
                     this.stop(guildId);
+                    const envData = new EnvData(guildId);
+                    envData.manualStartedIs = false;
                 }
             }
         });

@@ -3,7 +3,7 @@ export class database {
 
     };
     async folderSet() {
-        const directoryHandle = await window.showDirectoryPicker();
+        const directoryHandle = await (window as any).showDirectoryPicker?.();
         const entries = directoryHandle.values();
         for await (const entry of entries) {
         }

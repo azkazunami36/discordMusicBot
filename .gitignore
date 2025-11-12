@@ -20,3 +20,5 @@ log
 cacheJSONs
 voiceFolder
 ._*
+.DS_Store
+*.pcm
