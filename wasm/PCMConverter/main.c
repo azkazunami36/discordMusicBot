@@ -4,45 +4,56 @@
 #include <stdint.h>
 #include <stdio.h>
 
+int fixbitlength(int bit) {
+    int i = 1;
+    while (bit > i) i <<= 1;
+    return i;
+}
 /**
  * 復元メイン処理です。ポインタを入力すると処理をします。
- * 
+ *
  * 引数3番目に入力bit数、引数4番目に出力bit数を指定してください。
- * 
+ *
  * 入力bit数は8bit、10bit、16bitを動作確認済みとします。
- * 
+ *
  * 出力bitは16bit、24bit、32bitを動作確認済みとします。
- * 
+ *
  * エラーは出ません。例外があっても、穴埋めされます。要注意。
  */
 EMSCRIPTEN_KEEPALIVE
 uint64_t* convertToOriginal(uint64_t* data, int length, int inbit, int outbit) {
-    /** 
-     * lengthはもしinbitが10bitの場合、16bitの長さにデータが入っている。
-     * 
-     * 例えば16bitにピッタリ10bitを入れ切るには、16bitが5つ必要。16 * 5 = 80 bit。
-     * 
-     * そして、80bitは8サンプル入る。入力時10バイト分(5セット)だったものが8サンプル(16バイト)になる。
-     * 
-     * なので入力時のlengthが5なら、(5 / 5) * 8と計算することで本当の出力値にできる。注意として、この時入れる5というlengthは5の倍数でないとならない。
-     * 
-     * 計算式を立てるとoutLength = (length / (inbit / 2)) * ((inbit + (16 - 1)) / 16)となる。inbitが正しくないと処理ができないので注意。
-     */
-    /** 音声の実データです。inbitの半分を利用します。 */
+    // inbitが何セットで表せるか。10bitなら1セット(16bit)。
+    int inputset = (inbit + (16 - 1)) / 16;
+    // inbitが入る適切な長さ。
+    int inputbit = fixbitlength(inputset * 16);
+
+    // 上記のコードはinbitから対応するbit幅を確かめる。10bitは16bitに展開しないといけないし、20bitは32bitに展開しないといけない。
+
+    int befdepset = 0;
+    int deployset = 0;
+    for (int i = 0; i < 30; i++) {
+        if (((inputbit * i) % inbit) == 0) {
+            befdepset = i;
+            deployset = (inputbit * i) / inbit;
+            break;
+        }
+    }
+    // 上記のコードは展開前の必要なまとまりと、展開後の必要なまとまりを表す。inbitが10bitならbefdepsetが5、deploysetが8となる。
+
+    /** 音声の実データ幅です。inbitの半分を利用します。 */
     int bit = inbit / 2;
     /** marginの圧縮です。品質劣化が激しいため現時点で1です。 */
     int margincompress = 1;
-    /**
-     * 中途半端なbitをまとめてバイトで管理するときに、どこのバイトで区切るかの基準です。
-     * 
-     * 現在16を固定値にしてますが、もしかしたらoutbitかもしれない。
-     */
-    int ssv = inbit % 16;
-    /** ssvを元にlengthで足りていないデータ量を確認します。 */
-    int emptyVal = ssv - (length % ssv);
+
+    /** befdepsetを元にlengthで足りていないデータ量を確認します。 */
+    int emptyVal = befdepset - (length % befdepset);
+
+    /** 出力の長さです。 */
+    int outlength = (length / befdepset) * deployset;
 
     /** 結果です。 */
-    uint64_t* results = malloc((length) * sizeof(uint64_t));
+    uint64_t* results = malloc((outlength) * sizeof(uint64_t));
+    
 }
 uint16_t* PCM8bitto16bit(uint8_t* raws, int length) {
     /** ここに実データのbit幅を入れます。4ならmarginは最大で3bit使えます。 */
@@ -77,16 +88,14 @@ uint16_t* PCM8bitto16bit(uint8_t* raws, int length) {
 
 /**
  * 復元メイン処理です。ポインタを入力すると処理をします。
- * 
+ *
  * 引数3番目に入力bit数、引数4番目に出力bit数を指定してください。
- * 
+ *
  * 入力bit数は16bit、24bit、32bitを動作確認済みとします。
- * 
+ *
  * 出力bitは8bit、10bit、16bitを動作確認済みとします。
- * 
+ *
  * エラーは出ません。例外があっても、穴埋めされます。要注意。
  */
 EMSCRIPTEN_KEEPALIVE
-uint64_t* convertToCompress(uint64_t* data, int length, int inbit, int outbit) {
-
-}
+uint64_t* convertToCompress(uint64_t* data, int length, int inbit, int outbit) {}
