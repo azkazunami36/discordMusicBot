@@ -21,7 +21,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             fs.readdirSync("interaction").forEach(async str => {
                 if (!str.endsWith(".ts")) return;
                 try {
-                    const { execute, command } = await import("./interaction/" + str);
+                    const { execute, command } = await import("./" + str);
                     arr.push({ execute, command });
                 } catch (e) {
                     console.error(e, str);
@@ -39,7 +39,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             fs.readdirSync("adminInteraction").forEach(async str => {
                 if (!str.endsWith(".ts")) return;
                 try {
-                    const { execute, command } = await import("./adminInteraction/" + str);
+                    const { execute, command } = await import("./" + str);
                     arr.push({ execute, command });
                 } catch (e) {
                     console.error(e, str);
