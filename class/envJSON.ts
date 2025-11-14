@@ -233,6 +233,20 @@ export class EnvData {
     get manualStartedIs() {
         return this.#envJSON("manualStartedIs") === "true";
     }
+    /** 初期値はtrue */
+    set queueAutoReset(boolean: boolean) {
+        this.#envJSON("queueAutoReset", boolean ? "true" : "false");
+    }
+    get queueAutoReset() {
+        return this.#envJSON("queueAutoReset") === "false" ? false : true;
+    }
+    /** 初期値はtrue */
+    set eqAutoReset(boolean: boolean) {
+        this.#envJSON("eqAutoReset", boolean ? "true" : "false");
+    }
+    get eqAutoReset() {
+        return this.#envJSON("eqAutoReset") === "false" ? false : true;
+    }
 }
 
 export class GlobalEnvData {

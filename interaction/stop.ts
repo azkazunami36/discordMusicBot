@@ -22,7 +22,18 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (await variableExistCheck.playerIsStopping(inputData.player)) return;
         if (envData.playType === 1) playlist.shift();
         inputData.player.stop(guildData.guildId);
-        await message.edit({ embeds: [messageEmbedGet("曲を停止しました。", interaction.client)] });
+        const resetArr: string[] = [];
+        if (envData.queueAutoReset) {
+            resetArr.push("キュー");
+            envData.playlist.clear();
+        }
+        if (envData.eqAutoReset) {
+            resetArr.push("イコライザ等");
+            envData.playPitch = 0;
+            envData.playTempo = 1;
+            envData.reverbType = undefined;
+        }
+        await message.edit({ embeds: [messageEmbedGet("曲を停止しました。" + (resetArr.join("、")) + (resetArr[0] ? "はリセット済みです。利用する際は再度設定するか、リセットされないように設定を変更することができます。" : ""), interaction.client)] });
         envData.manualStartedIs = false;
     }
 }

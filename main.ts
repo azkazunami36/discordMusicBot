@@ -353,8 +353,20 @@ client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
             if (serverData && serverData.discord.calledChannel) {
                 const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
                 if (channel && channel.isTextBased()) {
+                    const resetArr: string[] = [];
+                    const envData = new EnvData(channel.guildId);
+                    if (envData.queueAutoReset) {
+                        resetArr.push("キュー");
+                        envData.playlist.clear();
+                    }
+                    if (envData.eqAutoReset) {
+                        resetArr.push("イコライザ等");
+                        envData.playPitch = 0;
+                        envData.playTempo = 1;
+                        envData.reverbType = undefined;
+                    }
                     channel.send({
-                        embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。", client)]
+                        embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。" + (resetArr.join("、")) + (resetArr[0] ? "はリセット済みです。利用する際は再度設定するか、リセットされないように設定を変更することができます。" : ""), client)]
                     });
                 }
             }

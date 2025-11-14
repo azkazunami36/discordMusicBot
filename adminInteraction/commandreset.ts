@@ -19,7 +19,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 command?: SlashCommandOptionsOnlyBuilder;
             }[] = [];
             fs.readdirSync("interaction").forEach(async str => {
-                if (!str.endsWith(".js")) return;
+                if (!str.endsWith(".ts")) return;
                 try {
                     const { execute, command } = await import("./interaction/" + str);
                     arr.push({ execute, command });
@@ -37,7 +37,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                 command?: SlashCommandOptionsOnlyBuilder;
             }[] = [];
             fs.readdirSync("adminInteraction").forEach(async str => {
-                if (!str.endsWith(".js")) return;
+                if (!str.endsWith(".ts")) return;
                 try {
                     const { execute, command } = await import("./adminInteraction/" + str);
                     arr.push({ execute, command });

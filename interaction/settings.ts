@@ -22,6 +22,21 @@ export const command = new SlashCommandBuilder()
             .setDescription("チャンネルを設定します。")
         )
     )
+    .addSubcommand(command => command
+        .setName("statusset")
+        .setDescription("オンオフを設定する必要のある設定を行います。")
+        .addStringOption(option => option
+            .setName("type")
+            .setDescription("typeについての詳細はhelpコマンドに掲載する予定です。")
+            .addChoices({ name: "キュー自動リセット", value: "queueautoreset" }, { name: "イコライザ自動リセット", value: "eqautoreset" })
+            .setRequired(true)
+        )
+        .addBooleanOption(option => option
+            .setName("boolean")
+            .setDescription("オンオフを設定します。")
+            .setRequired(true)
+        )
+    )
 export const commandExample = "";
 
 export async function execute(interaction: Interaction<CacheType>, inputData: InteractionInputData, message: Message) {
@@ -56,7 +71,22 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
                         break;
                     }
                 }
-
+                break;
+            }
+            case "statusset": {
+                const boolean = interaction.options.getBoolean("boolean");
+                switch (interaction.options.getString("type")) {
+                    case "queueautoreset": {
+                        envData.queueAutoReset = boolean || false;
+                        await message.edit({ embeds: [messageEmbedGet("キューをbot退出時に自動でリセット" + (boolean ? "する" : "しない") + "ように設定しました。", interaction.client)] });
+                        break;
+                    }
+                    case "eqautoreset": {
+                        envData.eqAutoReset = boolean || false;
+                        await message.edit({ embeds: [messageEmbedGet("イコライザなどをbot退出時に自動でリセット" + (boolean ? "する" : "しない") + "ように設定しました。", interaction.client)] });
+                        break;
+                    }
+                }
                 break;
             }
         }
