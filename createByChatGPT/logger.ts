@@ -81,13 +81,13 @@ if (!g.__CONSOLE_BRIDGED__) {
       return;
     }
     logger.warn(line);
-    SumLog.warn("warnが発生しました。抜粋: " + line.slice(0, 20), { functionName: "logger" });
+    SumLog.warn("warnが発生しました。１６０文字以内の抜粋: " + line.slice(0, 160), { functionName: "logger" });
   };
 
   console.error = (...args: any[]) => {
     const line = toLine(args);
     logger.error(line);
-    SumLog.error("errorが発生しました。抜粋: " + line.slice(0, 20), { functionName: "logger" });
+    SumLog.error("errorが発生しました。１６０文字以内の抜粋: " + line.slice(0, 160), { functionName: "logger" });
   };
 
   console.debug = (...args: any[]) => {

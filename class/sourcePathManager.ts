@@ -1,6 +1,7 @@
 import fs, { constants } from "fs";
 import fsPromise from "fs/promises";
 import { exec, execSync, spawn } from "child_process";
+import util from "util";
 import ffmpeg, { FfprobeData } from "fluent-ffmpeg";
 import { Playlist } from "./envJSON.js";
 import { SumLog } from "./sumLog.js";
@@ -170,7 +171,7 @@ export class SourcePathManager {
                     await new Promise<void>((resolve, reject) => {
                         let errmsg = "";
                         const retry = (err?: any) => {
-                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。リトライ関数で再施行します。", { functionName: "SourcePathManager downloadProcess" });
+                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。リトライ関数でyoutubeプレイヤークライアントをandroidに変更して再施行します。理由となるエラーはこのような内容です。" + util.format(err), { functionName: "SourcePathManager downloadProcess" });
                             const cp = spawn("yt-dlp", [
                                 "--progress", "--newline",
                                 "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
@@ -206,7 +207,7 @@ export class SourcePathManager {
                             cp.on("error", e => { retry2(errmsg) });
                         }
                         const retry2 = (err?: any) => {
-                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。リトライ関数で再施行します。", { functionName: "SourcePathManager downloadProcess" });
+                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。cookieを無効にしたリトライ関数で再施行します。理由となるエラーはこのような内容です。" + util.format(err), { functionName: "SourcePathManager downloadProcess" });
                             const cp = spawn("yt-dlp", [
                                 "--progress", "--newline",
                                 "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
