@@ -1,6 +1,14 @@
+import "./scss/html_body.scss";
+import "./style.scss";
+import Head from "./head.tsx";
+import Header from "./header.tsx";
+import Sidebar from "./sidebar.tsx";
+import Footer from "./footer.tsx";
+import Popup from "./popup.tsx";
+
 export const metadata = {
     title: "My App",
-    description: "テスト",
+    description: "が",
 };
 
 export default function RootLayout(
@@ -8,7 +16,16 @@ export default function RootLayout(
 ) {
     return (
         <html lang="ja">
-            <body>{children}</body>
+            <head><Head /></head>
+            <body>
+                <Header />
+                        <main>
+                            <Sidebar />
+                            <section id="main">{children}</section>
+                        </main>
+                <Footer />
+                <Popup />
+            </body>
         </html>
     );
 }
