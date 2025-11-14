@@ -22,3 +22,4 @@ voiceFolder
 ._*
 .DS_Store
 *.pcm
+.next
