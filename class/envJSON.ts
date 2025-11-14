@@ -16,6 +16,57 @@ export interface OriginalFiles {
     fileName: string;
 }
 
+/** 
+ * キューを管理します。
+ * 
+ * 様々な操作を自動化したものです。
+ */
+export class QueueManager {
+    envData: EnvData;
+    constructor(envData: EnvData) {
+        this.envData = envData;
+    }
+    /** キューの末尾に曲を追加します。 */
+    addQueue(...playlist: Playlist[]) {
+        this.envData.queue.push(...playlist);
+    }
+    /** 再生中の曲の後に曲が流れるようにキューに追加します。 */
+    playPointAddQueue(...playlist: Playlist[]) {
+        this.envData.queue.splice(this.envData.playQueuePoint + 1, 0, ...playlist);
+    }
+    /**
+     * 再生中の曲です。
+     */
+    get playing() {
+        return this.envData.queue.listGet()[this.envData.playQueuePoint];
+    }
+    /** 次の曲に行きます。シャッフルやリピートモードによって挙動が変化します。 */
+    nextMusic() {
+        /** １曲リピートなら即座に曲を返す。変更の必要がない。 */
+        if (this.envData.playType === 3) return this.playing;
+        /** プレイリストがからである場合undefined */
+        if (this.envData.queue.listGet()[0] === undefined) return undefined;
+        /**
+         * playingに再生中の状態。queueは本当にキューだったり、playQueuePoint以前は再生した曲としてカウントする必要があります。再生中の曲はqueueには入っておらず、playQueuePointがqueueを指している時、次に流す曲です。
+         */
+        if (this.envData.playType === 1) {
+            this.envData.playQueuePoint = 0;
+            const data = this.envData.queue.splice(this.envData.playQueuePoint, 1)[0];
+            if (data) this.envData.playHistory.push(data);
+            const list = this.envData.queue.listGet();
+            if (this.envData.shuffle) this.envData.queue.unshift(...this.envData.queue.splice(Math.floor(Math.random() * (list.length - 1)), 1));
+            return list[this.envData.playQueuePoint];
+        }
+        if (this.envData.playType === 2) {
+            this.envData.playQueuePoint++;
+            const list = this.envData.queue.listGet();
+            if (this.envData.shuffle) this.envData.playQueuePoint = Math.floor(Math.random() * (list.length - 1));
+            if (this.envData.playQueuePoint >= list.length) this.envData.playQueuePoint = 0;
+            return list[this.envData.playQueuePoint];
+        }
+    }
+}
+
 /** さまざまなデータをenv.jsonに保存します。 */
 export class EnvData {
     /** サーバーIDです。 */
@@ -31,18 +82,18 @@ export class EnvData {
         }
         return json[this.guildId][name];
     }
-    playlist = new (class playlist {
+    playHistory = new (class playHistory {
         #envData: EnvData;
         constructor(envData: EnvData) {
             this.#envData = envData;
         }
         /** キューデータを保存します。 */
         #playlistSave(playlist: Playlist[]) {
-            this.#envData.#envJSON("playlist", JSON.stringify(playlist));
+            this.#envData.#envJSON("playHistory", JSON.stringify(playlist));
         }
         /** キューデータを取得します。 */
         #playlistGet() {
-            const playlistJSONStr = this.#envData.#envJSON("playlist") || this.#envData.#envJSON("playlist", "[]");
+            const playlistJSONStr = this.#envData.#envJSON("playHistory") || this.#envData.#envJSON("playHistory", "[]");
             try {
                 const playlist = JSON.parse(String(playlistJSONStr)) as (Playlist)[];
                 playlist.forEach(playlistData => {
@@ -51,7 +102,7 @@ export class EnvData {
                 })
                 return playlist;
             } catch (e) {
-                return JSON.parse(String(this.#envData.#envJSON("playlist", "[]"))) as (Playlist)[];
+                return JSON.parse(String(this.#envData.#envJSON("playHistory", "[]"))) as (Playlist)[];
             }
         }
         push(...playlist: Playlist[]) {
@@ -114,6 +165,122 @@ export class EnvData {
             return pl;
         }
     })(this);
+    queue = new (class queue {
+        #envData: EnvData;
+        constructor(envData: EnvData) {
+            this.#envData = envData;
+        }
+        /** キューデータを保存します。 */
+        #playlistSave(playlist: Playlist[]) {
+            this.#envData.#envJSON("playlist", JSON.stringify(playlist));
+        }
+        /** キューデータを取得します。 */
+        #playlistGet() {
+            const playlistJSONStr = this.#envData.#envJSON("playlist") || this.#envData.#envJSON("playlist", "[]");
+            try {
+                const playlist = JSON.parse(String(playlistJSONStr)) as (Playlist)[];
+                playlist.forEach(playlistData => {
+                    if (!playlistData?.type || playlistData.type !== "originalFileId" && playlistData.type !== "videoId" && playlistData.type !== "nicovideoId" && playlistData.type !== "twitterId") throw "";
+                    if (!playlistData.body || typeof playlistData.body !== "string") throw "";
+                })
+                return playlist;
+            } catch (e) {
+                return JSON.parse(String(this.#envData.#envJSON("playlist", "[]"))) as (Playlist)[];
+            }
+        }
+        push(...playlist: Playlist[]) {
+            const pl = this.#playlistGet();
+            pl.push(...playlist);
+            this.#playlistSave(pl);
+        }
+        unshift(...playlist: Playlist[]) {
+            const pl = this.#playlistGet();
+            pl.unshift(...playlist);
+            this.#playlistSave(pl);
+        }
+        shift() {
+            const pl = this.#playlistGet();
+            const playlistData = pl.shift();
+            this.#playlistSave(pl);
+            return playlistData;
+        }
+        pop() {
+            const pl = this.#playlistGet();
+            const playlistData = pl.pop();
+            this.#playlistSave(pl);
+            return playlistData;
+        }
+        get(number: number): Playlist | undefined {
+            const pl = this.#playlistGet();
+            return pl[number];
+        }
+        length() {
+            const pl = this.#playlistGet();
+            return pl.length;
+        }
+        clear() {
+            const pl = this.#playlistGet();
+            pl.length = 0;
+            this.#playlistSave(pl);
+        }
+        splice(start: number, deleteCount: number = 1, ...items: Playlist[]) {
+            const pl = this.#playlistGet();
+            const list = pl.splice(start, deleteCount, ...items);
+            this.#playlistSave(pl);
+            return list;
+        }
+        [Symbol.iterator](): Iterator<Playlist> {
+            let index = 0;
+            const pl = this.#playlistGet();
+
+            return {
+                next(): IteratorResult<Playlist> {
+                    if (index < pl.length) {
+                        return { value: pl[index++], done: false };
+                    } else {
+                        return { value: undefined as any, done: true };
+                    }
+                }
+            };
+        }
+        listGet() {
+            const pl = this.#playlistGet();
+            return pl;
+        }
+    })(this);
+    /** 再生中の曲です。 */
+    get playing() {
+        try {
+            const text = this.#envJSON("playing");
+            if (!text) return undefined;
+            const json = JSON.parse(text) as Playlist;
+            if (typeof json !== "object") throw "";
+            if (!json.type || json.type !== "originalFileId" && json.type !== "videoId" && json.type !== "nicovideoId" && json.type !== "twitterId") throw "";
+            if (!json.body || typeof json.body !== "string") throw "";
+            if (json.number && typeof json.body !== "number") throw "";
+            return json;
+        } catch {
+            this.#envJSON("playing", "");
+            return undefined;
+        }
+    }
+    set playing(playlist: Playlist | undefined) {
+        this.#envJSON("playing", playlist ? JSON.stringify(playlist) : "");
+    }
+    /** 再生中のキューの場所です。 */
+    get playQueuePoint() {
+        return Number(this.#envJSON("playQueuePoint")) || 0;
+    }
+    set playQueuePoint(number: number) {
+        this.#envJSON("playQueuePoint", String(number));
+    }
+    /** 再生シャッフル状態です。 */
+    get shuffle() {
+        return Boolean(this.#envJSON("shuffle")) || false;
+    }
+    set shuffle(mode: boolean) {
+        this.#envJSON("shuffle", String(mode));
+    }
     /** オリジナルファイルに関する情報を保存します。 */
     originalFilesSave(originalFiles: OriginalFiles) {
         this.#envJSON("originalFiles", JSON.stringify(originalFiles));

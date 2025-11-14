@@ -115,7 +115,7 @@ export class VariableExistCheck {
         const guildData = await this.guild();
         if (guildData === undefined) return undefined;
         const envData = new EnvData(guildData.guildId);
-        const playlist = envData.playlist;
+        const playlist = envData.queue;
         if (!playlist) return undefined;
         if (playlist.length() === 0) {
             try { await this.interaction.editReply({ embeds: [messageEmbedGet("キューが空っぽです。`/add text:[タイトルまたはURL]`で曲を追加してください。", this.interaction.client)] }); } catch (e) { }

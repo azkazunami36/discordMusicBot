@@ -44,7 +44,7 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
         if (focus) {
             if (focus > 0 && playlist && Date.now() - (serversData.discord.search?.time || 0) < 5 * 60 * 60 * 1000) {
                 const envData = new EnvData(guildData.guildId);
-                envData.playlist.push(playlist);
+                envData.queue.push(playlist);
                 await message.edit(await videoInfoEmbedGet([playlist], "曲を追加しました。", interaction.client));
             }
             else await message.edit({ embeds: [messageEmbedGet("この指定は認識することができませんでした。検索結果に一致する番号を選択すること、また`/search`コマンドを再度実行することをお試しください。", interaction.client)] });
