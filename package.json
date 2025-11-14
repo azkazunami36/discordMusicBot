@@ -34,6 +34,7 @@
     "log": "npm i && tsc && node ./createByChatGPT/logPreview/server"
   },
   "devDependencies": {
-    "@types/react": "^19.2.4"
+    "@types/react": "^19.2.4",
+    "typescript": "5.9.3"
   }
 }
