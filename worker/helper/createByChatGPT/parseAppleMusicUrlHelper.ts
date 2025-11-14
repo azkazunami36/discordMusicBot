@@ -14,7 +14,7 @@ type WorkerResp =
  * ここでは処理を一切持たず、ワーカー起動の橋渡しのみを行います。
  */
 export async function parseAppleMusicUrl(urlStr: string): Promise<string[] | undefined> {
-  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "parseAppleMusicUrlWorker.js"); // ビルド後の .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "parseAppleMusicUrlWorker.ts"); // ビルド後の .js を参照
   const payload = { url: urlStr };
 
   const result: WorkerResp = await new Promise((resolve) => {

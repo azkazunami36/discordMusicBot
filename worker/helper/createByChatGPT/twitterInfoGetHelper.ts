@@ -55,7 +55,7 @@ export async function twitterInfoGetBatch(
   inputs: string[],
   start = 0
 ): Promise<(XPostInfo | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "twitterInfoGetWorker.js"); // ビルド後 .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "twitterInfoGetWorker.ts"); // ビルド後 .js を参照
   const payload: Payload = { inputs, start };
 
   const result: WorkerResp = await new Promise((resolve) => {

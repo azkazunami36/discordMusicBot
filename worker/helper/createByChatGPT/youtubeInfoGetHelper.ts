@@ -22,7 +22,7 @@ async function youtubeInfoGetBatch(
   videoIds: string[],
   start = 0
 ): Promise<(VideoMetadataResult | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubeInfoGetWorker.js"); // ビルド後に .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubeInfoGetWorker.ts"); // ビルド後に .js を参照
   const payload: Payload = { videoIds, start };
 
   const result: WorkerResp = await new Promise((resolve) => {

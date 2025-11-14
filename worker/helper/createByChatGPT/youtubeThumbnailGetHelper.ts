@@ -23,7 +23,7 @@ export async function youtubeThumbnailGetBatch(
   inputs: string[],
   start = 0
 ): Promise<(ThumbRow | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubeThumbnailGetWorker.js"); // ビルド後 .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubeThumbnailGetWorker.ts"); // ビルド後 .js を参照
   const payload: Payload = { inputs, start };
 
   const result: WorkerResp = await new Promise((resolve) => {

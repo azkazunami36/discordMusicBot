@@ -17,7 +17,7 @@ type WorkerResp =
 
 function workerPath() {
   // helper -> ../../createByChatGPT/musicBrainzInfoWorker.js（ビルド後 .js）
-  const p = path.join(__dirname, "..", "..", "createByChatGPT", "musicBrainzInfoWorker.js");
+  const p = path.join(__dirname, "..", "..", "createByChatGPT", "musicBrainzInfoWorker.ts");
   if (!fs.existsSync(p)) {
     throw new Error(`[musicBrainzInfoHelper] worker not found: ${p}`);
   }

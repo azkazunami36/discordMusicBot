@@ -6,14 +6,14 @@
 import { Worker } from "node:worker_threads";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { Playlist } from "../../../class/envJSON.js";
-import { Picture } from "../../../class/sourcePathManager.js";
-import { YtDlpInfo } from "../../../createByChatGPT/ytDlp.js";
+import { Playlist } from "../../../class/envJSON.ts";
+import { Picture } from "../../../class/sourcePathManager.ts";
+import { YtDlpInfo } from "../../../createByChatGPT/ytDlp.ts";
 
 /** Worker スクリプト（.ts → .js へビルド後の相対位置を想定） */
 const workerPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../createByChatGPT/ytDlpInfoGetWorker.js"
+  "../../createByChatGPT/ytDlpInfoGetWorker.ts"
 );
 
 type WorkerReply =

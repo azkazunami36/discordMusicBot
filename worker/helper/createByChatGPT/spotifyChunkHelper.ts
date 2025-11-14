@@ -9,7 +9,7 @@ export function spotifyChunkHelper(
 ): Promise<PlaylistData[]> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
-      new URL("../../createByChatGPT/spotifyChunkWorker.js", import.meta.url), // ←ビルド後のJSを指す
+      new URL("../../createByChatGPT/spotifyChunkWorker.ts", import.meta.url), // ←ビルド後のJSを指す
       {
         type: "module", // ESMの場合
         workerData: { urls, start },

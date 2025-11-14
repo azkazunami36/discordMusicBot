@@ -32,7 +32,7 @@ export async function niconicoChannelInfoGetBatch(
   inputs: string[],
   start = 0
 ): Promise<(NicoChannelInfo | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "niconicoChannelInfoGetWorker.js"); // ビルド後 .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "niconicoChannelInfoGetWorker.ts"); // ビルド後 .js を参照
 
   if (!Array.isArray(inputs)) {
     throw new Error("[niconicoChannelInfoGetBatch] inputs must be an array");

@@ -13,7 +13,7 @@ type WorkerResp =
  * 橋渡しのみ（入出力は元関数と同一シグネチャ）
  */
 export async function getNicoMylistIds(urlStr: string): Promise<string[] | undefined> {
-  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "getNicoMylistIdsWorker.js"); // ビルド後 .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "getNicoMylistIdsWorker.ts"); // ビルド後 .js を参照
 
   const result: WorkerResp = await new Promise((resolve) => {
     const worker = new Worker(workerPath, { workerData: urlStr });

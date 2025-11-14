@@ -25,7 +25,7 @@ export async function youtubeUserInfoGet(input: string): Promise<youtube_v3.Sche
  * - ワーカーが中心処理。ヘルパーはワーカーを起動して結果を渡すだけ。
  */
 async function youtubeUserInfoGetBatch(inputs: string[], start = 0): Promise<(youtube_v3.Schema$Channel | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubeUserInfoGetWorker.js"); // ビルド後 .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubeUserInfoGetWorker.ts"); // ビルド後 .js を参照
   const payload: Payload = { inputs, start };
 
   const result: WorkerResp = await new Promise((resolve) => {

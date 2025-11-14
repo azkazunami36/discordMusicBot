@@ -9,7 +9,7 @@ export function appleChunkHelper(
 ): Promise<PlaylistData[]> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
-      new URL("../../createByChatGPT/appleChunkWorker.js", import.meta.url), // ←ビルド後のJSを指す
+      new URL("../../createByChatGPT/appleChunkWorker.ts", import.meta.url), // ←ビルド後のJSを指す
       {
         type: "module", // ESMの場合
         workerData: { urls, start },

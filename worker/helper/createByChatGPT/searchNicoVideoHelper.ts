@@ -47,7 +47,7 @@ export async function searchNicoVideo(query: string): Promise<NicoSnapshotItem[]
         throw new Error("[searchNicoVideo] query must be a non-empty string");
     }
 
-    const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "searchNicoVideoWorker.js"); // ビルド後 .js を参照
+    const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "searchNicoVideoWorker.ts"); // ビルド後 .js を参照
 
     if (!fs.existsSync(workerPath)) {
         throw new Error(`[searchNicoVideo] worker not found: ${workerPath}`);

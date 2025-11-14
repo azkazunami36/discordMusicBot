@@ -14,7 +14,7 @@ type WorkerResp =
  * ここではワーカー起動の橋渡しのみを行い、処理は一切持ちません。
  */
 export async function fetchPlaylistVideoIdsFromUrl(urlStr: string) {
-  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubePlaylistToVideoIdsWorker.js");
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "youtubePlaylistToVideoIdsWorker.ts");
   const payload = { url: urlStr };
 
   const result: WorkerResp = await new Promise((resolve) => {

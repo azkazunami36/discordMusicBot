@@ -45,7 +45,7 @@ export async function niconicoUserInfoGetBatch(
   inputs: string[],
   start = 0
 ): Promise<(NicoUserInfo | undefined)[]> {
-  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "niconicoInfoUserGetWorker.js"); // ビルド後 .js を参照
+  const workerPath = path.join(__dirname, "..", "..", "createByChatGPT", "niconicoInfoUserGetWorker.ts"); // ビルド後 .js を参照
 
   if (!Array.isArray(inputs)) {
     throw new Error("[niconicoUserInfoGetBatch] inputs must be an array");
