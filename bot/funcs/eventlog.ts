@@ -1,6 +1,6 @@
 import { Interaction, Message } from "discord.js";
 import fs from "fs";
-import { SumLog } from "../class/sumLog.js";
+import { SumLog } from "../../class/sumLog.js";
 
 export function messageLog(message: Message) {
     if (fs.existsSync("./log/usermessage.log")) {

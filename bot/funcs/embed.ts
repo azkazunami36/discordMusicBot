@@ -2,7 +2,7 @@ import { APIEmbedField, Attachment, AttachmentBuilder, BaseMessageOptions, Buffe
 import fs from "fs";
 import { EnvData, Playlist, videoMetaCacheGet } from "../class/envJSON.js";
 import { numberToTimeString } from "../createByChatGPT/numberToTimeString.js";
-import { SumLog } from "../class/sumLog.js";
+import { SumLog } from "../../class/sumLog.js";
 import { youtubeUserInfoGet } from "../worker/helper/createByChatGPT/youtubeUserInfoGetHelper.js";
 import { niconicoUserInfoGet } from "../worker/helper/createByChatGPT/niconicoInfoUserGetHelper.js";
 import { niconicoChannelInfoGet } from "../worker/helper/createByChatGPT/niconicoChannelInfoGetHelper.js";

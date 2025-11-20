@@ -4,7 +4,7 @@ import yts from "yt-search";
 
 import { EnvData, Playlist, videoMetaCacheGet } from "../class/envJSON.js";
 import { sourcePathManager } from "../class/sourcePathManager.js";
-import { SumLog } from "../class/sumLog.js";
+import { SumLog } from "../../class/sumLog.js";
 import { appleChunkHelper } from "../worker/helper/createByChatGPT/appleChunkHelper.js";
 import { spotifyChunkHelper } from "../worker/helper/createByChatGPT/spotifyChunkHelper.js";
 import { parseSpotifyUrl } from "../worker/helper/createByChatGPT/parseSpotifyUrlHelper.js";

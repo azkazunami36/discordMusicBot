@@ -10,18 +10,9 @@ import { WebPlayerAPI } from "./class/webAPI.js";
 import { Player } from "./class/player.js";
 import { messageEmbedGet, videoInfoEmbedGet } from "./funcs/embed.js";
 import { progressBar } from "./createByChatGPT/progressBar.js";
-import { SumLog } from "./class/sumLog.js";
+import { SumLog } from "../class/sumLog.js";
 import { interactionLog, messageLog } from "./funcs/eventlog.js";
 
-process.on("uncaughtException", (err) => {
-    console.error("キャッチされずグローバルで発生した例外:", err);
-    SumLog.error("グローバルでエラーが発生しました。ログを確認してください。", { functionName: "process.on" });
-});
-
-process.on("unhandledRejection", (reason) => {
-    console.error("未処理の拒否:", reason);
-    SumLog.error("よくわからないけどunhandledRejectionっていうやつが発生しました。ログを見てください。", { functionName: "process.on" });
-});
 const client = new Discord.Client({
     intents: [
         Discord.GatewayIntentBits.Guilds,
@@ -38,8 +29,9 @@ const client = new Discord.Client({
 const serversDataClass = new ServersDataClass(client);
 /** サーバーごとに記録する必要のある一時データです。 */
 const serversData = serversDataClass.serversData;
-const webPlayerAPI = new WebPlayerAPI(serversDataClass, client);
-/** 全てのVCの動作を追いかけるクラスです。 */
+/**
+ * Discordの再生状態を管理するクラスです。
+ */
 const player = new Player(client);
 
 /** インタラクションコマンドのデータです。 */

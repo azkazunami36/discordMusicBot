@@ -6,7 +6,7 @@ import ffmpeg from "fluent-ffmpeg";
 import fs from "fs";
 import Stream from "stream";
 import { EventEmitter } from "events";
-import { SumLog } from "./sumLog.js";
+import { SumLog } from "../../class/sumLog.js";
 import { Client } from "discord.js";
 import { voiceChatRecorder } from "./voiceChatRecorder.js";
 
