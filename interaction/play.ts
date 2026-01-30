@@ -128,30 +128,34 @@ export async function execute(interaction: Interaction<CacheType>, inputData: In
             }
             let statuscallTime: number = Date.now();
             const type = playlistData.type;
-            await inputData.player.forcedPlay({
-                guildId: guildData.guildId,
-                channelId: vchannelId,
-                adapterCreator: guildData.guild.voiceAdapterCreator,
-                source: playlistData,
-                playtime: 0,
-                tempo: envData.playTempo,
-                pitch: envData.playPitch,
-                volume: envData.volume,
-                reverbType: envData.reverbType
-            }, async (status, percent) => {
-                const temp = { status, percent }
-                if (statusTemp && statusTemp === temp) return;
-                if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
-                statusTemp = temp;
-                statuscallTime = Date.now();
-                if (embed) {
-                    if (status === "loading") { embed.setDescription("音声ファイルを準備中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                    if (status === "downloading") { embed.setDescription("音声ファイルをダウンロード中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                    if (status === "converting") { embed.setDescription("音声ファイルを再生可能な形式に変換中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                    if (status === "formatchoosing") { embed.setDescription((type ? (type === "videoId" ? "YouTube" : type === "nicovideoId" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                    if (status === "done") { embed.setDescription("再生開始処理中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                }
-            });
+            try {
+                await inputData.player.forcedPlay({
+                    guildId: guildData.guildId,
+                    channelId: vchannelId,
+                    adapterCreator: guildData.guild.voiceAdapterCreator,
+                    source: playlistData,
+                    playtime: 0,
+                    tempo: envData.playTempo,
+                    pitch: envData.playPitch,
+                    volume: envData.volume,
+                    reverbType: envData.reverbType
+                }, async (status, percent) => {
+                    const temp = { status, percent }
+                    if (statusTemp && statusTemp === temp) return;
+                    if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
+                    statusTemp = temp;
+                    statuscallTime = Date.now();
+                    if (embed) {
+                        if (status === "loading") { embed.setDescription("音声ファイルを準備中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                        if (status === "downloading") { embed.setDescription("音声ファイルをダウンロード中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                        if (status === "converting") { embed.setDescription("音声ファイルを再生可能な形式に変換中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                        if (status === "formatchoosing") { embed.setDescription((type ? (type === "videoId" ? "YouTube" : type === "nicovideoId" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                        if (status === "done") { embed.setDescription("再生開始処理中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
+                    }
+                });
+            } catch (e) {
+                
+            }
             if (embed) embed.setDescription("再生を開始しました。");
             await message.edit(metaEmbed);
         }

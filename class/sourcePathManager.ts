@@ -164,14 +164,11 @@ export class SourcePathManager {
                     return processEnd();
                 }
                 info = await ytDlpInfoGet(downloadingQueue.playlist);
-                audioformat = pickBestAudioFormat(info[(downloadingQueue.playlist.number || 1) - 1].formats || []);
-                // 4. もし取得できたらダウンロードをして拡張子・コンテナを修正する。
-                if (audioformat) {
                     status("downloading", 40);
                     await new Promise<void>((resolve, reject) => {
                         let errmsg = "";
                         const retry = (err?: any) => {
-                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。リトライ関数でyoutubeプレイヤークライアントをandroidに変更して再施行します。理由となるエラーはこのような内容です。" + util.format(err), { functionName: "SourcePathManager downloadProcess" });
+                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。１つ目のリトライ関数で再施行します。理由となるエラーはこのような内容です。" + util.format(err), { functionName: "SourcePathManager downloadProcess" });
                             const cp = spawn("yt-dlp", [
                                 "--progress", "--newline",
                                 "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
@@ -179,7 +176,6 @@ export class SourcePathManager {
                                 "--progress-template", "%(progress)j",
                                 "--cookies-from-browser", "firefox",
                                 ...(() => {
-                                    if (type === "videoId") return ["--extractor-args", "youtube:player_client=android"]
                                     if (type === "nicovideoId") return ["--add-header", "Referer:https://www.nicovideo.jp/"]
                                     if (type === "twitterId") return ["--playlist-items", String(downloadingQueue.playlist.number || 1)]
                                     return []
@@ -207,15 +203,13 @@ export class SourcePathManager {
                             cp.on("error", e => { retry2(errmsg) });
                         }
                         const retry2 = (err?: any) => {
-                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。cookieを無効にしたリトライ関数で再施行します。理由となるエラーはこのような内容です。" + util.format(err), { functionName: "SourcePathManager downloadProcess" });
+                            SumLog.warn("yt-dlpでダウンロードしようとしたらエラーが発生しました。２つめのリトライ関数で再施行します。理由となるエラーはこのような内容です。" + util.format(err), { functionName: "SourcePathManager downloadProcess" });
                             const cp = spawn("yt-dlp", [
                                 "--progress", "--newline",
                                 "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
                                 "-o", folderPath + "/%(id)s" + (downloadingQueue.playlist.type === "twitterId" ? "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache.%(ext)s",
                                 "--progress-template", "%(progress)j",
                                 ...(() => {
-                                    if (type === "videoId") return ["--extractor-args", "youtube:player_client=android"]
-                                    if (type === "nicovideoId") return ["--add-header", "Referer:https://www.nicovideo.jp/"]
                                     if (type === "twitterId") return ["--playlist-items", String(downloadingQueue.playlist.number || 1)]
                                     return []
                                 })(),
@@ -243,7 +237,7 @@ export class SourcePathManager {
                         }
                         const cp = spawn("yt-dlp", [
                             "--progress", "--newline",
-                            "-f", audioformat?.format_id || "",
+                            "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
                             "-o", folderPath + "/%(id)s" + (downloadingQueue.playlist.type === "twitterId" ? "-" + downloadingId + "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache.%(ext)s",
                             "--progress-template", "%(progress)j",
                             "--cookies-from-browser", "firefox",
@@ -293,9 +287,6 @@ export class SourcePathManager {
                             throw e;
                         }
                     }
-                } else {
-                    SumLog.error("このIDは無効のようです。: " + downloadingId + " 内容: " + JSON.stringify(info, null, "  "), { functionName: "SourcePathManager downloadProcess" });
-                }
                 processEnd();
             } catch (e) {
                 SumLog.error("ダウンロードプロセス中にエラーが発生しました。ログを確認してください。", { functionName: "SourcePathManager downloadProcess" });
