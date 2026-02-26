@@ -15,5 +15,5 @@
     "outDir": "./"
   },
   "include": ["**/*.ts", "webAudioAPI/preload.cts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "docs", "bot"]
 }

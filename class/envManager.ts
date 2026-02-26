@@ -21,6 +21,7 @@ function stringifyEnvSafe(env: Record<string, string>) {
         .join("\n");
 }
 
+/** 環境にデータをセットします。 */
 export async function envSet(name: string, value: string) {
     process.env[name] = value;
     const envRawFile = String(await fs.readFile(path.join(process.cwd(), ".env")));
@@ -46,6 +47,7 @@ type EnvType =
     | "MONGO_DB_AUTH_MECHANISM"
     | "MONGO_DB_NAME";
 
+/** 環境データを取得します。 */
 export function envGet(): Record<EnvType, string | undefined> {
     return process.env as Record<EnvType, string | undefined>;
 }

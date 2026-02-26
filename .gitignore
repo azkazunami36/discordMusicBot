@@ -6,3 +6,9 @@ package-lock.json
 .DS_Store
 !docs/**/*
 ._*
+twitter/**/*
+niconico/**/*
+soundcloud/**/*
+youtube/**/*
+dbmgr.json
+cookies.txt

@@ -14,3 +14,4 @@ process.on("unhandledRejection", (reason) => {
     console.error("未処理の拒否:", reason);
     SumLog.error("よくわからないけどunhandledRejectionっていうやつが発生しました。ログを見てください。", { functionName: "process.on" });
 });
+
