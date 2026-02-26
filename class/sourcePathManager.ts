@@ -174,7 +174,6 @@ export class SourcePathManager {
                                 "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
                                 "-o", folderPath + "/%(id)s" + (downloadingQueue.playlist.type === "twitterId" ? "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache.%(ext)s",
                                 "--progress-template", "%(progress)j",
-                                "--cookies-from-browser", "firefox",
                                 ...(() => {
                                     if (type === "nicovideoId") return ["--add-header", "Referer:https://www.nicovideo.jp/"]
                                     if (type === "twitterId") return ["--playlist-items", String(downloadingQueue.playlist.number || 1)]
@@ -240,7 +239,6 @@ export class SourcePathManager {
                             "-f", "bestaudio[ext=webm]/bestaudio[acodec^=mp4a]/bestaudio/best",
                             "-o", folderPath + "/%(id)s" + (downloadingQueue.playlist.type === "twitterId" ? "-" + downloadingId + "-" + (downloadingQueue.playlist.number || 1) : "") + "-cache.%(ext)s",
                             "--progress-template", "%(progress)j",
-                            "--cookies-from-browser", "firefox",
                             ...(() => {
                                 if (type === "videoId") return ["--extractor-args", 'youtube:player_client=tv_embedded']
                                 if (type === "nicovideoId") return ["--add-header", "Referer:https://www.nicovideo.jp/"]

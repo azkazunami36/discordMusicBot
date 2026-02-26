@@ -85,8 +85,6 @@ function buildArgs(playlist: Playlist | Picture, client: string): string[] {
     "-j",
     "-q",
     "--no-warnings",
-    "--cookies-from-browser",
-    "firefox",
     "--extractor-args",
     `youtube:player_client=${client}`,
     "--format",
