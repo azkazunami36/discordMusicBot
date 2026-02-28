@@ -138,12 +138,16 @@ function sourceGetMasterFunction(videoId: string, folderPath: string, url: [stri
                 })
                 convertffmpeg.stdout.on("data", chunk => parentPort?.postMessage({ errorMsg: chunk }));
                 convertffmpeg.stderr.on("data", chunk => {
+                    if (String(chunk).startsWith("Error")) {
+                        parentPort?.postMessage({ errorMsg: chunk })
+                    }
                     const da = FFmpeg進捗状況パーサー(chunk);
                     if (da) progress(50 + ((da.time / duration) * 50));
                 });
                 convertffmpeg.on("close", async () => {
                     try {
-                        const file = fs.readdirSync(folderPath + "/" + random).find(value => value.match(videoId + (type === "twitter" ? "-" + selectitem : "") + "." + (fileTypeIs.type === "aac" ? "m4a" : "ogg")));
+                        const fileinfolder = fs.readdirSync(folderPath + "/" + random);
+                        const file = fileinfolder.find(value => value.match(videoId + (type === "twitter" ? "-" + selectitem : "") + "." + (fileTypeIs.type === "aac" ? "m4a" : "ogg")));
                         if (!file) {
                             parentPort?.postMessage({ errorMsg: new Error("FFmpegで変換を試みましたが、変換が完了したファイルが存在しませんでした。") });
                         } else {

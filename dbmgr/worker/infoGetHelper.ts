@@ -235,6 +235,8 @@ export interface TwitterInfo {
     userId?: string;
     /** サムネイルURL */
     thumbnailUrl: string;
+    /** ユーザー数字ID(こっちを優先的に利用する) */
+    userNumId: string;
 }
 /** 
  * yt-dlpを用いて　Twitter動画の情報を取得します。

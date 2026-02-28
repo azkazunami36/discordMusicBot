@@ -177,6 +177,8 @@ async function twitterInfoGet(id: string): Promise<{
     userId?: string;
     /** サムネイルURL */
     thumbnailUrl: string;
+    /** ユーザー数字ID(こっちを優先的に利用する) */
+    userNumId: string;
 }[]> {
     const datas = await ytdlpProcess("https://x.com/i/web/status/" + id, errChunk => {
         parentPort?.postMessage({ errorMsg: errChunk });
@@ -208,9 +210,11 @@ async function twitterInfoGet(id: string): Promise<{
         userId?: string;
         /** サムネイルURL */
         thumbnailUrl: string;
+        /** ユーザー数字ID(こっちを優先的に利用する) */
+        userNumId: string;
     })[] = [];
     for (const r of datas) {
-        const check = ["title", "description", "thumbnail", "id"];
+        const check = ["title", "description", "thumbnail", "id", "channel_id"];
         for (const name of check)
             if (typeof res[name as keyof typeof res] !== "string") continue;
         res.push({
@@ -219,7 +223,8 @@ async function twitterInfoGet(id: string): Promise<{
             userName: r.uploader,
             thumbnailUrl: r.thumbnail,
             userId: r.uploader_id,
-            id: id
+            id: id,
+            userNumId: r.channel_id
         })
     }
     return res;

@@ -7,10 +7,10 @@ import path from "path";
 import { musicBrainzRecordingInfoGet, musicBrainzReleaseInfoGet, niconicoInfo, niconicoInfoGet, SoundCloudInfo, soundcloudInfoGet, soundcloudUserIconGet, TwitterInfo, twitterInfoGet, YouTubeInfo, youtubeInfoGet, youtubeUserIconGet } from "./worker/infoGetHelper.js";
 import { MusicBrainzRecordingInfo, MusicBrainzReleaseInfo } from "./worker/infoGetWorker.js";
 import { niconicoSourceGet, soundcloudSourceGet, twitterSourceGet, youtubeSourceGet } from "./worker/sourceGetHelper.js";
-import { jsonAnalizer } from "./worker/jsonAnalyzerHelper.js";
 import { rejectDbmgrErrorCodeFormat, statusErrorCodeDbmgrFormat, stringToErrorCode } from "../func/dbmgrErrorCodeParser.js";
 import { getOldData } from "../func/getOldData.js";
 import { stringToServiceParser } from "../func/stringToServiceParser.js";
+import { databaseCheck } from "../func/databaseCheck.js";
 
 process.on("uncaughtException", err => {
     console.error("キャッチされずグローバルで発生した例外。これは重大なエラーです。エラーイベントをつかめていません。\n", err);
@@ -29,7 +29,6 @@ process.on("unhandledRejection", err => {
 /** マスター関数です。このプログラムはこの関数を実行することで起動します。main()は一番下で呼び出しています。 */
 async function main() {
     console.log("ミュージックライブラリを起動しています...")
-    console.log(await jsonAnalizer());
     console.log("このプロセスのCWD: " + process.cwd());
     console.log("このメインプロセスファイルが置いてあるパス: " + new URL("./", import.meta.url).pathname);
     /**
@@ -38,8 +37,11 @@ async function main() {
      * 取得に失敗するとプログラムがこの場所で終了します。
      */
     const json = getJSON();
-    console.log("ミュージックライブラリ用JSONの初期化(読み込み)が完了しました。")
+    console.log("ミュージックライブラリ用JSONの初期化(読み込み)が完了しました。");
     await getOldData(new URL("../../discordMusicBot", import.meta.url).pathname, json);
+    await saveJSON(json);
+    await databaseCheck(new URL("../", import.meta.url).pathname, json);
+    await saveJSON(json);
     /**
      * YouTubeなどの動画情報と音声データを管理するクラスです。ダウンロードを並列で実行したり、複数の同じ要求が来ても重複しないで丁寧に実行してくれる賢い関数です。
      */
@@ -50,7 +52,7 @@ async function main() {
      */
     app.get("/*splat", (req, res) => get(req, res, json, sourcemanager));
     app.post("/*splat", (req, res) => post(req, res, json, sourcemanager));
-    app.listen("81", () => { console.log("ミュージックライブラリのAPIホストが開始しました。") });
+    app.listen("81", () => { console.log("ミュージックライブラリのAPIホストが開始しました。"); });
 }
 
 /**
@@ -800,7 +802,6 @@ class SourceManager {
      * 引数2番目にtrueを入れると、ソースが取得されていなくても返答をします。falseや空にするとソースが取得されるまで待機することになります。
      */
     async getYouTube(videoId: string, fast?: boolean, option?: { errorGet?: (errorCode: string) => void }) {
-        if (this.json.youtube === undefined) this.json.youtube = [];
         const infodatas = this.json.youtube;
         const downloadStatus = this.downloadStatus.youtube;
         return await this.getSingleBase<YouTubeInfo, YouTubeInfoData[], DownloadStatusOfYouTube>(videoId, infodatas, downloadStatus, fast || false, () => {
@@ -826,7 +827,6 @@ class SourceManager {
      * 引数2番目にtrueを入れると、ソースが取得されていなくても返答をします。falseや空にするとソースが取得されるまで待機することになります。
      */
     async getniconico(id: string, fast?: boolean, option?: { errorGet?: (errorCode: string) => void }) {
-        if (this.json.niconico === undefined) this.json.niconico = [];
         const infodatas = this.json.niconico;
         const downloadStatus = this.downloadStatus.niconico;
         return await this.getSingleBase<niconicoInfo, niconicoInfoData[], DownloadStatusOfniconico>(id, infodatas, downloadStatus, fast || false, () => {
@@ -856,7 +856,6 @@ class SourceManager {
      * 引数2番目にtrueを入れると、ソースが取得されていなくても返答をします。falseや空にするとソースが取得されるまで待機することになります。
      */
     async getSoundCloud(id: string, fast?: boolean, option?: { errorGet?: (errorCode: string) => void }) {
-        if (this.json.soundcloud === undefined) this.json.soundcloud = [];
         const infodatas = this.json.soundcloud;
         const downloadStatus = this.downloadStatus.soundcloud;
         return await this.getSingleBase<SoundCloudInfo, SoundCloudInfoData[], DownloadStatusOfSoundCloud>(id, infodatas, downloadStatus, fast || false, () => {
@@ -882,7 +881,6 @@ class SourceManager {
      * 引数2番目にtrueを入れると、ソースが取得されていなくても返答をします。falseや空にするとソースが取得されるまで待機することになります。
      */
     async getTwitter(id: string, fast?: boolean, option?: { errorGet?: (errorCode: string) => void }) {
-        if (this.json.twitter === undefined) this.json.twitter = [];
         const infodatas = this.json.twitter;
         const downloadStatus = this.downloadStatus.twitter;
         return await this.getMultiBase<TwitterInfo, TwitterInfoData[], DownloadStatusOfTwitter>(id,
@@ -912,7 +910,7 @@ class SourceManager {
                     progress: 0
                 }
             }, async info => {
-                if (info.userId) return { id: info.userId, url: (await this.jsonmanager.userIcons.getTwitter.bind(this.jsonmanager.userIcons)(info.userId)).info };
+                if (info.userId) return { id: info.userId, url: (await this.jsonmanager.userIcons.getTwitter.bind(this.jsonmanager.userIcons)(info.userNumId, { userId: info.userId })).info };
                 return undefined;
             }, {
             errorGet(errorCode) {
@@ -956,7 +954,7 @@ class JSONManager {
             }[];
             twitter: {
                 id: string;
-                urlwaitfunc: Promise<string | void>
+                urlwaitfunc: Promise<{ id: string; url: string; } | void>
             }[];
         }
     } = {
@@ -1124,29 +1122,43 @@ class JSONManager {
                 }
             }
             async getTwitter(id: string, option?: {
+                userId?: string;
                 errorGet?: (errorCode: string) => void;
             }) {
                 if (!this.json.twitterUserIcons) this.json.twitterUserIcons = [];
                 const info = this.json.twitterUserIcons.find(info => info.id === id);
                 if (info) return { info: info.url }
                 else {
-                    const status = this.JSONManager.downloadStatus.userIcons.twitter.find(status => status.id === id);
+                    const userId = option?.userId;
+                    if (!userId) return { info: null };
+                    const status = this.JSONManager.downloadStatus.userIcons.twitter.find(status => status.id === userId);
                     if (status) {
-                        return { info: await status.urlwaitfunc ?? null }
+                        const info = await status.urlwaitfunc;
+                        return { info: info ? info.url : null }
                     } else {
                         function downloadStatusDelete(JSONManager: JSONManager) {
-                            const inde = JSONManager.downloadStatus.userIcons.twitter.findIndex(status => status.id === id);
+                            const inde = JSONManager.downloadStatus.userIcons.twitter.findIndex(status => status.id === userId);
                             if (inde !== -1) JSONManager.downloadStatus.userIcons.twitter.splice(inde, 1);
                         }
                         const status: {
                             id: string;
-                            urlwaitfunc: Promise<string | void>;
+                            urlwaitfunc: Promise<{ id: string; url: string; } | void>;
                         } = {
-                            id, urlwaitfunc: new Promise<string | void>(async resolve => {
+                            id: userId, urlwaitfunc: new Promise<{ id: string; url: string } | void>(async resolve => {
                                 try {
-                                    const url = "https://api.fxtwitter.com/" + id;
-                                    const res = await fetch(url, { method: "HEAD" });
-                                    if (res.ok) return resolve(url);
+                                    const url = "https://api.fxtwitter.com/" + userId;
+                                    const res = await fetch(url);
+                                    if (res.ok) {
+                                        const jsontext = await res.text();
+                                        const json: {
+                                            user?: {
+                                                id?: string;
+                                                avatar_url?: string;
+                                            }
+                                        } = JSON.parse(jsontext);
+                                        if (json.user?.id && json.user.avatar_url) return resolve({ id: json.user.id, url: json.user.avatar_url });
+                                    }
+
                                 } catch { }
                                 resolve()
                             })
@@ -1161,13 +1173,16 @@ class JSONManager {
                                 this.json.twitterUserIcons.push({ id: id, url: null });
                                 return;
                             }
-                            if (data) this.json.twitterUserIcons.push({ id: id, url: data });
+                            if (data) this.json.twitterUserIcons.push(data);
                             saveJSON(this.json);
                             downloadStatusDelete(this.JSONManager);
                         });
                         const info = this.json.twitterUserIcons.find(info => info.id === id);
                         if (info) return { info: info.url }
-                        else return { info: await status.urlwaitfunc ?? null }
+                        else {
+                            const info = await status.urlwaitfunc;
+                            return { info: info ? info.url : null }
+                        }
                     }
                 }
             }
@@ -1302,21 +1317,53 @@ class JSONManager {
 function getJSON(): MusicLibraryJSON {
     if (!fs.existsSync("./dbmgr.json")) fs.writeFileSync("./dbmgr.json", "{}");
     try {
-        return JSON.parse(String(fs.readFileSync("./dbmgr.json")));
+        const json = JSON.parse(String(fs.readFileSync("./dbmgr.json")));
+        if (json.youtube === undefined) json.youtube = [];
+        if (json.niconico === undefined) json.niconico = [];
+        if (json.twitter === undefined) json.twitter = [];
+        if (json.soundcloud === undefined) json.soundcloud = [];
+
+        if (json.musicBrainzReleaseInfo === undefined) json.musicBrainzReleaseInfo = [];
+        if (json.musicBrainzRecordingInfo === undefined) json.musicBrainzRecordingInfo = [];
+
+        if (json.youtubeUserIcons === undefined) json.youtubeUserIcons = [];
+        if (json.niconicoUserIcons === undefined) json.niconicoUserIcons = [];
+        if (json.twitterUserIcons === undefined) json.twitterUserIcons = [];
+        if (json.soundcloudUserIcons === undefined) json.soundcloudUserIcons = [];
+
+        if (json.users === undefined) json.users = [];
+        if (json.servers === undefined) json.servers = [];
+        return json;
     } catch (e) {
         try {
+            console.error("ミュージックライブラリはJSONの読み込みに失敗しました。dbmgr-old.jsonに変更し、新しいJSONで続行されます。");
             fs.renameSync("./dbmgr.json", "./dbmgr-old.json");
         } catch (e) {
+            console.error("ミュージックライブラリは読み込みに失敗したJSONの名前の変更にも失敗しました。");
             // SumLog.error("ミュージックライブラリは読み込みに失敗したJSONの名前の変更にも失敗しました。");
             process.exit(1);
         }
         try {
             fs.writeFileSync("./dbmgr.json", "{}");
         } catch (e) {
+            console.error("ミュージックライブラリは読み込みに失敗したJSONの上書きにも失敗しました。");
             // SumLog.error("ミュージックライブラリは読み込みに失敗したJSONの上書きにも失敗しました。");
             process.exit(1);
         }
-        return {};
+        return {
+            youtube: [],
+            niconico: [],
+            twitter: [],
+            soundcloud: [],
+            musicBrainzReleaseInfo: [],
+            musicBrainzRecordingInfo: [],
+            youtubeUserIcons: [],
+            niconicoUserIcons: [],
+            twitterUserIcons: [],
+            soundcloudUserIcons: [],
+            users: [],
+            servers: []
+        };
     }
 };
 
@@ -1331,6 +1378,7 @@ async function saveJSON(json: MusicLibraryJSON) {
         saveQueue = undefined;
         await fsPromise.writeFile("./dbmgr-saving.json", saveData);
         await fsPromise.rename("./dbmgr-saving.json", "./dbmgr.json");
+        console.log("JSONを保存しました。");
         saving = false;
         if (!saveQueue) break;
     }
@@ -1350,15 +1398,23 @@ function validGetRequestParse(req: express.Request, res: express.Response) {
             return new URL("http://localhost" + req.originalUrl);
         } catch { }
     })();
-    if (!url) return error400();
+    if (!url) {
+        console.log("URLとして判定されないURLがGETから送られました。", req.originalUrl)
+        return error400();
+    }
     const params = url.searchParams;
     const splitedPath: (string | undefined)[] = url.pathname.split("/");
     const servicetype = splitedPath[1];
-    const id = splitedPath[2];
-    if (!id) return error400();
+    const id = splitedPath[2] || "";
     const datatype = splitedPath[3] as "audio" | "json";
-    if (!(datatype === "audio" || datatype === "json")) return error400();
-    if (datatype === "audio" && req.url.includes("?")) return error400();
+    if (!(datatype === "audio" || datatype === "json")) {
+        console.log("データタイプ要求が音声でもJSONでもありません。:", datatype, splitedPath);
+        return error400();
+    }
+    if (datatype === "audio" && req.url.includes("?")) {
+        console.log("音声を要求している場合、クエリは無効です。");
+        return error400();
+    }
     switch (servicetype) {
         case "youtube":
         case "soundcloud":
@@ -1385,6 +1441,7 @@ function validGetRequestParse(req: express.Request, res: express.Response) {
             return { id, datatype, servicetype, params }
         }
     }
+    console.log("どの機能でもないものにアクセスされました。", servicetype);
     return error400();
 }
 
@@ -1431,7 +1488,7 @@ function parseRange(rangeHeader: string | undefined, fileSize: number) {
     return { start, end };
 }
 
-interface SourceInfo {
+export interface SourceInfo {
     /** 情報を取得した時の時刻です。 */
     infoGetTimestamp: number;
     /** 音声を取得した時の時刻です。 */
@@ -1483,30 +1540,30 @@ export interface SoundCloudInfoData {
 }
 
 export interface MusicLibraryJSON {
-    youtube?: YouTubeInfoData[];
-    niconico?: niconicoInfoData[];
-    twitter?: TwitterInfoData[];
-    soundcloud?: SoundCloudInfoData[];
-    musicBrainzReleaseInfo?: MusicBrainzReleaseInfo[];
-    musicBrainzRecordingInfo?: MusicBrainzRecordingInfo[];
-    youtubeUserIcons?: {
+    youtube: YouTubeInfoData[];
+    niconico: niconicoInfoData[];
+    twitter: TwitterInfoData[];
+    soundcloud: SoundCloudInfoData[];
+    musicBrainzReleaseInfo: MusicBrainzReleaseInfo[];
+    musicBrainzRecordingInfo: MusicBrainzRecordingInfo[];
+    youtubeUserIcons: {
         id: string;
         url: string | null;
     }[];
-    niconicoUserIcons?: {
+    niconicoUserIcons: {
         id: string;
         url: string | null;
     }[];
-    twitterUserIcons?: {
+    twitterUserIcons: {
         id: string;
         url: string | null;
     }[];
-    soundcloudUserIcons?: {
+    soundcloudUserIcons: {
         id: string;
         url: string | null;
     }[];
-    users?: UserData[];
-    servers?: ServerData[];
+    users: UserData[];
+    servers: ServerData[];
 }
 
 export interface UserData {

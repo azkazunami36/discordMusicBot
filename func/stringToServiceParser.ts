@@ -207,6 +207,23 @@ export async function stringToServiceParser(string: string): Promise<({
                 }
                 break;
             }
+            case "w.soundcloud.com": {
+                const rawurlstr = url.searchParams.get("url");
+                if (rawurlstr) {
+                    try {
+                        const rawurl = new URL(rawurlstr);
+                        const spliturl = rawurl.pathname.split("/");
+                        if (spliturl[1] === "tracks") {
+                            const colonsplit = spliturl[2].split(":");
+                            if (colonsplit[0] === "soundcloud" && colonsplit[1] === "tracks" && colonsplit[2])
+                                return {
+                                    type: "soundcloud",
+                                    body: [colonsplit[2]]
+                                }
+                        }
+                    } catch { }
+                }
+            }
         }
         return
     } catch {

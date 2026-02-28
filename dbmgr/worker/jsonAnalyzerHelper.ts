@@ -1,7 +1,7 @@
 import { Worker } from "worker_threads";
 import { MusicBrainzRecordingInfo, MusicBrainzReleaseInfo } from "./infoGetWorker.js";
 
-interface info {
+export interface JSONAnalizerInfo {
     totalsize: number;
     numoffile: number;
 }
@@ -10,9 +10,10 @@ interface info {
  */
 export function jsonAnalizer() {
     return new Promise<{
-        youtube?: info;
-        niconico?: info;
-        twitter?: info;
+        youtube: JSONAnalizerInfo;
+        niconico: JSONAnalizerInfo;
+        twitter: JSONAnalizerInfo;
+        soundcloud: JSONAnalizerInfo;
         totalsize: number;
         numoffile: number;
     }>((resolve, reject) => {

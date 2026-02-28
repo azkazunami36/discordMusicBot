@@ -52,6 +52,11 @@ export function dbmgrErrorCodeParser(errorCode: string): {
             description: "解析を試みましたが、何もソースを得られませんでした。",
             devDescription: "URLや文字列の解析をする関数は何も見つけることなく返答したため、処理が中断されました。"
         }
+        case "2-4": return {
+            title: "URLの解析に失敗",
+            description: "URLを解析しましたが、IDを取得することができませんでした。",
+            devDescription: "URLが正しくないようです。または非対応なURLが入力されました。もしかすると対応する必要のあるURLかもしれません。"
+        }
         case "3-1": return {
             title: "このソースは存在しません",
             description: "このソースは取得することができないソースのようです。",
@@ -97,6 +102,16 @@ export function dbmgrErrorCodeParser(errorCode: string): {
             description: "ytdlpがbot検知され、ブロックされました。音声取得ができない可能性があります。時間を置くと解決する恐れがあります。",
             devDescription: "botでないことを証明するためにCookieが必要です。再試行システムがある場合は解決できますが、そうでない場合はこのまま情報取得に失敗する恐れがあります。場合によってはシステム側で取得を一時的にキューに移動するなどして、アクセスを冷ます必要があります。"
         }
+        case "ytdlp-12": return {
+            title: "音声が存在しないコンテンツ",
+            description: "このポストには音声が存在しません。",
+            devDescription: "yt-dlpは動画の存在しないTwitterコンテンツをダウンロードしようとしました。"
+        }
+        case "ffmpeg-1": return {
+            title: "非対応の音声",
+            description: "無効な動画でダウンロードに失敗したか、音声の含まれていない動画などが指定されたおそれがあります。",
+            devDescription: "FFmpegが動画を変換できませんでした。まれにロジックミスの可能性もあるので、目を通しておくべきかもしれません。"
+        }
         default: return {
             title: "不明なエラー",
             description: "特定の不可能なエラーコード「" + ((errorCode.length >= 10) ? errorCode.slice(0, 10) + "..." : errorCode) + "」が渡されました。予想外のエラーや内部エラーである可能性が高いです。",
@@ -117,8 +132,8 @@ export function dbmgrErrorCodePriorityCheck(errorCodes: string[]): {
     const sub: string[] = [];
     const other: string[] = [];
     errorCodes.forEach(string => {
-        const mainStr = ["1-2", "2-2", "ytdlp-1", "ytdlp-10", "ytdlp-8"];
-        const subStr = ["ytdlp-4", "3-3", "3-4", "1-1", "2-1", "3-1", "3-2", "ytdlp-5", "ytdlp-6", "ytdlp-7", "ytdlp-9"];
+        const mainStr = ["1-2", "2-2", "ytdlp-1", "ytdlp-10", "ytdlp-8", "ffmpeg-1", "ytdlp-11"];
+        const subStr = ["ytdlp-4", "3-3", "3-4", "1-1", "2-1", "3-1", "3-2", "ytdlp-5", "ytdlp-6", "ytdlp-7", "ytdlp-9", "5-1", "ytdlp-4"];
         if (mainStr.includes(string)) main.push(string);
         else if (subStr.includes(string)) sub.push(string)
         else other.push(string);
@@ -157,9 +172,18 @@ export function stringToErrorCode(string: string) {
 
         if (string.match("Sign in to confirm you’re not a bot."))
             return "ytdlp-10";
-        
+
+        if (string.match("unable to download video data: HTTP Error 403: Forbidden"))
+            return "ytdlp-11";
+
+        if (string.match("No video could be found in this tweet"))
+            return "ytdlp-12";
+
         if (string.match("Error: Status code 404"))
             return "5-1";
+
+        if (string.match("FFmpegで変換を試みましたが、変換が完了したファイルが存在しませんでした。"))
+            return "ffmpeg-1";
 
         console.log("よくわからない文字列: " + string);
         return "0";
