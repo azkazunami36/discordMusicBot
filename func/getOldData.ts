@@ -1,6 +1,6 @@
 import fs from "fs";
 import fsP from "fs/promises";
-import { MusicLibraryJSON, niconicoInfoData, SourceInfo, TwitterInfoData, YouTubeInfoData } from "../dbmgr/main.js";
+import { MusicLibraryJSON, niconicoInfoData, SourceInfo, TwitterInfoData, YouTubeInfoData } from "../dbmgr/interface.js";
 import { ProgressView } from "../class/progressView.js";
 import { randomUUID } from "crypto";
 import { TwitterInfo } from "../dbmgr/worker/infoGetHelper.js";
@@ -24,6 +24,9 @@ function youtubeUrlToId(urlstr: string): { type: "channelId" | "userId"; id: str
     } catch { }
 }
 
+/**
+ * 安全なファイルコピーを行います。失敗するとUUIDのついたフォルダとなります。必要に応じて削除されますが、されていない場合には簡単に削除ができます。
+ */
 async function fileCopy(oldPath: string, newPath: string, filename: string) {
     const random = (() => {
         for (let i = 0; i <= 500; i++) {
@@ -45,6 +48,8 @@ export async function getOldData(oldDiscordMusicBotDirectoryPath: string, json: 
         const envJsonPath = oldDiscordMusicBotDirectoryPath + "/env.json";
         let envStatus;
         if (fs.existsSync(envJsonPath)) {
+            const stat = fs.statSync(envJsonPath);
+            stat.mtimeMs
             envStatus = JSON.parse(String(fs.readFileSync(envJsonPath)));
             console.log("env.jsonを読み込みました。");
         }
@@ -214,14 +219,17 @@ export async function getOldData(oldDiscordMusicBotDirectoryPath: string, json: 
 
     console.log("JSONと音声キャッシュフォルダの読み取りが完了しました。音声キャッシュフォルダとJSONの照合を試みます。");
 
-    if (envjson !== undefined) {
+    if (envjson !== undefined) { // Discordサーバーごとの情報を移行します。
         const serverIds = Object.keys(envjson);
         for (let i = 0; i < serverIds.length; i++) {
             const serverId = serverIds[i];
             const serverData = envjson[serverId];
-            if (serverData.playlist) {
+            if (serverData.playlist) { // プレイリストを移行します。
                 try {
                     const playlist: { type: "videoId" | "nicovideoId" | "twitterId", body: string; number?: number; }[] = JSON.parse(serverData.playlist);
+                    /**
+                     * v2のプレイリストはもしかすると正しくない情報が入っているかもしれません。修正する必要があります。正しいデータのみが入ります。
+                     */
                     const 修復済みプレイリスト: ({
                         type: "youtube" | "niconico" | "twitter" | "soundcloud";
                         id: string;
@@ -242,9 +250,10 @@ export async function getOldData(oldDiscordMusicBotDirectoryPath: string, json: 
                     })
                     const server = json.servers.find(server => server.guildId === serverId);
                     if (server) server.playlist = 修復済みプレイリスト;
-                    else json.servers.push({guildId: serverId, playlist: 修復済みプレイリスト});
+                    else json.servers.push({guildId: serverId, updatetimems: Date.now(), playlist: 修復済みプレイリスト});
                 } catch { }
             }
+            
         }
     }
 

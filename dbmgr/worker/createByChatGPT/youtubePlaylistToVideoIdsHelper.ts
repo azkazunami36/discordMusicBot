@@ -13,7 +13,7 @@ type WorkerResp =
  * 与えられたプレイリストURLから { playlistId, videoIds[] } を取得。
  * ここではワーカー起動の橋渡しのみを行い、処理は一切持ちません。
  */
-export async function fetchPlaylistVideoIdsFromUrl(urlStr: string): Promise<{ playlistId: string; videoIds: string[] } | undefined> {
+export async function fetchPlaylistVideoIdsFromUrl(urlStr: string): Promise<string[] | undefined> {
   const workerPath = path.join(__dirname, "youtubePlaylistToVideoIdsWorker.js"); // ビルド後 .js を参照
   const payload = { url: urlStr };
 
@@ -27,5 +27,5 @@ export async function fetchPlaylistVideoIdsFromUrl(urlStr: string): Promise<{ pl
   });
 
   if (!result.ok) return undefined;
-  return result.data;
+  return result.data?.videoIds;
 }

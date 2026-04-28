@@ -12,3 +12,4 @@ soundcloud/**/*
 youtube/**/*
 dbmgr.json
 cookies.txt
+.DS_Store

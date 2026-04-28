@@ -68,8 +68,11 @@ function sourceGetMasterFunction(videoId: string, folderPath: string, url: [stri
         const optionArgs: string[] = [];
         switch (continueStatus?.type) {
             case "bot": {
-                continueStatus.number === 1 ? optionArgs.push("--cookies-from-browser", "firefox") : "";
-                continueStatus.number === 2 ? optionArgs.push("--cookies", "./cookies.txt") : "";
+                switch (continueStatus.number) {
+                    case 1: optionArgs.push("--cookies-from-browser", "firefox"); break;
+                    case 2: optionArgs.push("--cookies-from-browser", "chrome"); break;
+                    case 3: optionArgs.push("--cookies", "./cookies.txt"); break;
+                }
                 break;
             }
         }
@@ -100,7 +103,7 @@ function sourceGetMasterFunction(videoId: string, folderPath: string, url: [stri
                     if (continueStatus) {
                         if (continueStatus.type === "bot") {
                             /** 全てのエラー再施行をした場合 */
-                            if (continueStatus.number >= 2) return reject(e);
+                            if (continueStatus.number >= 3) return reject(e);
                             else ytdlpProcess(savename, url, args, { type: "bot", number: continueStatus.number + 1 }).then(data => resolve(data)).catch(err => reject(err));
                         }
                     } else {
@@ -124,7 +127,6 @@ function sourceGetMasterFunction(videoId: string, folderPath: string, url: [stri
                             case "aac": return { type: "aac", stream };
                             case "opus": return { type: "opus", stream };
                             case "ogg": return { type: "ogg", stream };
-
                         }
                     }
                     return { type: undefined, stream: data.streams[0] as fluentffmpeg.FfprobeStream | undefined }

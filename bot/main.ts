@@ -1,478 +1,368 @@
 import * as Discord from "discord.js";
-import fs from "fs";
-import "dotenv/config";
-import "./createByChatGPT/logger.js"
+import { EventEmitter } from "stream";
 
-import { EnvData, GlobalEnvData } from "./class/envJSON.js";
-import { ServersDataClass } from "./class/serversData.js";
-import { InteractionInputData } from "./funcs/interface.js";
-import { WebPlayerAPI } from "./class/webAPI.js";
-import { Player } from "./class/player.js";
-import { messageEmbedGet, videoInfoEmbedGet } from "./funcs/embed.js";
-import { progressBar } from "./createByChatGPT/progressBar.js";
-import { SumLog } from "../class/sumLog.js";
-import { interactionLog, messageLog } from "./funcs/eventlog.js";
-
-const client = new Discord.Client({
-    intents: [
-        Discord.GatewayIntentBits.Guilds,
-        Discord.GatewayIntentBits.GuildMessages,
-        Discord.GatewayIntentBits.MessageContent,
-        Discord.GatewayIntentBits.GuildVoiceStates
-    ],
-    partials: [
-        Discord.Partials.Channel
-    ]
-});
-
-/** Discordサーバーに関するデータを一時的に記録しているデータを扱うクラスです。 */
-const serversDataClass = new ServersDataClass(client);
-/** サーバーごとに記録する必要のある一時データです。 */
-const serversData = serversDataClass.serversData;
 /**
- * Discordの再生状態を管理するクラスです。
+ * プレイヤークラスです。
+ * 
+ * 主にこのクラスを使ってさまざまなクライアントに対して再生状態を変更したりすることができます。
+ * 
+ * 再生状態の追跡・アクティビティ記録・Discord.jsのプレイヤーを管理するクラスを同梱しています。
+ * 
+ * このクラス単体の役割は、全ての抽象化されたクラスを統合し、外部から操作できるようにするためのものです。しかし、ほとんどの場合このクラスで完結する思想です。
  */
-const player = new Player(client);
-
-/** インタラクションコマンドのデータです。 */
-const interactionFuncs = (() => {
-    const arr: {
-        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData, message: Discord.Message) => Promise<void>;
-        command?: Discord.SlashCommandOptionsOnlyBuilder;
-    }[] = [];
-    fs.readdirSync("interaction").forEach(async str => {
-        if (!str.endsWith(".js")) return;
-        try {
-            const { execute, command } = await import("./interaction/" + str);
-            arr.push({ execute, command });
-        } catch (e) {
-            console.error(e, str);
-        }
-    });
-    return arr;
-})();
-
-/** インタラクションコマンドのデータです。 */
-const adminInteractionFuncs = (() => {
-    const arr: {
-        execute?: (interaction: Discord.Interaction, inputData: InteractionInputData, message: Discord.Message) => Promise<void>;
-        command?: Discord.SlashCommandOptionsOnlyBuilder;
-    }[] = [];
-    fs.readdirSync("adminInteraction").forEach(async str => {
-        if (!str.endsWith(".js")) return;
-        try {
-            const { execute, command } = await import("./adminInteraction/" + str);
-            arr.push({ execute, command });
-        } catch (e) {
-            console.error(e, str);
-        }
-    });
-    return arr;
-})();
-
-/** 再生をしきったあとにする操作です。たいていリピート操作や再生停止操作などが行われます。 */
-player.on("playAutoEnd", async guildId => {
-    const serverData = serversData[guildId];
-    SumLog.log("音楽の再生の終了を示すコールバックが動作しました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
-    if (!serverData?.discord.calledChannel) return;
-    const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
-    const envData = new EnvData(guildId);
-    const playlist = envData.playlist;
-    const playType = envData.playType;
-    switch (playType) {
-        case 1: {
-            playlist.shift();
-            break;
-        }
-        case 2: {
-            const videoId = playlist.shift();
-            if (videoId) playlist.push(videoId);
-            break;
-        }
+class Player {
+    discordClient: Discord.Client;
+    constructor(discordClient: Discord.Client) {
+        this.discordClient = discordClient;
     }
-    const playlistData = playlist.get(0);
-    if (!playlistData) {
-        try {
-            if (envData.manualStartedIs) {
-                if (channel && channel.isTextBased()) {
-                    await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため再生を一時停止中です。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
-                }
-                SumLog.log("プレイリストが空になりました。しかしjoinを使っているため退出はしていません。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
-            } else {
-                if (channel && channel.isTextBased()) {
-                    await channel.send({ embeds: [messageEmbedGet("次の曲がなかったため切断しました。また再生を行う場合は`/add text:[タイトルまたはURL]`を行い`/play`を実行してください。", client)] });
-                }
-                SumLog.log("プレイリストが空になり、退出の連絡をしました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
-            }
-        } catch (e) {
-            SumLog.error("プレイリストが空になりましたが、エラーが発生しました。再生は停止できたはずです。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
-            console.error(e);
-        }
-        if (!envData.manualStartedIs) player.stop(guildId);
-        return;
+}
+
+/**
+ * 再生に使用するソースを識別するための情報です。
+ * 
+ * 以後１つの曲にボーカルトラックやドラムトラックといった具合で分割された音声ファイルを提供する場合がありますが、それをここに含める必要は現時点でありません。しかし、プレイリストにそれら情報を記録するといった手段が現れた場合、この型定義を削除して、そのプレイリストの型定義を使用することで拡張できます。
+ */
+interface FocusSource {
+    /** 使用するサービス名です。例: YouTube、アップロードされたファイル等 */
+    service: string;
+    /** 識別するためのIDです。 */
+    id: string;
+    /** 存在する場合、ソース番号です。 */
+    item: number;
+}
+
+/**
+ * デバイスと接続するためのシステムをここに定義します。関数が呼ばれた際に、どのように行動するかをここで決定します。
+ * 
+ * デバイスを破棄する場合は必ずこのクラスのdestroyを呼び出してください。
+ */
+interface ConnectSystemFunctions {
+    device: Device;
+    deviceType: DeviceType;
+    get destroyed(): boolean;
+    /** システムの状態を示します。readyの場合正しく関数を受け付けますが、notworkingの場合関数を送信しても処理はクライアントに届きません。 */
+    get status(): "ready" | "notworking";
+    play(): void;
+    pause(): void;
+    volume(vol: number): void;
+    repeat(mode: "off" | "normal" | "only"): void;
+    speed(vol: number): void;
+    equalizer(): void;
+    pitch(vol: number): void;
+    seek(msec: number): void;
+    changeSource(source: FocusSource): void;
+    destroy(): void;
+}
+
+/**
+ * 現在未完成のイベントです。設計が明確になり次第実装します。
+ */
+interface PlaySessionEvent {
+    play: [];
+    repeat: [];
+    error: [error: { error?: Error; unknown?: unknown; }];
+}
+
+declare interface PlaySession {
+    on<K extends keyof PlaySessionEvent>(event: K, listener: (...args: PlaySessionEvent[K]) => void): this;
+    once<K extends keyof PlaySessionEvent>(event: K, listener: (...args: PlaySessionEvent[K]) => void): this;
+    off<K extends keyof PlaySessionEvent>(event: K, listener: (...args: PlaySessionEvent[K]) => void): this;
+    emit<K extends keyof PlaySessionEvent>(event: K, ...args: PlaySessionEvent[K]): boolean;
+}
+
+/**
+ * セッションという概念です。１人１台のデバイスに再生する場合にも使用し、複数人で曲を楽しむ場合も、１人で複数台のデバイスで音楽を楽しむ場合も、Discord.jsで音楽を楽しむ場合も使用します。
+ * 
+ * セッションでは同じ曲を全てのデバイスで楽しめるように設計します。同期と複数人の操作を正しく扱う必要があります。
+ * 
+ * ここに用意されている関数は全てデバイスに送信される関数です。しかし、デバイスIDを指定すると目的のデバイスに送信できます。
+ * 
+ * 再生に関するイベントを取り出せます。リピート操作やイベント操作などの取得が可能です。
+ */
+class PlaySession extends EventEmitter {
+    player: Player;
+    /**
+     * このセッションのID。
+     */
+    readonly sessionId;
+    /**
+     * セッションに接続しているデバイス。また、ユーザーID同梱。
+     * 
+     * アクティビティ監視のため、整合性を高めてください。
+     */
+    #devices: Device[] = [];
+    /**
+     * セッションが破棄されたかどうか。クラスを利用できなくしたりするためのものでもあります。
+     */
+    #destroyed = false;
+    /**
+     * セッションが破棄されたかどうか。
+     */
+    get destroyed() { return this.#destroyed; }
+    /**
+     * セッションで共有される再生リスト。
+     */
+    playlist: FocusSource[] = [];
+
+    constructor(player: Player, sessionId: string, devices?: Device[]) {
+        super();
+        this.player = player;
+        this.sessionId = sessionId;
+        if (devices) this.#devices.push(...devices);
     }
-    if (envData.changeTellIs) {
-        const channel = client.guilds.cache.get(guildId)?.channels.cache.get(serverData.discord.calledChannel);
-        try {
-            if (channel && channel.isTextBased()) {
-                let embed: Discord.EmbedBuilder | undefined;
-                const metaEmbed = await videoInfoEmbedGet([playlistData], "次の曲の再生準備中...\n0%`" + progressBar(0, 35) + "`", client, eb => { embed = eb; });
-                const message = await channel.send(metaEmbed);
-                try {
-                    let statusTemp: {
-                        status: "loading" | "downloading" | "formatchoosing" | "converting" | "done" | "queue",
-                        percent: number;
-                    }
-                    let statuscallTime: number = Date.now();
-                    const type = playlistData.type;
-                    await player.sourceSet(guildId, playlistData, async (status, percent) => {
-                        const temp = { status, percent }
-                        if (statusTemp && statusTemp === temp) return;
-                        if (statusTemp && statusTemp.status === status && Date.now() - statuscallTime < 500) return;
-                        statusTemp = temp;
-                        statuscallTime = Date.now();
-                        if (embed) {
-                            if (status === "loading") { embed.setDescription("次の曲の音声ファイルを準備中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                            if (status === "downloading") { embed.setDescription("次の曲の音声ファイルをダウンロード中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                            if (status === "converting") { embed.setDescription("次の曲の音声ファイルを再生可能な形式に変換中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                            if (status === "formatchoosing") { embed.setDescription("次の曲の" + (type ? (type === "videoId" ? "YouTube" : type === "nicovideoId" ? "ニコニコ動画" : "X") : "") + "サーバーに保管されたフォーマットの調査中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                            if (status === "done") { embed.setDescription("次の曲の再生開始処理中...\n" + Math.floor(percent) + "%`" + progressBar(percent, 35) + "`"); await message.edit(metaEmbed); }
-                        }
-                    });
-                    player.volumeSet(guildId, envData.volume);
-                    player.play(guildId);
-                    if (embed) embed.setDescription("次の曲の再生を開始しました。");
-                    await message.edit(metaEmbed);
-                } catch (e) {
-                    try {
-                        await message.edit({
-                            embeds: [new Discord.EmbedBuilder()
-                                .setTitle("エラー")
-                                .setAuthor({
-                                    name: "音楽bot",
-                                    iconURL: client.user?.avatarURL() || undefined,
-                                })
-                                .setDescription("このbotで次の曲を再生する処理をしている途中でエラーが発生しました。以下のエラーは管理者側でも確認可能です。修正まで放置しておくか、`/skip`コマンドや`/delete`コマンドを使用してこのエラーを回避してください。\n```" + e + "\n```")
-                                .setColor("Purple")
-                            ]
-                        });
-                    } catch (e) {
-                        console.error(e);
-                    }
-                }
-            }
-        } catch (e) {
-            await player.sourceSet(guildId, playlistData);
-            player.volumeSet(guildId, envData.volume);
-            player.play(guildId);
-            console.error(e);
+    play() { }
+    pause() { }
+    destroy() {
+        this.#destroyed = true;
+        for (const device of this.#devices) {
+            device.destroy();
         }
-    } else {
-        await player.sourceSet(guildId, playlistData);
-        player.play(guildId);
+        this.removeAllListeners();
+        this.on = () => { console.error("破棄されたクラス「PlaySession」のイベントリスナーを利用しようとしました。"); return this; }
+        this.emit = () => { console.error("破棄されたクラス「PlaySession」のイベントリスナーを利用しようとしました。"); return false; }
+        this.addListener = () => { console.error("破棄されたクラス「PlaySession」のイベントリスナーを利用しようとしました。"); return this; }
     }
-    SumLog.log("次の曲が存在したため、次の曲の再生を開始しました。", { guildId, client, functionName: "player.on playEnd", textChannelId: serverData?.discord.calledChannel });
-})
+    volume() { }
+    repeat() { }
+    speed() { }
+    equalizer() { }
+    pitch() { }
+    seek() { }
+    changeSource() { }
+}
 
-/** コマンドの実行が早すぎる場合に阻止するために使うための変数です。 */
-const runedServerTime: { guildId: string; runedTime: number; }[] = [];
-/** コマンドの最短実行間隔です。 */
-const runlimit = 1000;
-client.on(Discord.Events.InteractionCreate, async interaction => {
-    interactionLog(interaction);
-    if (!interaction.isCommand()) return;
-    if (!interaction.guild) return await interaction.reply({
-        embeds: [messageEmbedGet("ここではコマンドは実行できません。", client)]
-    });
-    /** 1. コマンドを検索します。ヒットしたコマンドがここに記録されます。 */
-    const data = interactionFuncs.find(d => d.command?.name === interaction.commandName);
-    const adminData = adminInteractionFuncs.find(d => d.command?.name === interaction.commandName);
-    // 2. コマンドが正しく検索され、そのコマンドが正しく取得できていた場合実行します。
-    const commandFunction = data || adminData;
-    if (commandFunction && commandFunction.command && commandFunction.execute) {
-        if (adminData && interaction.user.id !== process.env.DISCORD_ADMIN_USER_ID) return interaction.reply({
-            embeds: [messageEmbedGet("このコマンドは管理者用です。管理者にコマンドを利用させてください。もし、管理者のいないサーバーでこのコマンドを実行したら...「え？なんで実行できてるの！？」って管理者である@kazunami36_sum1は驚きを隠せなくなります。ログで見ているので、修正される予定です。", client)],
-            flags: "Ephemeral"
-        });
-        // 3. サーバー内で実行されている場合、専用チャンネルであるかどうかやそのサーバーで間隔内でチャットが行われているかどうかの検査をします。
-        if (interaction.guildId) {
-            const envData = new EnvData(interaction.guildId);
-            const callchannelId = envData.callchannelId;
-            if (callchannelId && callchannelId != interaction.channelId) return await interaction.reply({
-                embeds: [messageEmbedGet("ここで操作することはできません。特定のチャンネルでやり直してください。", client)],
-                flags: "Ephemeral"
-            });
-            if (!runedServerTime.find(data => data.guildId === interaction.guildId)) runedServerTime.push({ guildId: interaction.guildId, runedTime: 0 });
-            const runed = runedServerTime.find(data => data.guildId === interaction.guildId);
-            if (runed) {
-                if (Date.now() - runed.runedTime < runlimit) return interaction.reply({
-                    embeds: [messageEmbedGet("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。", client)]
-                });
-                runed.runedTime = Date.now();
-            }
-        }
-        let permissionIs = true;
-        if (!interaction.channel) permissionIs = false;
-        const isThread = interaction.channel?.type === Discord.ChannelType.PublicThread ||
-            interaction.channel?.type === Discord.ChannelType.PrivateThread ||
-            interaction.channel?.type === Discord.ChannelType.AnnouncementThread;
-        const checkPermission = [Discord.PermissionsBitField.Flags.SendMessages, isThread ? Discord.PermissionsBitField.Flags.SendMessagesInThreads : Discord.PermissionsBitField.Flags.ViewChannel];
-        if (interaction.channel?.type === Discord.ChannelType.GuildText) {
-            const me = interaction.guild.members.me;
-            if (!me) permissionIs = false;
-            else if (!interaction.channel.permissionsFor(me).has(checkPermission)) permissionIs = false;
-        }
-        SumLog.log("コマンド「/" + interaction.commandName + "」の実行を開始しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, functionName: "client.on Interaction", userId: interaction.user.id });
-        // 4. 必要なデータを整え、コマンドを実行します。
-        const inputData: InteractionInputData = { serversDataClass, player };
-        const response = await interaction.reply({
-            embeds: [messageEmbedGet("コマンド「" + commandFunction.command.name + "」の処理を開始しています...", client)],
-            withResponse: true
-        });
-        const message = response.resource?.message || undefined;
-        if (!permissionIs) {
-            SumLog.warn("このサーバーでは権限のないエリアでbotを実行しています。エラーの原因となる可能性が高いです。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, functionName: "client.on Interaction", userId: interaction.user.id });
-            await interaction.followUp({
-                embeds: [new Discord.EmbedBuilder()
-                    .setTitle("警告")
-                    .setAuthor({
-                        name: "音楽bot",
-                        iconURL: client.user?.avatarURL() || undefined,
-                    })
-                    .setDescription("この音楽botはテキスト送信権限のないチャンネルでコマンドを実行しています。権限を付与しない場合、様々な機能が利用できません。ご注意ください。この警告は改善されるまで常に表示されます。")
-                    .setColor("Purple")
-                ]
-            });
-        }
-        if (!message) return SumLog.error("メッセージを取得できなかったため、コマンドは実行されませんでした。", { functionName: "client.on Interaction", guildId: interaction.guildId || undefined, textChannelId: interaction.channelId, userId: interaction.user.id });
-        try {
-            await commandFunction.execute(interaction, inputData, message);
-        } catch (e) {
-            SumLog.error("コマンド「/" + interaction.commandName + "」の実行でエラーが発生しました。", { client, guildId: interaction.guildId || undefined, textChannelId: interaction.channelId || undefined, functionName: "client.on Interaction", userId: interaction.user.id });
-            console.error(e);
-            await interaction.editReply({
-                embeds: [new Discord.EmbedBuilder()
-                    .setTitle("エラー")
-                    .setAuthor({
-                        name: "音楽bot",
-                        iconURL: client.user?.avatarURL() || undefined,
-                    })
-                    .setDescription("このbotでコマンドの処理をしている途中でエラーが発生しました。以下のエラーは生のエラー内容です。これは管理者側でもチェックが可能です。修正までしばらくお待ちください。\n```" + e + "\n```")
-                    .setColor("Purple")
-                ]
-            });
-        }
+/** デバイスタイプです。デバイスによって実装が異なる(ことがある)ため、ここで挙動を識別する可能性もあるため、定義します。 */
+type DeviceType = "Discord.js" | "Web";
+
+/**
+ * 再生先のデバイスです。デバイスごとに操作する必要のあるものがここに定義されます。
+ * 
+ * セッションを破棄する場合に必ずデバイスを破棄してください。
+ */
+class Device {
+    playSession: PlaySession;
+    /**
+     * 誰のデバイスかを識別する。ほとんどの場合シングルだが、Discord.jsといったサービスを跨ぐ場合の例外のため、配列で対応。
+     */
+    readonly userId: string[];
+    /**
+     * クラスの処理タイプを選択する。
+     */
+    readonly type: DeviceType;
+    /**
+     * デバイスのID。ログイン時に付与される固有のID。
+     */
+    readonly id;
+    /**
+     * デバイス名。空欄でも可能。
+     */
+    readonly name;
+    /**
+     * 実際にデバイスとやりとりするためのクラスです。
+     * 
+     * 詳細はinterfaceで解説しています。
+     */
+    readonly connectSystem: DiscordConnectSystem | WebConnectSystem;
+    /**
+     * デバイスとの接続が破棄されたかどうか。クラスを利用できなくしたりするためのものでもあります。
+     */
+    #destroyed = false;
+    /**
+     * デバイスとの接続が破棄されたかどうか。
+     */
+    get destroyed() { return this.#destroyed; }
+    constructor(playSession: PlaySession, userId: string[], type: DeviceType, id: string, name: string) {
+        this.playSession = playSession;
+        this.userId = [...userId];
+        this.type = type;
+        this.id = id;
+        this.name = name;
+        if (type === "Discord.js") {
+            this.connectSystem = new DiscordConnectSystem(this);
+        } else if (type === "Web") {
+            this.connectSystem = new WebConnectSystem(this);
+        } else this.connectSystem = new WebConnectSystem(this);
     }
-});
-client.on(Discord.Events.ShardResume, () => {
-    try {
-        const status: Discord.PresenceData = {};
-        status.status = "online";
-        status.activities = [{ name: (new GlobalEnvData()).botMessage }];
-        client.user?.setPresence(status);
-    } catch { }
-});
-client.on(Discord.Events.ClientReady, async () => {
-    console.log("OK " + client.user?.displayName);
-    try {
-        const status: Discord.PresenceData = {};
-        status.status = "online";
-        status.activities = [{ name: (new GlobalEnvData()).botMessage }];
-        client.user?.setPresence(status);
-    } catch { }
-    // サーバーリストを全部実行し、起動前に接続していたかどうかを取得して、接続していた場合その設定を復元します。
-    (await client.guilds.fetch()).forEach(async data => {
-        try {
-            const guild = client.guilds.cache.get(data.id);
-            const envData = new EnvData(data.id);
-            if (!serversDataClass.serversData[data.id]) serversDataClass.serverDataInit(data.id);
-            const serverData = serversDataClass.serversData[data.id];
-            if (guild && serverData && envData.restartedPlayPoint >= -1 && envData.restartedCalledChannel && envData.restartedVoiceChannel) {
-                const channel = await guild?.channels.fetch(envData.restartedCalledChannel);
-                const voiceChannel = await guild?.channels.fetch(envData.restartedVoiceChannel);
-                if (channel?.isTextBased() && voiceChannel?.isVoiceBased() && voiceChannel.members.size > 0) {
-                    const playlist = envData.playlist.get(0);
-                    if (!playlist) return;
-                    serverData.discord.calledChannel = envData.restartedCalledChannel;
-                    await player.join({
-                        guildId: data.id,
-                        channelId: envData.restartedVoiceChannel,
-                        adapterCreator: guild.voiceAdapterCreator
-                    })
-                    await player.sourceSet(data.id, playlist);
-                    player.playtimeSet(data.id, envData.restartedPlayPoint);
-                    player.pitchSet(data.id, envData.playPitch);
-                    player.speedSet(data.id, envData.playTempo);
-                    player.volumeSet(data.id, envData.volume);
-                    player.reverbSet(data.id, envData.reverbType);
-                    if (envData.restartedPlayIs) player.play(data.id);
-                    await channel.send({ embeds: [messageEmbedGet("音楽botは復帰しました。", client)] });
-                    SumLog.log("再起動前に接続していたサーバーに参加しました。", { client, functionName: "client.on ready", guildId: guild.id, textChannelId: channel.id, voiceChannelId: voiceChannel.id });
-                } else {
-                    SumLog.log("再起動前に接続していたサーバーに参加しようとしましたが、情報が正しくなかったか、VCに誰もいなかったため参加しませんでした。", { client, functionName: "client.on ready", guildId: guild.id, textChannelId: envData.restartedCalledChannel, voiceChannelId: envData.restartedVoiceChannel });
-                }
-                envData.restartedPlayPoint = -1;
-                envData.restartedCalledChannel = "";
-                envData.restartedVoiceChannel = "";
-                envData.restartedPlayIs = false;
-            }
-        } catch (e) {
-            console.error("再生停止処理中にエラー(処理は続行されます)", e)
-        }
-    });
-});
-// VCの状態が変化したら実行します。
-client.on(Discord.Events.VoiceStateUpdate, async (oldState, newState) => {
-    await newState.guild.fetch();
-    SumLog.log("VCの状態が変化しました。oldStateの情報を梱包しています。", { client, voiceChannelId: oldState.channelId || undefined, guildId: oldState.guild.id, userId: oldState.member?.id, functionName: "voicestatechange" });
-    SumLog.log("VCの状態が変化しました。newStateの情報を梱包しています。", { client, voiceChannelId: newState.channelId || undefined, guildId: newState.guild.id, userId: newState.member?.id, functionName: "voicestatechange" });
-    /** 状態が変化したVCを取得 */
-    const channel = await newState.guild.channels.fetch(newState.channelId || oldState.channelId || "");
-    const newChannel = await newState.channel?.fetch(false);
-    if (!channel || !channel.isVoiceBased?.()) return;
-    if (newChannel && player.playStatusGet(newChannel.guildId) === "stop") {
-        if (newChannel.members.filter(member => member.user.bot === false).size >= 1) {
-            const envData = new EnvData(newState.guild.id);
-            if (envData.recordedAudioFileSaveChannelTo) {
-                await player.join({ guildId: newState.guild.id, channelId: newChannel.id, adapterCreator: newState.guild.voiceAdapterCreator });
-            }
-        }
-    } else if (player.playStatusGet(channel.guildId) !== "stop") {
-        // 1. VCにいる人数がBotを含めず0人になったら退出します。
-        if (channel.members.filter(member => member.user.bot === false).size <= 0) {
-            const serverData = serversData[newState.guild.id];
-            // 退出チャットが表示できそうなら表示します。
-            if (serverData && serverData.discord.calledChannel) {
-                const channel = newState.guild.channels.cache.get(serverData.discord.calledChannel);
-                if (channel && channel.isTextBased()) {
-                    channel.send({
-                        embeds: [messageEmbedGet("全員が退出したため、再生を停止します。また再度VCに参加して`/play`を実行すると再生できます。", client)]
-                    });
-                }
-            }
-            SumLog.log("VCからメンバーが退出し、botも退出しました。", { client, functionName: "client.on voiceupdate", guildId: newState.guild.id, voiceChannelId: newState.channelId || undefined });
-            // 実際に退出します。
-            player.stop(channel.guildId);
-        }
+    /**
+     * デバイスとの接続を終了します。
+     */
+    destroy() {
+        this.#destroyed = true;
+        this.connectSystem.destroy();
     }
-});
-client.on(Discord.Events.GuildCreate, guild => {
-    console.log("音楽botが新しいサーバーに参加。参加したサーバー名: " + guild.name + " 現在の参加数: " + client.guilds.cache.size);
-    SumLog.log("新しいサーバーにbotが参加しました。現時点の参加数: " + client.guilds.cache.size, { client, functionName: "client.on guildcreate", guildId: guild.id });
-});
-client.on(Discord.Events.ShardDisconnect, (event, id) => {
-    console.log(`Shard ${id} disconnected`, event);
-    SumLog.log(`Shard ${id} disconnected ` + event.code + client.guilds.cache.size, { client, functionName: "client.on sharddisconnect" });
-});
-client.on(Discord.Events.ShardReconnecting, (id) => {
-    try {
-        const status: Discord.PresenceData = {};
-        status.status = "online";
-        status.activities = [{ name: (new GlobalEnvData()).botMessage }];
-        client.user?.setPresence(status);
-    } catch { }
-    console.log(`Shard ${id} reconnecting...`);
-    SumLog.log(`Shard ${id} reconnecting...` + client.guilds.cache.size, { client, functionName: "client.on shardreconnenting" });
-});
-client.on(Discord.Events.ShardReady, (id) => {
-    console.log(`Shard ${id} reconnected...`);
-    SumLog.log(`Shard ${id} connected` + client.guilds.cache.size, { client, functionName: "client.on shardready" });
-});
+}
 
-client.login(process.env.DISCORD_TOKEN);
+/**
+ * 現在未完成のイベントです。設計が明確になり次第実装します。
+ */
+interface DiscordConnectSystemEvent {
+    play: [];
+    error: [error: { error?: Error; unknown?: unknown; }];
+}
 
-// ここから下は至って重要なコードではありません。
+declare interface DiscordConnectSystem {
+    on<K extends keyof DiscordConnectSystemEvent>(event: K, listener: (...args: DiscordConnectSystemEvent[K]) => void): this;
+    once<K extends keyof DiscordConnectSystemEvent>(event: K, listener: (...args: DiscordConnectSystemEvent[K]) => void): this;
+    off<K extends keyof DiscordConnectSystemEvent>(event: K, listener: (...args: DiscordConnectSystemEvent[K]) => void): this;
+    emit<K extends keyof DiscordConnectSystemEvent>(event: K, ...args: DiscordConnectSystemEvent[K]): boolean;
+}
 
-const bt = [
-    {
-        name: "音割れポッター",
-        videoId: "OwN6FwkSWwY"
-    },
-    {
-        name: "威風堂々",
-        videoId: "-Tyy3zTbVWc"
-    },
-    {
-        name: "ソ連",
-        videoId: "rwAns-qsMPo"
-    },
-    {
-        name: "ココナッツモール池崎",
-        videoId: "kgJ3K1keWGU"
-    },
-    {
-        name: "BIG HSI",
-        videoId: "Ai4g34CTdA0"
-    },
-    {
-        name: "タドコロ電機",
-        videoId: "1kAZdsQrO4s"
-    },
-]
-let joubutuNumber = Math.floor(Math.random() * bt.length);
-client.on(Discord.Events.MessageCreate, async message => {
-    messageLog(message);
-    if (message.guildId === process.env.DISCORD_ADMIN_GUILD_ID || "926965020724691005") {
-        if (message.content === client.user?.displayName + "のコマンドを再定義する") {
-            // JSON へ変換（REST 配信用）
-            function toJSONBody(builders: Discord.SlashCommandOptionsOnlyBuilder[]): Discord.RESTPostAPIApplicationCommandsJSONBody[] {
-                return builders.map((b) => (b as any).toJSON ? (b as any).toJSON() : (b as unknown as Discord.RESTPostAPIApplicationCommandsJSONBody));
-            }
-            const botmessage = await message.reply("処理を開始します...");
-            const token = process.env.DISCORD_TOKEN;
-            const clientId = client.user?.id;
-
-            if (!token || !clientId) return await botmessage.edit("トークンまたはクライアントIDが無効だったよ。");
-            const commands = interactionFuncs.map(func => func.command).filter((cmd): cmd is Discord.SlashCommandOptionsOnlyBuilder => cmd !== undefined);
-            const body = toJSONBody(commands);
-            const adminCommands = adminInteractionFuncs.map(func => func.command).filter((cmd): cmd is Discord.SlashCommandOptionsOnlyBuilder => cmd !== undefined);
-            const adminBody = toJSONBody(adminCommands);
-            const rest = new Discord.REST({ version: "10" }).setToken(token);
-
-            botmessage.edit("グローバルコマンドをセットしています...");
-            await rest.put(Discord.Routes.applicationCommands(clientId), { body: body });
-
-            // サーバーのID一覧
-            const guildIds = [process.env.DISCORD_ADMIN_GUILD_ID || "926965020724691005"];
-            for (let i = 0; i < guildIds.length; i++) {
-                const guildId = guildIds[i];
-                botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」に登録しています...時間がかかります。");
-                await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: body });
-                botmessage.edit("サーバーコマンドを" + guildIds.length + "中" + (i + 1) + "つ目の「" + client.guilds.cache.get(guildId)?.name + "/" + guildId + "」から削除しています...");
-                await rest.put(Discord.Routes.applicationGuildCommands(clientId, guildId), { body: adminBody });
-            }
-            botmessage.edit("グローバルコマンドを登録しました。");
-            return;
-        }
+/**
+ * Discord.jsのボイスチャンネルと接続するためのクラスです。
+ * 
+ * 設計前提として
+ * - Discord.js Client
+ * - Guild ID
+ * - Channel ID
+ * が必要です。しかし、ClientはPlayerクラスに同梱します。クラス初期化時にclientを設置するだけです。
+ * 
+ * 初めてチャンネルに参加してセッションが開始される場合に、セッションIDは「DiscordJs-[Guild ID]」で作成します。それにより、すでに存在するセッションでは発見ができ、存在しないセッションは作成できます。Discord.jsの場合はセッションは連番ではありません。
+ * 
+ */
+class DiscordConnectSystem extends EventEmitter implements ConnectSystemFunctions {
+    device: Device;
+    /**
+     * デバイスとの接続が破棄されたかどうか。クラスを利用できなくしたりするためのものでもあります。
+     */
+    #destroyed = false;
+    /**
+     * デバイスとの接続が破棄されたかどうか。
+     */
+    get destroyed() { return this.#destroyed; }
+    #guildId?: string;
+    set guildId(id: string) { this.#guildId = id; }
+    #channelId?: string;
+    set channelId(id: string) { this.#channelId = id; }
+    /** 
+     * システムの状態を示します。readyの場合正しく関数を受け付けますが、notworkingの場合関数を送信しても処理はクライアントに届きません。 
+     */
+    get status(): "ready" | "notworking" { if (this.#guildId && this.#channelId) return "ready"; else return "notworking" }
+    readonly deviceType = "Discord.js";
+    constructor(device: Device) {
+        super();
+        this.device = device;
+        this.device.playSession.player.discordClient;
     }
-    // 1. bot呼び出しでないものをスキップする。
-    if (message.content === "VCの皆、成仏せよ") {
-        if (!message.guildId || !message.member || !message.guild) return message.reply("ごめん！！エラーっす！www");
-        if (!serversData[message.guildId]) serversDataClass.serverDataInit(message.guildId);
-        const serverData = serversData[message.guildId];
-        if (!serverData) return message.reply("ごめん！！エラーっす！www");
-        const envData = new EnvData(message.guildId);
-        const callchannelId = envData.callchannelId;
-        if (callchannelId && callchannelId !== message.channelId) return console.log("専用チャンネルでないところで成仏させようとしました。ID: " + message.guildId, typeof callchannelId, callchannelId)
-        if (!message.member.voice.channelId) return console.log("チャンネルに参加していない人が成仏させようとしました。ID: " + message.guildId)
-        if (!runedServerTime.find(data => data.guildId === message.guildId)) runedServerTime.push({ guildId: message.guildId, runedTime: 0 });
-        const runed = runedServerTime.find(data => data.guildId === message.guildId);
-        if (runed) {
-            if (Date.now() - runed.runedTime < runlimit) return message.reply("コマンドは" + (runlimit / 1000) + "秒に1回までです。もう少しお待ちください。");
-            runed.runedTime = Date.now();
-        }
-        if ((joubutuNumber++) >= bt.length - 1) joubutuNumber = 0;
-        const { name, videoId } = bt[joubutuNumber];
-        await player.forcedPlay({
-            guildId: message.guildId,
-            channelId: message.member.voice.channelId,
-            adapterCreator: message.guild.voiceAdapterCreator,
-            source: { type: "videoId", body: videoId },
-            playtime: 0,
-            tempo: envData.playTempo,
-            pitch: envData.playPitch,
-            volume: 1145141919
-        });
-        await message.reply(name + "の日です。音量を" + 1145141919 + "%にしました。音割れをお楽しみください。キューや設定は変更していないため、次の曲からは音量は" + envData.volume + "%に戻ります。");
+    play() { }
+    pause() { }
+    volume(vol: number) { }
+    repeat(type: "off" | "normal" | "only") { }
+    speed(vol: number) { }
+    equalizer() { }
+    pitch(vol: number) { }
+    seek(msec: number) { }
+    changeSource(source: FocusSource) { }
+    destroy() {
+        this.#destroyed = true;
+        this.removeAllListeners();
+        this.on = () => { console.error("破棄されたクラス「DiscordConnectSystem」のイベントリスナーを利用しようとしました。"); return this; }
+        this.emit = () => { console.error("破棄されたクラス「DiscordConnectSystem」のイベントリスナーを利用しようとしました。"); return false; }
+        this.addListener = () => { console.error("破棄されたクラス「DiscordConnectSystem」のイベントリスナーを利用しようとしました。"); return this; }
     }
-})
+}
+
+class WebConnectSystem implements ConnectSystemFunctions {
+    device: Device;
+    /**
+     * デバイスとの接続が破棄されたかどうか。クラスを利用できなくしたりするためのものでもあります。
+     */
+    #destroyed = false;
+    /**
+     * デバイスとの接続が破棄されたかどうか。
+     */
+    get destroyed() { return this.#destroyed; }
+    /** 
+     * システムの状態を示します。readyの場合正しく関数を受け付けますが、notworkingの場合関数を送信しても処理はクライアントに届きません。 
+     */
+    get status(): "ready" { return "ready" }
+    readonly deviceType = "Web";
+    constructor(device: Device) {
+        this.device = device;
+    }
+    play() { }
+    pause() { }
+    volume() { }
+    repeat() { }
+    speed() { }
+    equalizer() { }
+    pitch() { }
+    seek() { }
+    changeSource() { }
+    destroy() {
+        this.#destroyed = true;
+    }
+}
+
+/**
+ * アクティビティを追跡するためのツールです。主にConnectSystem内で使用します。Device内では追跡しきれないことがあるため、必ずConnectSystem内に実装してください。
+ * 
+ * 以下のタイミングで記録する必要があります。
+ * - 再生開始時
+ * - シーク時
+ * - 再生中断時
+ * - ユーザー退出時
+ * - ユーザー入室時
+ * 
+ * セッションクラスを入力した上で、上記のタイミングで適切な関数を呼び出し、その関数通りの記録を行います。基本的にplayとstopのみです。使い方は以下です。
+ * - 速度変更はstopの後変更後の情報をplayに書き込む
+ * - 最後まで再生された場合、stopを行わないでも良い
+ * - シークの場合もstopの後にplayを行う
+ * 
+ * このクラスは生データをそのままJSONLにします。アクティビティ情報が誰のものであり、どれほど再生されたかなどを追跡する場合は、別途解析クラスを利用してください。
+ * 
+ * また、JSONL１行に必ずバージョンを明記します。バージョンと一致する型定義を利用し、その通りに解析してください。
+ */
+class ActivityRecorder { }
+
+interface ActivityDatav1 {
+    /** 
+     * セッションID。複数のデバイスで再生していた場合にこのセッションIDが重なった場合は同じイベントとしてグループ化して処理することになり、少々重要です。なくてもイベント区間の重複は適切に処理されます。
+     */
+    sessionId: string;
+    /** イベント時間 */
+    timestamp: number;
+    /** イベントが適用されたユーザー */
+    userId: string;
+    /** イベントタイプ */
+    type: "play" | "stop";
+    /** 再生速度 */
+    speed: number;
+    /** 視聴していたソース */
+    source: FocusSource;
+    /** 再生していた地点 */
+    mtime: number;
+    /** アクティビティの追加情報 */
+    info: {
+        type: "Discord.js";
+        guildId: string;
+        channelId: string;
+    } | {
+        type: "Web";
+        deviceId: string;
+        deviceName: string;
+    }
+}
+
+/*
+設計
+
+プレイヤークラスは操作用クラスを返答する。それには「getPlayer」を利用する。ユーザーIDを入力すると、セッションIDが生成されて返ってくる。セッションIDはユーザーIDと紐づけられるため、連番でつけられる。
+また、getPlayerにはデバイス名やデバイスタイプなども入力できる。そして、Discord.jsと入力された時に限り、Discord.jsの状態を扱うクラスが内部的に使用される。
+
+getPlayerで返ってくるクラス名を「PlaySession」とする。destroyすると再生中のデバイスが無効化される。ただし、再生されないまま５分以上や、再生中の楽曲が停止したのちにリピートが起こらないなどした場合、そこから１時間ほどブランクが続くと自動でdestroyされる。
+
+getPlayerでセッションを取得するが、listPlayerとユーザーIDで全てのセッションIDを見ることもできる。また、セッション情報はPlaySessionの中に記録されている。
+
+セッションをグループ化する構想を考える。グループ化した際、新しいセッションIDを作成し、過去のセッションIDを破棄すればいいと考える。その前に、どのセッションがどのデバイスと関連づけられているかを判別する方法を改めて考え直す。
+
+デバイスはセッションIDを取得しようと試みて、成功すると以後そのセッションIDをsubscribeして、監視を続ける。そのセッションIDをとりあえず複数デバイスに分ければいい。
+
+しかし、どのデバイスがセッションIDを取得しているのか、利用しているのかを追跡する必要がある。各デバイスにはログイン時にデバイス識別のできるIDを付与すると良いかもしれない。連番で問題ない。
+
+次に、セッションは他人とも共有できるようにする。例えばユーザーが複数人いるなど。その場合はユーザーIDを配列にする。デバイス情報にもユーザーIDを同梱することで、デバイスの識別を間違えないようにする。
+
+
+
+
+
+*/

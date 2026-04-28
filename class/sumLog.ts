@@ -43,15 +43,15 @@ export interface SumLogJSON {
  * １つ１つの進捗をめっさ見やすく表示するやつだよ！普通のconsole.logとかerrorとかはもう信用しない！AIが書かない、純粋に僕がみるようのやつだよ！
  */
 export const SumLog = new (class sumlog {
-    #client?: Client;
-    #logWrite(message: string, info: SumInfo, type: string) {
+    client?: Client;
+    logWrite(message: string, info: SumInfo, type: string) {
         if (!existsSync("./log")) mkdirSync("./log");
         if (!existsSync("./log/sumlogJSON.jsonl")) writeFileSync("./log/sumlogJSON.jsonl", "");
-        if (info.client) this.#client = info.client;
-        const guild = info.guildId ? this.#client?.guilds.cache.get(info.guildId) : undefined;
+        if (info.client) this.client = info.client;
+        const guild = info.guildId ? this.client?.guilds.cache.get(info.guildId) : undefined;
         const textChannel = info.textChannelId ? guild?.channels.cache.get(info.textChannelId) : undefined;
         const voiceChannel = info.voiceChannelId ? guild?.channels.cache.get(info.voiceChannelId) : undefined;
-        const user = info.userId ? this.#client?.users.cache.get(info.userId) : undefined;
+        const user = info.userId ? this.client?.users.cache.get(info.userId) : undefined;
         const saveJSON: SumLogJSON = {
             message, type, info: {
                 functionName: info.functionName,
@@ -79,12 +79,12 @@ export const SumLog = new (class sumlog {
         appendFileSync("./log/sumlogJSON.jsonl", "\n" + JSON.stringify(saveJSON));
     }
     log(message: string, info: SumInfo) {
-        this.#logWrite(message, info, "log");
+        this.logWrite(message, info, "log");
     }
     warn(message: string, info: SumInfo) {
-        this.#logWrite(message, info, "warn");
+        this.logWrite(message, info, "warn");
     }
     error(message: string, info: SumInfo) {
-        this.#logWrite(message, info, "error");
+        this.logWrite(message, info, "error");
     }
 });

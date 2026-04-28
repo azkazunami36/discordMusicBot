@@ -1,11 +1,10 @@
 import fs from "fs";
 import fsP from "fs/promises";
 
-import { MusicLibraryJSON, TwitterInfoData } from "../dbmgr/main.js";
 import { jsonAnalizer, JSONAnalizerInfo } from "../dbmgr/worker/jsonAnalyzerHelper.js";
-import { info } from "console";
 import { TwitterInfo, twitterInfoGet } from "../dbmgr/worker/infoGetHelper.js";
 import { ProgressView } from "../class/progressView.js";
+import { MusicLibraryJSON, TwitterInfoData } from "../dbmgr/interface.js";
 
 export async function databaseCheck(discordMusicBotPath: string, json: MusicLibraryJSON) {
     console.log("ミュージックライブラリのJSONと実体の整合性チェックを行います。");
