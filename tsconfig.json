@@ -1,11 +1,12 @@
 {
   "compilerOptions": {
-    "module": "NodeNext",
+    "target": "ES2022",
+    "lib": ["ES2022"], // Node.js環境用の型定義
+    "types": ["node"],
+    "module": "NodeNext", // モダンなNode.js挙動
     "moduleResolution": "NodeNext",
-    "target": "ESNext",
     "resolveJsonModule": true,
     "declaration": true,
-    "types": ["node"],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noImplicitAny": true,

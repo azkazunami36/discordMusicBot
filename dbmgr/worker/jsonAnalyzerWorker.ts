@@ -1,6 +1,6 @@
 import { parentPort } from "worker_threads";
 import fs from "fs";
-import { MusicLibraryJSON } from "../main.js";
+import { MusicLibraryJSON } from "../interface.js";
 
 if (fs.existsSync("./dbmgr.json")) {
     const json: MusicLibraryJSON | undefined = (() => {

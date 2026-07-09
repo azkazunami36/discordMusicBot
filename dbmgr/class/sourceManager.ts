@@ -1,4 +1,5 @@
 import { statusErrorCodeDbmgrFormat } from "../../func/dbmgrErrorCodeParser.js";
+import { SourceManagerResultUnidata } from "../../interface.js";
 import { MusicLibraryJSON, niconicoInfoData, SoundCloudInfoData, SourceInfo, TwitterInfoData, YouTubeInfoData } from "../interface.js";
 import { niconicoInfo, niconicoInfoGet, SoundCloudInfo, soundcloudInfoGet, TwitterInfo, twitterInfoGet, YouTubeInfo, youtubeInfoGet } from "../worker/infoGetHelper.js";
 import { niconicoSourceGet, soundcloudSourceGet, twitterSourceGet, youtubeSourceGet } from "../worker/sourceGetHelper.js";
@@ -185,12 +186,13 @@ export class SourceManager {
                         recordingUuid?: string;
                     };
                 };
+                userIconUrl: string | null;
                 progress?: number;
             } | undefined> {
                 await Promise.allSettled([status.infowaitfunc, status.sourcewaitfunc]);
                 const info = infodatas.find(info => info.id === videoId);
                 if (info) {
-                    return { info }
+                    return { info, userIconUrl: await userIconUrl(info.videoInfo) }
                 } else {
                     option?.errorGet?.("3-1");
                 }
@@ -364,7 +366,7 @@ export class SourceManager {
     async getYouTube(videoId: string, fast?: boolean, option?: { errorGet?: (errorCode: string) => void }) {
         const infodatas = this.json.youtube;
         const downloadStatus = this.downloadStatus.youtube;
-        return await this.getSingleBase<YouTubeInfo, YouTubeInfoData[], DownloadStatusOfYouTube>(videoId, infodatas, downloadStatus, fast || false, () => {
+        const result = await this.getSingleBase<YouTubeInfo, YouTubeInfoData[], DownloadStatusOfYouTube>(videoId, infodatas, downloadStatus, fast || false, () => {
             return {
                 id: videoId,
                 type: "single",
@@ -380,6 +382,26 @@ export class SourceManager {
                 option?.errorGet?.(errorCode)
             },
         })
+        if (!result) return undefined;
+        result.info.videoInfo
+        const unidata: SourceManagerResultUnidata = {
+            id: result.info.id,
+            resulttype: "media",
+            servicetype: "youtube",
+            data: [{
+                title: result.info.videoInfo.title,
+                userName: result.info.videoInfo.channelName,
+                userId: result.info.videoInfo.channelId,
+                description: result.info.videoInfo.description,
+                thumbnailUrl: result.info.videoInfo.thumbnailUrl,
+                userIconUrl: result.userIconUrl ?? undefined
+            }],
+            progress: result.progress
+        }
+        return {
+            result,
+            unidata
+        }
     }
     /**
      * ニコニコ動画の情報やソースの状況を取得します。
@@ -389,7 +411,7 @@ export class SourceManager {
     async getniconico(id: string, fast?: boolean, option?: { errorGet?: (errorCode: string) => void }) {
         const infodatas = this.json.niconico;
         const downloadStatus = this.downloadStatus.niconico;
-        return await this.getSingleBase<niconicoInfo, niconicoInfoData[], DownloadStatusOfniconico>(id, infodatas, downloadStatus, fast || false, () => {
+        const result = await this.getSingleBase<niconicoInfo, niconicoInfoData[], DownloadStatusOfniconico>(id, infodatas, downloadStatus, fast || false, () => {
             return {
                 id: id,
                 type: "single",
@@ -409,6 +431,26 @@ export class SourceManager {
                 option?.errorGet?.(errorCode)
             },
         })
+
+        if (!result) return undefined;
+
+        const unidata: SourceManagerResultUnidata = {
+            id: result.info.id,
+            resulttype: "media",
+            servicetype: "niconico",
+            data: [{
+                title: result.info.videoInfo.title,
+                userName: result.info.videoInfo.channelName,
+                userId: result.info.videoInfo.channelId,
+                description: result.info.videoInfo.description,
+                thumbnailUrl: result.info.videoInfo.thumbnailUrl
+            }],
+            progress: result.progress
+        }
+        return {
+            result,
+            unidata
+        }
     }
     /**
      * SoundCloudの情報やソースの状況を取得します。
@@ -418,7 +460,7 @@ export class SourceManager {
     async getSoundCloud(id: string, fast?: boolean, option?: { errorGet?: (errorCode: string) => void }) {
         const infodatas = this.json.soundcloud;
         const downloadStatus = this.downloadStatus.soundcloud;
-        return await this.getSingleBase<SoundCloudInfo, SoundCloudInfoData[], DownloadStatusOfSoundCloud>(id, infodatas, downloadStatus, fast || false, () => {
+        const result = await this.getSingleBase<SoundCloudInfo, SoundCloudInfoData[], DownloadStatusOfSoundCloud>(id, infodatas, downloadStatus, fast || false, () => {
             return {
                 id: id,
                 type: "single",
@@ -434,6 +476,26 @@ export class SourceManager {
                 option?.errorGet?.(errorCode)
             },
         })
+
+        if (!result) return undefined;
+
+        const unidata: SourceManagerResultUnidata = {
+            id: result.info.id,
+            resulttype: "media",
+            servicetype: "soundcloud",
+            data: [{
+                title: result.info.videoInfo.title,
+                userName: result.info.videoInfo.userName,
+                userId: result.info.videoInfo.userId,
+                description: result.info.videoInfo.description ?? undefined,
+                thumbnailUrl: result.info.videoInfo.thumbnailUrl
+            }],
+            progress: result.progress
+        }
+        return {
+            result,
+            unidata
+        }
     }
     /**
      * Twitterの情報やソースの状況を取得します。
@@ -443,7 +505,7 @@ export class SourceManager {
     async getTwitter(id: string, fast?: boolean, option?: { errorGet?: (errorCode: string) => void }) {
         const infodatas = this.json.twitter;
         const downloadStatus = this.downloadStatus.twitter;
-        return await this.getMultiBase<TwitterInfo, TwitterInfoData[], DownloadStatusOfTwitter>(id,
+        const result = await this.getMultiBase<TwitterInfo, TwitterInfoData[], DownloadStatusOfTwitter>(id,
             infodatas,
             downloadStatus,
             fast || false,
@@ -477,6 +539,18 @@ export class SourceManager {
                 option?.errorGet?.(errorCode)
             },
         });
+        if (!result) return undefined;
+        const unidata: SourceManagerResultUnidata = {
+            id: result.info.id,
+            resulttype: "media",
+            servicetype: "twitter",
+            data: result.info.videoInfos.map(d => { return { title: d.body, userName: d.userName, description: d.full, userId: d.userId, thumbnailUrl: d.thumbnailUrl } }) ?? [],
+            progress: result.progress
+        }
+        return {
+            result,
+            unidata
+        }
     }
 }
 

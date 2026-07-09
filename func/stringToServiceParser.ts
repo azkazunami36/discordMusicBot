@@ -23,7 +23,9 @@ export async function stringToServiceParser(string: string): Promise<({
             case "youtube.com":
             case "www.youtube.com":
             case "music.youtube.com": {
-                const videoId = params.get("v");
+                const split = url.pathname.split("/").filter(Boolean);
+                const shortsPoint = split.indexOf("shorts");
+                const videoId = shortsPoint !== -1 ? split[shortsPoint + 1] : params.get("v");
                 const playlistId = params.get("list");
                 if (videoId) return {
                     type: "youtube",
@@ -83,8 +85,16 @@ export async function stringToServiceParser(string: string): Promise<({
                 const split = url.pathname.split("/").filter(Boolean);
                 const watchPoint = split.indexOf("watch");
                 const mylistPoint = split.indexOf("mylist");
+                const shortsPoint = split.indexOf("shorts");
                 if (watchPoint !== -1) {
                     const id = split[watchPoint + 1];
+                    if (typeof id === "string") return {
+                        type: "niconico",
+                        body: [id]
+                    }
+                }
+                if (shortsPoint !== -1) {
+                    const id = split[shortsPoint + 1];
                     if (typeof id === "string") return {
                         type: "niconico",
                         body: [id]
@@ -164,6 +174,7 @@ export async function stringToServiceParser(string: string): Promise<({
                 break;
             }
             case "soundcloud.com":
+            case "m.soundcloud.com":
             case "www.soundcloud.com":
             case "on.soundcloud.com":
             case "api-v2.soundcloud.com": {

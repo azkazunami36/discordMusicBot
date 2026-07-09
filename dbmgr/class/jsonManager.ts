@@ -1,4 +1,5 @@
 import { statusErrorCodeDbmgrFormat, stringToErrorCode } from "../../func/dbmgrErrorCodeParser.js";
+import { SourceManagerResultUnidata } from "../../interface.js";
 import { MusicLibraryJSON } from "../interface.js";
 import { musicBrainzRecordingInfoGet, musicBrainzReleaseInfoGet, soundcloudUserIconGet, youtubeUserIconGet } from "../worker/infoGetHelper.js";
 import { MusicBrainzRecordingInfo, MusicBrainzReleaseInfo } from "../worker/infoGetWorker.js";
@@ -284,11 +285,18 @@ export class JSONManager {
             }
             async getRelease(mbid: string, option?: {
                 errorGet?: (errorCode: string) => void;
-            }) {
+            }): Promise<{ result: { info: MusicBrainzReleaseInfo }, unidata: SourceManagerResultUnidata } | undefined> {
                 if (!this.json.musicBrainzReleaseInfo) this.json.musicBrainzReleaseInfo = [];
                 const info = this.json.musicBrainzReleaseInfo.find(info => info.uuid === mbid);
-                if (info) return { info }
-                else {
+                if (info) {
+                    const unidata: SourceManagerResultUnidata = {
+                        id: info.uuid,
+                        resulttype: "info",
+                        servicetype: "mbrelease",
+                        data: [{ title: info.title, userName: info.author }]
+                    }
+                    return { result: { info }, unidata }
+                } else {
                     const status = this.JSONManager.downloadStatus.musicBrainz.release.find(status => status.mbid === mbid);
                     if (status) {
                         const result = await status.datawaitfunc;
@@ -298,7 +306,13 @@ export class JSONManager {
                             result.reject.errorCode.forEach(code => { option?.errorGet?.(code); });
                             return;
                         }
-                        return { info: result.resolve }
+                        const unidata: SourceManagerResultUnidata = {
+                            id: result.resolve.uuid,
+                            resulttype: "info",
+                            servicetype: "mbrelease",
+                            data: [{ title: result.resolve.title, userName: result.resolve.author }]
+                        }
+                        return { result: { info: result.resolve }, unidata }
                     } else {
                         function downloadStatusDelete(JSONManager: JSONManager) {
                             const inde = JSONManager.downloadStatus.musicBrainz.release.findIndex(status => status.mbid === mbid);
@@ -325,7 +339,15 @@ export class JSONManager {
                             downloadStatusDelete(this.JSONManager);
                         });
                         const info = this.json.musicBrainzReleaseInfo.find(info => info.uuid === mbid);
-                        if (info) return { info }
+                        if (info) {
+                            const unidata: SourceManagerResultUnidata = {
+                                id: info.uuid,
+                                resulttype: "info",
+                                servicetype: "mbrelease",
+                                data: [{ title: info.title, userName: info.author }]
+                            }
+                            return { result: { info }, unidata }
+                        }
                         else {
                             const result = await status.datawaitfunc;
                             if (result.status === "error") {
@@ -334,18 +356,31 @@ export class JSONManager {
                                 result.reject.errorCode.forEach(code => { option?.errorGet?.(code); });
                                 return;
                             }
-                            return { info: result.resolve }
+                            const unidata: SourceManagerResultUnidata = {
+                                id: result.resolve.uuid,
+                                resulttype: "info",
+                                servicetype: "mbrelease",
+                                data: [{ title: result.resolve.title, userName: result.resolve.author }]
+                            }
+                            return { result: { info: result.resolve }, unidata }
                         }
                     }
                 }
             }
             async getRecording(mbid: string, option?: {
                 errorGet?: (errorCode: string) => void;
-            }) {
+            }): Promise<{ result: { info: MusicBrainzRecordingInfo }, unidata: SourceManagerResultUnidata } | undefined> {
                 if (!this.json.musicBrainzRecordingInfo) this.json.musicBrainzRecordingInfo = [];
                 const info = this.json.musicBrainzRecordingInfo.find(info => info.uuid === mbid);
-                if (info) return { info }
-                else {
+                if (info) {
+                    const unidata: SourceManagerResultUnidata = {
+                        id: info.uuid,
+                        resulttype: "info",
+                        servicetype: "mbrelease",
+                        data: [{ title: info.title }]
+                    }
+                    return { result: { info }, unidata }
+                } else {
                     const status = this.JSONManager.downloadStatus.musicBrainz.recording.find(status => status.mbid === mbid);
                     if (status) {
                         const result = await status.datawaitfunc;
@@ -355,7 +390,13 @@ export class JSONManager {
                             result.reject.errorCode.forEach(code => { option?.errorGet?.(code); });
                             return;
                         }
-                        return { info: result.resolve }
+                        const unidata: SourceManagerResultUnidata = {
+                            id: result.resolve.uuid,
+                            resulttype: "info",
+                            servicetype: "mbrelease",
+                            data: [{ title: result.resolve.title }]
+                        }
+                        return { result: { info: result.resolve }, unidata }
                     } else {
                         function downloadStatusDelete(JSONManager: JSONManager) {
                             const inde = JSONManager.downloadStatus.musicBrainz.recording.findIndex(status => status.mbid === mbid);
@@ -382,8 +423,15 @@ export class JSONManager {
                             downloadStatusDelete(this.JSONManager);
                         });
                         const info = this.json.musicBrainzRecordingInfo.find(info => info.uuid === mbid);
-                        if (info) return { info }
-                        else {
+                        if (info) {
+                            const unidata: SourceManagerResultUnidata = {
+                                id: info.uuid,
+                                resulttype: "info",
+                                servicetype: "mbrelease",
+                                data: [{ title: info.title }]
+                            }
+                            return { result: { info }, unidata }
+                        } else {
                             const result = await status.datawaitfunc;
                             if (result.status === "error") {
                                 console.log("情報取得関数でエラー。");
@@ -391,7 +439,13 @@ export class JSONManager {
                                 result.reject.errorCode.forEach(code => { option?.errorGet?.(code); });
                                 return;
                             }
-                            return { info: result.resolve }
+                            const unidata: SourceManagerResultUnidata = {
+                                id: result.resolve.uuid,
+                                resulttype: "info",
+                                servicetype: "mbrelease",
+                                data: [{ title: result.resolve.title }]
+                            }
+                            return { result: { info: result.resolve }, unidata }
                         }
                     }
                 }

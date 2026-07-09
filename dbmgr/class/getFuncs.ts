@@ -8,6 +8,7 @@ import fsPromise from "fs/promises";
 import { MusicLibraryJSON, ServerData, SourceInfo } from "../interface.js";
 import { SourceManager } from "./sourceManager.js";
 import { stringToServiceParser } from "../../func/stringToServiceParser.js";
+import { SourceManagerResultUnidata } from "../../interface.js";
 
 /**
  * Getに関する処理を関数として抽象化し、それらの関数をクラスでまとめました。mainが通常利用、内部にはprivateでさまざまな関数が利用されています。
@@ -79,6 +80,10 @@ export class GetFuncs {
             }
             case "parse": {
                 await this.urlParseResolver(req, res);
+                break;
+            }
+            case "urlparse": {
+                await this.urlParseResolver(req, res, false);
                 break;
             }
             case "stop": {
@@ -246,6 +251,7 @@ export class GetFuncs {
             case "mbrelease":
             case "mbrecording":
             case "parse":
+            case "urlparse":
             case "list":
             case "setting": {
                 if (datatype === "audio") return error400();
@@ -266,7 +272,7 @@ export class GetFuncs {
         /** parseDataの平均的な情報の中でも利用する予定のあるものだけ型定義しています。serviceTypeなどで判別したりしています。 */
         parseData: {
             id?: string;
-            postId?: string;
+            postid?: string;
             datatype: "audio" | "json";
             servicetype: string;
             itemNumber?: number;
@@ -276,41 +282,46 @@ export class GetFuncs {
             sourcemanagerFunc?: (
                 (id: string, fast?: boolean | undefined, option?: {
                     errorGet?: ((errorCode: string) => void) | undefined;
-                } | undefined) => Promise<{ info: { id: string; sourceInfo?: SourceInfo; sourceInfos?: (SourceInfo | null)[]; } } | undefined> // 実際はもっと複雑ですが、必要な情報のみ型定義しています。
+                } | undefined) => Promise<{ result: { info: { id: string; sourceInfo?: SourceInfo; sourceInfos?: (SourceInfo | null)[]; } }; unidata: SourceManagerResultUnidata; } | undefined> // 実際はもっと複雑ですが、必要な情報のみ型定義しています。
             )
             /** JSONManagerを使ってデータを取得するクラスの関数の場合に入力します。 */
             jsonmanagerFunc?: (
                 (id: string, option?: {
                     errorGet?: ((errorCode: string) => void) | undefined;
-                } | undefined) => Promise<{ info: any } | undefined> // 実際に返すデータは結局すべてJSON.stringify()するため、anyで処理しています。最低限中にinfoが使われているならよし！というコードです。普通にコードを描く分には問題ないはずです。
+                } | undefined) => Promise<{ result: { info: any }; unidata: SourceManagerResultUnidata; } | undefined> // 実際に返すデータは結局すべてJSON.stringify()するため、anyで処理しています。最低限中にinfoが使われているならよし！というコードです。普通にコードを描く分には問題ないはずです。
             )
         }) {
-        const id = parseData.id || parseData.postId;
+        const id = parseData.id || parseData.postid;
         /** 返答タイプが曲の場合かつIDが渡されていて、SourceManagerの関数が用意されている場合に実行されます。 */
         if (parseData.datatype === "audio" && id && option.sourcemanagerFunc) {
             const errorCodes: string[] = [];
-            const data = await option.sourcemanagerFunc(id, false, {
+            const data = await option.sourcemanagerFunc.bind(this.sourcemanager)(id, false, {
                 errorGet(errorCode) {
                     errorCodes.push(errorCode);
                 }
             });
             if (data) {
-                if (data.info.sourceInfo) // SourceInfoが１つのみの場合に実行
-                    await this.audioResponse(req, res, parseData.servicetype, data?.info.sourceInfo, errorCodes);
-                else if (data.info.sourceInfos && parseData.itemNumber !== undefined && data.info) // もし複数のSourceInfoの場合、どのSourceInfoを使うかを選択する要素が追加されます。
-                    await this.audioResponse(req, res, parseData.servicetype, data.info.sourceInfos.find(info => info?.filename.match(data.info.id + "-" + parseData.itemNumber)), errorCodes);
+                if (data.result.info.sourceInfo) // SourceInfoが１つのみの場合に実行
+                    await this.audioResponse(req, res, parseData.servicetype, data?.result.info.sourceInfo, errorCodes);
+                else if (data.result.info.sourceInfos && data.result.info) // もし複数のSourceInfoの場合、どのSourceInfoを使うかを選択する要素が追加されます。
+                    await this.audioResponse(req, res, parseData.servicetype, data.result.info.sourceInfos.find(info => info?.filename.match(data.result.info.id + "-" + (parseData.itemNumber ?? 1))), errorCodes);
+            } else {
+                const header = new Headers();
+                header.set("content-type", "application/json");
+                res.setHeaders(header);
+                res.status(404);
+                res.end(JSON.stringify({ dbmgrErrorCode: ["1-1", ...errorCodes] }));
             }
-
         }
         /** 返答タイプがJSONの場合かつIDがある場合に実行されます。 */
         if (parseData.datatype === "json" && id) {
             const errorCodes: string[] = [];
             /** SourceManagerでもJSONManagerでも取得できるように無理やりコードを描いています。 */
-            const data = option.sourcemanagerFunc ? await option.sourcemanagerFunc(id, false, {
+            const data = option.sourcemanagerFunc ? await option.sourcemanagerFunc.bind(this.sourcemanager)(id, true, {
                 errorGet(errorCode) {
                     errorCodes.push(errorCode);
                 }
-            }) : option.jsonmanagerFunc ? option.jsonmanagerFunc(id, {
+            }) : option.jsonmanagerFunc ? option.jsonmanagerFunc.bind(this.sourcemanager.jsonmanager)(id, {
                 errorGet(errorCode) {
                     errorCodes.push(errorCode);
                 },
@@ -390,14 +401,28 @@ export class GetFuncs {
     /**
      * URLをパースするよう要求されたときに実行する関数は独自的なので、別で関数を準備しました。
      */
-    private async urlParseResolver(req: express.Request, res: express.Response) {
+    private async urlParseResolver(req: express.Request, res: express.Response, redirectIs: boolean = true) {
         // リクエストは基本的にスラッシュで切ると`["", "parse", "id", "json", "https", ...]`のような配列が取得でき、最後に入力されるURLのみを抽出するため、無駄な要素を省きます。
         const url = req.url.split("/").slice(4).join("/");
         const result = await stringToServiceParser(url);
         if (result && result.body[0]) {
             const redirectUrl = "/" + result.type + "/" + result.body[0] + (result.type === "twitter" ? "-" + (result.selectSourceNumber ?? 1) : "") + "/audio";
             console.log(redirectUrl);
-            res.redirect(redirectUrl);
+            if (redirectIs) res.redirect(redirectUrl);
+            else {
+                const unidata: SourceManagerResultUnidata = {
+                    id: result.youtubePlaylistId ?? result.niconicoMylistId ?? "%@not*playlist%",
+                    resulttype: "APIURL",
+                    servicetype: result.type,
+                    data: result.body.map(d => {
+                        return {
+                            id: d,
+                            audiourl: "/" + result.type + "/" + d + (result.type === "twitter" ? "-" + (result.selectSourceNumber ?? 1) : "") + "/audio"
+                        }
+                    })
+                }
+                res.end(JSON.stringify(unidata))
+            }
         } else {
             const header = new Headers();
             header.set("content-type", "application/json");

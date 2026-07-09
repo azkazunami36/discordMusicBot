@@ -1,3 +1,5 @@
+import path from "path";
+
 import { MusicLibraryJSON } from "../interface.js";
 import fs from "fs";
 import fsPromise from "fs/promises";
@@ -10,9 +12,9 @@ export class ReadyJSONFuncs {
     private saving = false;
 
     getJSON(): MusicLibraryJSON {
-        if (!fs.existsSync("./dbmgr.json")) fs.writeFileSync("./dbmgr.json", "{}");
+        if (!fs.existsSync(path.resolve(process.cwd(), "./dbmgr.json"))) fs.writeFileSync(path.resolve(process.cwd(), "./dbmgr.json"), "{}");
         try {
-            const json = JSON.parse(String(fs.readFileSync("./dbmgr.json")));
+            const json = JSON.parse(String(fs.readFileSync(path.resolve(process.cwd(), "./dbmgr.json"))));
             if (json.youtube === undefined) json.youtube = [];
             if (json.niconico === undefined) json.niconico = [];
             if (json.twitter === undefined) json.twitter = [];
@@ -33,14 +35,14 @@ export class ReadyJSONFuncs {
         } catch (e) {
             try {
                 console.error("ミュージックライブラリはJSONの読み込みに失敗しました。dbmgr-old.jsonに変更し、新しいJSONで続行されます。");
-                fs.renameSync("./dbmgr.json", "./dbmgr-old.json");
+                fs.renameSync(path.resolve(process.cwd(), "./dbmgr.json"),path.resolve(process.cwd(), path.resolve(process.cwd(), "./dbmgr-old.json")));
             } catch (e) {
                 console.error("ミュージックライブラリは読み込みに失敗したJSONの名前の変更にも失敗しました。");
                 // SumLog.error("ミュージックライブラリは読み込みに失敗したJSONの名前の変更にも失敗しました。");
                 process.exit(1);
             }
             try {
-                fs.writeFileSync("./dbmgr.json", "{}");
+                fs.writeFileSync(path.resolve(process.cwd(), "./dbmgr.json"), "{}");
             } catch (e) {
                 console.error("ミュージックライブラリは読み込みに失敗したJSONの上書きにも失敗しました。");
                 // SumLog.error("ミュージックライブラリは読み込みに失敗したJSONの上書きにも失敗しました。");
@@ -72,8 +74,8 @@ export class ReadyJSONFuncs {
             this.saving = true;
             const saveData = this.saveQueue;
             this.saveQueue = undefined;
-            await fsPromise.writeFile("./dbmgr-saving.json", saveData);
-            await fsPromise.rename("./dbmgr-saving.json", "./dbmgr.json");
+            await fsPromise.writeFile(path.resolve(process.cwd(), "./dbmgr-saving.json"), saveData);
+            await fsPromise.rename(path.resolve(process.cwd(), "./dbmgr-saving.json"), path.resolve(process.cwd(), "./dbmgr.json"));
             console.log("JSONを保存しました。");
             this.saving = false;
             if (!this.saveQueue) break;

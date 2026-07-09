@@ -1,5 +1,5 @@
 import { Client } from "discord.js";
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
+import mysql from "mysql2/promise";
 
 export interface SumInfo {
     /** 20文字までです。 */
@@ -42,17 +42,17 @@ export interface SumLogJSON {
  * 
  * １つ１つの進捗をめっさ見やすく表示するやつだよ！普通のconsole.logとかerrorとかはもう信用しない！AIが書かない、純粋に僕がみるようのやつだよ！
  */
-export const SumLog = new (class sumlog {
+export class SumLog {
+    db: mysql.Connection;
+    constructor(db: mysql.Pool) { this.db = db; }
     client?: Client;
     logWrite(message: string, info: SumInfo, type: string) {
-        if (!existsSync("./log")) mkdirSync("./log");
-        if (!existsSync("./log/sumlogJSON.jsonl")) writeFileSync("./log/sumlogJSON.jsonl", "");
         if (info.client) this.client = info.client;
         const guild = info.guildId ? this.client?.guilds.cache.get(info.guildId) : undefined;
         const textChannel = info.textChannelId ? guild?.channels.cache.get(info.textChannelId) : undefined;
         const voiceChannel = info.voiceChannelId ? guild?.channels.cache.get(info.voiceChannelId) : undefined;
         const user = info.userId ? this.client?.users.cache.get(info.userId) : undefined;
-        const saveJSON: SumLogJSON = {
+        const json: SumLogJSON = {
             message, type, info: {
                 functionName: info.functionName,
                 guild: info.guildId && guild ? {
@@ -76,7 +76,43 @@ export const SumLog = new (class sumlog {
             },
             date: Date.now()
         };
-        appendFileSync("./log/sumlogJSON.jsonl", "\n" + JSON.stringify(saveJSON));
+        (async () => {
+            await this.db.execute(
+                `
+            INSERT INTO sumlog (
+                msg,
+                funcname,
+                guildId,
+                guildName,
+                channelId,
+                channelName,
+                vcId,
+                vcName,
+                userId,
+                userName,
+                userGName,
+                userDName,
+                createtime,
+                type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ? ,? ,? ,? ,?, ?)
+            `, [
+                json?.message ?? null,
+                json?.info?.functionName ?? null,
+                json?.info?.guild?.id ?? null,
+                json?.info?.guild?.name ?? null,
+                json?.info?.textChannelId?.id ?? null,
+                json?.info?.textChannelId?.name ?? null,
+                json?.info?.voiceChannelId?.id ?? null,
+                json?.info?.voiceChannelId?.name ?? null,
+                json?.info?.userId?.id ?? null,
+                json?.info?.userId?.username ?? null,
+                json?.info?.userId?.globalName ?? null,
+                json?.info?.userId?.displayName ?? null,
+                json?.date ? new Date(json.date) : null,
+                json?.type ?? null
+            ]
+            )
+        })();
     }
     log(message: string, info: SumInfo) {
         this.logWrite(message, info, "log");
@@ -87,4 +123,4 @@ export const SumLog = new (class sumlog {
     error(message: string, info: SumInfo) {
         this.logWrite(message, info, "error");
     }
-});
+};

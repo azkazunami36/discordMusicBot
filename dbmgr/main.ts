@@ -39,8 +39,8 @@ async function main() {
      */
     const json = rjsonf.getJSON();
     console.log("ミュージックライブラリ用JSONの初期化(読み込み)が完了しました。");
-    if (false) { // 以前の音楽bot(v2)がある場合、そこのパスを指定すると読み込みます。すべてのJSONをチェックするという工程があるため、オフにすると起動が速くなります。
-        await getOldData(new URL("../../discordMusicBot", import.meta.url).pathname, json);
+    if (true) { // 以前の音楽bot(v2)がある場合、そこのパスを指定すると読み込みます。すべてのJSONをチェックするという工程があるため、オフにすると起動が速くなります。
+        await getOldData("/Users/kazunami36_sum/discordMusicBot", json);
         await rjsonf.saveJSON(json);
     }
     if (false) { // 同じバージョンの音楽bot(v3を想定)がある場合、そこのURLを指定すると安全に読み込みます。リストを取得するAPIが発行されますが、そのAPIの応答速度によっては、起動に支障をきたしません。
@@ -61,7 +61,7 @@ async function main() {
      * データの取得をするルーティングです。JSONからバイナリまで担当します。
      */
     const getter = new GetFuncs(json, sourcemanager, server);
-    app.get("/*splat", async (req, res) => getter.main(req, res));
+    app.get("/*splat", async (req, res) => getter.main.bind(getter)(req, res));
     app.post("/*splat", (req, res) => post(req, res, json, sourcemanager, server));
 
     // テスト

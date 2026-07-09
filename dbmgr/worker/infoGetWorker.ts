@@ -320,7 +320,7 @@ function musicBrainzReleaseInfoGet(id: string) {
                     name: string;
                     joinphrase?: string;
                 }[];
-            } = await releaseRes.json();
+            } = await releaseRes.json() as never;
             resolve({
                 uuid: id,
                 title: releaseJson.title,
@@ -352,7 +352,7 @@ function musicBrainzRecordingInfoGet(id: string) {
                     title: string;
                 }
                 title?: string;
-            } = await recordingRes.json();
+            } = await recordingRes.json() as never;
             resolve({
                 uuid: id,
                 title: recordingJson.data?.title || recordingJson.title,

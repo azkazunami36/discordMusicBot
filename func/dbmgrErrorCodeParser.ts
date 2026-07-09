@@ -97,10 +97,20 @@ export function dbmgrErrorCodeParser(errorCode: string): {
             description: "ytdlpがソースをダウンロードできませんでした。",
             devDescription: "ytdlpがダウンロードしたと思われるソースをbot内で見つけることができず、返答ができません。" + このエラーコードのみでは原因特定不可能
         }
+        case "ytdlp-8": return {
+            title: "ytdlpシステムの内部エラー",
+            description: "正しいリクエストを送信できませんでした。URLの間違いなどである可能性があります。",
+            devDescription: "ytdlpがエラー400 bad requestを受信しました。"
+        }
         case "ytdlp-10": return {
             title: "ytdlpシステムがbot検知ブロック",
             description: "ytdlpがbot検知され、ブロックされました。音声取得ができない可能性があります。時間を置くと解決する恐れがあります。",
             devDescription: "botでないことを証明するためにCookieが必要です。再試行システムがある場合は解決できますが、そうでない場合はこのまま情報取得に失敗する恐れがあります。場合によってはシステム側で取得を一時的にキューに移動するなどして、アクセスを冷ます必要があります。"
+        }
+        case "ytdlp-11": return {
+            title: "許可されていないコンテンツ",
+            description: "非公開などのコンテンツか、無効なコンテンツであるなどのエラーが発生しています。",
+            devDescription: "yt-dlpのアクセス先で403エラーが発生しました。"
         }
         case "ytdlp-12": return {
             title: "音声が存在しないコンテンツ",
